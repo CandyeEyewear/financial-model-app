@@ -9,7 +9,6 @@ import { currencyFmt, currencyFmtMM, pctFmt, numFmt } from "../utils/formatters"
 import { Download, Upload, AlertCircle, TrendingUp, TrendingDown, Check, X } from "lucide-react";
 import { FinancialStatementUpload } from './FinancialStatementUpload';
 
-// Helper function
 function formatDate(date) {
   if (!date) return "";
   try {
@@ -83,7 +82,6 @@ export function HistoricalDataTab({
   const [deleteIdx, setDeleteIdx] = useState(null);
   const [showMonthlyData, setShowMonthlyData] = useState(false);
 
-  // HANDLER FOR AI-EXTRACTED DATA
   const handleExtractedData = (years) => {
     const newHistoricalData = [...historicalData];
     
@@ -245,7 +243,7 @@ export function HistoricalDataTab({
     const workingCapital = currentAssets - currentOperatingLiabilities;
 
     const opCashFlow = parseValue(form.opCashFlow);
-    const capex = parseValue(form.capex);
+    const capex = Math.abs(parseValue(form.capex)) * -1;
     const fcf = opCashFlow - capex;
 
     const updated = [...historicalData];
@@ -310,7 +308,6 @@ export function HistoricalDataTab({
 
   return (
     <div className="space-y-6">
-      {/* AI UPLOAD COMPONENT - ADD THIS FIRST */}
       <Card className="border-l-4 border-l-purple-600 shadow-md">
         <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
           <CardTitle className="flex items-center gap-2">
@@ -326,7 +323,6 @@ export function HistoricalDataTab({
         </CardContent>
       </Card>
 
-      {/* Formatting Help Banner */}
       <div className="text-sm text-slate-600 p-3 bg-blue-50 rounded border border-blue-200">
         <strong>Formatting Tip:</strong> Numbers are automatically formatted with commas. 
         Just type the numbers normally (e.g., 1000000 will display as 1,000,000)
@@ -447,316 +443,379 @@ export function HistoricalDataTab({
         </CardContent>
       </Card>
 
-      {/* Edit Modal - keep your existing modal code exactly as is */}
       {editIdx !== null && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-    <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-      {/* Header */}
-      <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-4 rounded-t-lg border-b">
-        <h2 className="text-xl font-bold">
-          {editIdx === historicalData.length ? 'Add New Year' : `Edit Year ${form.year}`}
-        </h2>
-        <p className="text-sm opacity-90 mt-1">Enter financial data for the year</p>
-      </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-4 rounded-t-lg border-b">
+              <h2 className="text-xl font-bold">
+                {editIdx === historicalData.length ? 'Add New Year' : `Edit Year ${form.year}`}
+              </h2>
+              <p className="text-sm opacity-90 mt-1">Enter financial data for the year</p>
+            </div>
 
-      <div className="p-6 space-y-8">
-        {/* Year Field */}
-        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-          <Label className="text-xs font-semibold text-slate-700 mb-2 block">Year</Label>
-          <Input
-            type="number"
-            value={form.year}
-            onChange={(e) => handleChange('year', e.target.value)}
-            className="w-full h-12 text-lg font-bold border-2 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
-            placeholder="e.g., 2023"
-          />
-        </div>
+            <div className="p-6 space-y-8">
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <Label className="text-xs font-semibold text-slate-700 mb-2 block">Year</Label>
+                <Input
+                  type="number"
+                  value={form.year}
+                  onChange={(e) => handleChange('year', e.target.value)}
+                  className="w-full h-12 text-lg font-bold border-2 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                  placeholder="e.g., 2023"
+                />
+              </div>
 
-        {/* Income Statement */}
-        <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-blue-200">
-            Income Statement
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Revenue</Label>
-              <Input
-                type="text"
-                value={form.revenue}
-                onFocus={() => handleInputFocus('revenue', form.revenue)}
-                onBlur={() => handleInputBlur('revenue', form.revenue)}
-                onChange={(e) => handleChange('revenue', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
-                placeholder="0"
-              />
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-blue-200 flex items-center gap-2">
+                  <span>Income Statement</span>
+                  <span className="text-xs font-normal text-slate-500">(Enter all amounts as positive values)</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Revenue</Label>
+                    <Input
+                      type="text"
+                      value={form.revenue}
+                      onFocus={() => handleInputFocus('revenue', form.revenue)}
+                      onBlur={() => handleInputBlur('revenue', form.revenue)}
+                      onChange={(e) => handleChange('revenue', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Total sales/income for the period
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Cost of Goods Sold (COGS)</Label>
+                    <Input
+                      type="text"
+                      value={form.cogs}
+                      onFocus={() => handleInputFocus('cogs', form.cogs)}
+                      onBlur={() => handleInputBlur('cogs', form.cogs)}
+                      onChange={(e) => handleChange('cogs', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Direct costs of producing goods/services
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Operating Expenses (OpEx)</Label>
+                    <Input
+                      type="text"
+                      value={form.opex}
+                      onFocus={() => handleInputFocus('opex', form.opex)}
+                      onBlur={() => handleInputBlur('opex', form.opex)}
+                      onChange={(e) => handleChange('opex', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      SG&A, R&D, and other operating costs
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Depreciation & Amortization</Label>
+                    <Input
+                      type="text"
+                      value={form.depreciation}
+                      onFocus={() => handleInputFocus('depreciation', form.depreciation)}
+                      onBlur={() => handleInputBlur('depreciation', form.depreciation)}
+                      onChange={(e) => handleChange('depreciation', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Non-cash expense for asset depreciation
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Interest Expense</Label>
+                    <Input
+                      type="text"
+                      value={form.interestExpense}
+                      onFocus={() => handleInputFocus('interestExpense', form.interestExpense)}
+                      onBlur={() => handleInputBlur('interestExpense', form.interestExpense)}
+                      onChange={(e) => handleChange('interestExpense', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Interest paid on debt obligations
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Tax Expense</Label>
+                    <Input
+                      type="text"
+                      value={form.taxExpense}
+                      onFocus={() => handleInputFocus('taxExpense', form.taxExpense)}
+                      onBlur={() => handleInputBlur('taxExpense', form.taxExpense)}
+                      onChange={(e) => handleChange('taxExpense', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Income tax expense for the period
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-emerald-200 flex items-center gap-2">
+                  <span>Balance Sheet - Assets</span>
+                  <span className="text-xs font-normal text-slate-500">(All asset values as of year-end)</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Cash & Cash Equivalents</Label>
+                    <Input
+                      type="text"
+                      value={form.cash}
+                      onFocus={() => handleInputFocus('cash', form.cash)}
+                      onBlur={() => handleInputBlur('cash', form.cash)}
+                      onChange={(e) => handleChange('cash', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Cash on hand and short-term investments
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Accounts Receivable</Label>
+                    <Input
+                      type="text"
+                      value={form.receivables}
+                      onFocus={() => handleInputFocus('receivables', form.receivables)}
+                      onBlur={() => handleInputBlur('receivables', form.receivables)}
+                      onChange={(e) => handleChange('receivables', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Money owed by customers
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Inventory</Label>
+                    <Input
+                      type="text"
+                      value={form.inventory}
+                      onFocus={() => handleInputFocus('inventory', form.inventory)}
+                      onBlur={() => handleInputBlur('inventory', form.inventory)}
+                      onChange={(e) => handleChange('inventory', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Raw materials, WIP, and finished goods
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Other Current Assets</Label>
+                    <Input
+                      type="text"
+                      value={form.otherCurrentAssets}
+                      onFocus={() => handleInputFocus('otherCurrentAssets', form.otherCurrentAssets)}
+                      onBlur={() => handleInputBlur('otherCurrentAssets', form.otherCurrentAssets)}
+                      onChange={(e) => handleChange('otherCurrentAssets', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Prepaid expenses, short-term investments
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Property, Plant & Equipment (PP&E)</Label>
+                    <Input
+                      type="text"
+                      value={form.ppe}
+                      onFocus={() => handleInputFocus('ppe', form.ppe)}
+                      onBlur={() => handleInputBlur('ppe', form.ppe)}
+                      onChange={(e) => handleChange('ppe', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Net book value of fixed assets
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-amber-200 flex items-center gap-2">
+                  <span>Balance Sheet - Liabilities</span>
+                  <span className="text-xs font-normal text-slate-500">(All liability values as of year-end)</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Accounts Payable</Label>
+                    <Input
+                      type="text"
+                      value={form.accountsPayable}
+                      onFocus={() => handleInputFocus('accountsPayable', form.accountsPayable)}
+                      onBlur={() => handleInputBlur('accountsPayable', form.accountsPayable)}
+                      onChange={(e) => handleChange('accountsPayable', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Money owed to suppliers
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Accrued Expenses</Label>
+                    <Input
+                      type="text"
+                      value={form.accruedExp}
+                      onFocus={() => handleInputFocus('accruedExp', form.accruedExp)}
+                      onBlur={() => handleInputBlur('accruedExp', form.accruedExp)}
+                      onChange={(e) => handleChange('accruedExp', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Wages, taxes, and other accruals
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Short-term Debt</Label>
+                    <Input
+                      type="text"
+                      value={form.shortTermDebt}
+                      onFocus={() => handleInputFocus('shortTermDebt', form.shortTermDebt)}
+                      onBlur={() => handleInputBlur('shortTermDebt', form.shortTermDebt)}
+                      onChange={(e) => handleChange('shortTermDebt', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Debt due within one year
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">Long-term Debt</Label>
+                    <Input
+                      type="text"
+                      value={form.longTermDebt}
+                      onFocus={() => handleInputFocus('longTermDebt', form.longTermDebt)}
+                      onBlur={() => handleInputBlur('longTermDebt', form.longTermDebt)}
+                      onChange={(e) => handleChange('longTermDebt', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Debt due after one year
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-200 flex items-center gap-2">
+                  <span>Cash Flow Statement</span>
+                  <span className="text-xs font-normal text-slate-500">(Follow sign conventions below)</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">
+                      Operating Cash Flow (OCF)
+                    </Label>
+                    <Input
+                      type="text"
+                      value={form.opCashFlow}
+                      onFocus={() => handleInputFocus('opCashFlow', form.opCashFlow)}
+                      onBlur={() => handleInputBlur('opCashFlow', form.opCashFlow)}
+                      onChange={(e) => handleChange('opCashFlow', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-emerald-600 mt-0.5 font-medium leading-tight">
+                      Enter as positive (cash generated from operations)
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">
+                      Capital Expenditures (CapEx)
+                    </Label>
+                    <Input
+                      type="text"
+                      value={form.capex}
+                      onFocus={() => handleInputFocus('capex', form.capex)}
+                      onBlur={() => handleInputBlur('capex', form.capex)}
+                      onChange={(e) => handleChange('capex', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-amber-600 mt-0.5 font-semibold leading-tight">
+                      Enter as positive - System converts to negative (cash outflow)
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">
+                      Investing Cash Flow
+                    </Label>
+                    <Input
+                      type="text"
+                      value={form.investCF}
+                      onFocus={() => handleInputFocus('investCF', form.investCF)}
+                      onBlur={() => handleInputBlur('investCF', form.investCF)}
+                      onChange={(e) => handleChange('investCF', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Positive = asset sales, Negative = purchases
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1 block">
+                      Financing Cash Flow
+                    </Label>
+                    <Input
+                      type="text"
+                      value={form.financeCF}
+                      onFocus={() => handleInputFocus('financeCF', form.financeCF)}
+                      onBlur={() => handleInputBlur('financeCF', form.financeCF)}
+                      onChange={(e) => handleChange('financeCF', e.target.value)}
+                      className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
+                      placeholder="0"
+                    />
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Positive = raising capital, Negative = repaying debt/dividends
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">COGS</Label>
-              <Input
-                type="text"
-                value={form.cogs}
-                onFocus={() => handleInputFocus('cogs', form.cogs)}
-                onBlur={() => handleInputBlur('cogs', form.cogs)}
-                onChange={(e) => handleChange('cogs', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Operating Expenses</Label>
-              <Input
-                type="text"
-                value={form.opex}
-                onFocus={() => handleInputFocus('opex', form.opex)}
-                onBlur={() => handleInputBlur('opex', form.opex)}
-                onChange={(e) => handleChange('opex', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Depreciation</Label>
-              <Input
-                type="text"
-                value={form.depreciation}
-                onFocus={() => handleInputFocus('depreciation', form.depreciation)}
-                onBlur={() => handleInputBlur('depreciation', form.depreciation)}
-                onChange={(e) => handleChange('depreciation', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Interest Expense</Label>
-              <Input
-                type="text"
-                value={form.interestExpense}
-                onFocus={() => handleInputFocus('interestExpense', form.interestExpense)}
-                onBlur={() => handleInputBlur('interestExpense', form.interestExpense)}
-                onChange={(e) => handleChange('interestExpense', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Tax Expense</Label>
-              <Input
-                type="text"
-                value={form.taxExpense}
-                onFocus={() => handleInputFocus('taxExpense', form.taxExpense)}
-                onBlur={() => handleInputBlur('taxExpense', form.taxExpense)}
-                onChange={(e) => handleChange('taxExpense', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
+
+            <div className="sticky bottom-0 bg-slate-50 px-6 py-4 border-t flex justify-end gap-3 rounded-b-lg">
+              <button
+                onClick={handleCancel}
+                className="bg-white border-2 border-slate-300 hover:border-blue-500 text-slate-700 hover:text-blue-600 px-6 py-2 font-semibold transition-all duration-200 rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white px-6 py-2 shadow-md font-semibold transition-all duration-200 transform hover:scale-105 rounded-md"
+              >
+                Save Year
+              </button>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Balance Sheet - Assets */}
-        <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-emerald-200">
-            Balance Sheet - Assets
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Cash</Label>
-              <Input
-                type="text"
-                value={form.cash}
-                onFocus={() => handleInputFocus('cash', form.cash)}
-                onBlur={() => handleInputBlur('cash', form.cash)}
-                onChange={(e) => handleChange('cash', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Accounts Receivable</Label>
-              <Input
-                type="text"
-                value={form.receivables}
-                onFocus={() => handleInputFocus('receivables', form.receivables)}
-                onBlur={() => handleInputBlur('receivables', form.receivables)}
-                onChange={(e) => handleChange('receivables', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Inventory</Label>
-              <Input
-                type="text"
-                value={form.inventory}
-                onFocus={() => handleInputFocus('inventory', form.inventory)}
-                onBlur={() => handleInputBlur('inventory', form.inventory)}
-                onChange={(e) => handleChange('inventory', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Other Current Assets</Label>
-              <Input
-                type="text"
-                value={form.otherCurrentAssets}
-                onFocus={() => handleInputFocus('otherCurrentAssets', form.otherCurrentAssets)}
-                onBlur={() => handleInputBlur('otherCurrentAssets', form.otherCurrentAssets)}
-                onChange={(e) => handleChange('otherCurrentAssets', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">PP&E</Label>
-              <Input
-                type="text"
-                value={form.ppe}
-                onFocus={() => handleInputFocus('ppe', form.ppe)}
-                onBlur={() => handleInputBlur('ppe', form.ppe)}
-                onChange={(e) => handleChange('ppe', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Balance Sheet - Liabilities */}
-        <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-amber-200">
-            Balance Sheet - Liabilities
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Accounts Payable</Label>
-              <Input
-                type="text"
-                value={form.accountsPayable}
-                onFocus={() => handleInputFocus('accountsPayable', form.accountsPayable)}
-                onBlur={() => handleInputBlur('accountsPayable', form.accountsPayable)}
-                onChange={(e) => handleChange('accountsPayable', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Accrued Expenses</Label>
-              <Input
-                type="text"
-                value={form.accruedExp}
-                onFocus={() => handleInputFocus('accruedExp', form.accruedExp)}
-                onBlur={() => handleInputBlur('accruedExp', form.accruedExp)}
-                onChange={(e) => handleChange('accruedExp', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Short-term Debt</Label>
-              <Input
-                type="text"
-                value={form.shortTermDebt}
-                onFocus={() => handleInputFocus('shortTermDebt', form.shortTermDebt)}
-                onBlur={() => handleInputBlur('shortTermDebt', form.shortTermDebt)}
-                onChange={(e) => handleChange('shortTermDebt', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Long-term Debt</Label>
-              <Input
-                type="text"
-                value={form.longTermDebt}
-                onFocus={() => handleInputFocus('longTermDebt', form.longTermDebt)}
-                onBlur={() => handleInputBlur('longTermDebt', form.longTermDebt)}
-                onChange={(e) => handleChange('longTermDebt', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Cash Flow Statement */}
-        <div>
-          <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-200">
-            Cash Flow Statement
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Operating Cash Flow</Label>
-              <Input
-                type="text"
-                value={form.opCashFlow}
-                onFocus={() => handleInputFocus('opCashFlow', form.opCashFlow)}
-                onBlur={() => handleInputBlur('opCashFlow', form.opCashFlow)}
-                onChange={(e) => handleChange('opCashFlow', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Capital Expenditures</Label>
-              <Input
-                type="text"
-                value={form.capex}
-                onFocus={() => handleInputFocus('capex', form.capex)}
-                onBlur={() => handleInputBlur('capex', form.capex)}
-                onChange={(e) => handleChange('capex', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Investing Cash Flow</Label>
-              <Input
-                type="text"
-                value={form.investCF}
-                onFocus={() => handleInputFocus('investCF', form.investCF)}
-                onBlur={() => handleInputBlur('investCF', form.investCF)}
-                onChange={(e) => handleChange('investCF', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 mb-1 block">Financing Cash Flow</Label>
-              <Input
-                type="text"
-                value={form.financeCF}
-                onFocus={() => handleInputFocus('financeCF', form.financeCF)}
-                onBlur={() => handleInputBlur('financeCF', form.financeCF)}
-                onChange={(e) => handleChange('financeCF', e.target.value)}
-                className="w-full h-10 text-sm border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-md"
-                placeholder="0"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="sticky bottom-0 bg-slate-50 px-6 py-4 border-t flex justify-end gap-3 rounded-b-lg">
-        <button
-          onClick={handleCancel}
-          className="bg-white border-2 border-slate-300 hover:border-blue-500 text-slate-700 hover:text-blue-600 px-6 py-2 font-semibold transition-all duration-200 rounded-md"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white px-6 py-2 shadow-md font-semibold transition-all duration-200 transform hover:scale-105 rounded-md"
-        >
-          Save Year
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-      {/* Data Quality Summary */}
       <div className="border border-green-400 bg-green-50 rounded p-5 mt-2">
         <div className="text-green-900 font-semibold mb-2">Data Quality Summary:</div>
         <ul className="list-disc pl-5 text-green-900 text-sm space-y-1">

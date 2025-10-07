@@ -520,50 +520,73 @@ useEffect(() => {
   }, [debouncedParams]);
 
   // Auto-populate financial parameters when historical data changes
-  useEffect(() => {
-    const validYears = historicalData.filter(d => d.revenue > 0);
-    
-    if (validYears.length >= 2) {
-      const assumptions = calculateHistoricalAssumptions(historicalData);
-      const mostRecent = validYears[validYears.length - 1];
-      
-      if (assumptions) {
-        setDraftParams(prev => {
-          // Calculate total debt from most recent historical year
-          const totalHistoricalDebt = (mostRecent.shortTermDebt || 0) + (mostRecent.longTermDebt || 0);
-          
-          // Calculate implied interest rate from interest expense
-          const historicalRate = mostRecent.interestExpense && totalHistoricalDebt > 0
+useEffect(() => {
+  const validYears = [...historicalData]
+  .filter(d => d.revenue > 0)
+  .sort((a, b) => a.year - b.year); // oldest -> newest
+
+
+  // Only run if at least one valid year of data exists
+  if (validYears.length >= 1) {
+    // Get assumptions for averages (growth, opex, etc.)
+    const assumptions = calculateHistoricalAssumptions(historicalData);
+
+    // ✅ Get the most recent (last) year in the list
+    const mostRecent = validYears[validYears.length - 2];
+
+    // ✅ Compute the average revenue across all years (backup)
+    const avgRevenue =
+      validYears.reduce((sum, yr) => sum + (yr.revenue || 0), 0) /
+      validYears.length;
+
+    if (assumptions) {
+      setDraftParams((prev) => {
+        // Calculate total debt from most recent historical year
+        const totalHistoricalDebt =
+          (mostRecent.shortTermDebt || 0) + (mostRecent.longTermDebt || 0);
+
+        // Calculate implied interest rate from interest expense
+        const historicalRate =
+          mostRecent.interestExpense && totalHistoricalDebt > 0
             ? mostRecent.interestExpense / totalHistoricalDebt
             : null;
-          
-          return {
-            ...prev,
-            baseRevenue: assumptions.baseRevenue,
-            growth: assumptions.growth,
-            cogsPct: assumptions.cogsPct,
-            opexPct: assumptions.opexPct,
-            wcPctOfRev: assumptions.wcPctOfRev,
-            capexPct: assumptions.capexPct,
-                        
-            // Auto-populate debt only if user hasn't manually changed from defaults
- totalAssets: (prev.totalAssets === 500_000_000 || prev.totalAssets === 0)
-            ? mostRecent.totalAssets
-            : prev.totalAssets,           
 
- openingDebt: (prev.openingDebt === 120_000_000 || prev.openingDebt === 0)
-              ? totalHistoricalDebt 
-              : prev.openingDebt,
-            
-            // Auto-populate interest rate only if user hasn't manually changed from defaults
-            interestRate: historicalRate && (prev.interestRate === 0.12 || prev.interestRate === 0)
+        return {
+          ...prev,
+
+          // ✅ FIX 1: Base Revenue = most recent year's revenue (or average as backup)
+          baseRevenue:
+            prev.baseRevenue === 0
+              ? mostRecent.revenue || avgRevenue || assumptions.baseRevenue
+              : prev.baseRevenue,
+
+          // ✅ FIX 2: These only update automatically if user hasn’t changed them
+          growth:
+            prev.growth === 0.08 ? assumptions.growth : prev.growth,
+          cogsPct:
+            prev.cogsPct === 0.4 ? assumptions.cogsPct : prev.cogsPct,
+          opexPct:
+            prev.opexPct === 0.25 ? assumptions.opexPct : prev.opexPct,
+          wcPctOfRev:
+            prev.wcPctOfRev === 0.15
+              ? assumptions.wcPctOfRev
+              : prev.wcPctOfRev,
+          capexPct:
+            prev.capexPct === 0.05 ? assumptions.capexPct : prev.capexPct,
+
+          // ✅ Optional: also auto-update these if they’re zero
+          openingDebt:
+            prev.openingDebt === 0 ? totalHistoricalDebt : prev.openingDebt,
+          interestRate:
+            prev.interestRate === 0 && historicalRate
               ? historicalRate
               : prev.interestRate,
-          };
-        });
-      }
+        };
+      });
     }
-  }, [historicalData]);
+  }
+}, [historicalData]);
+
 
   const applyHistoricalAssumptions = () => {
     try {
@@ -571,12 +594,16 @@ useEffect(() => {
       if (assumptions) {
         setDraftParams(prev => ({
           ...prev,
-          baseRevenue: assumptions.baseRevenue,
-          growth: assumptions.growth,
-          cogsPct: assumptions.cogsPct,
-          opexPct: assumptions.opexPct,
-          wcPctOfRev: assumptions.wcPctOfRev,
-          capexPct: assumptions.capexPct,
+          baseRevenue: prev.baseRevenue === 0
+  ? (mostRecent.revenue || assumptions.baseRevenue)
+  : prev.baseRevenue,
+
+          growth:     prev.growth     === 0.08 ? assumptions.growth     : prev.growth,
+cogsPct:    prev.cogsPct    === 0.40 ? assumptions.cogsPct    : prev.cogsPct,
+opexPct:    prev.opexPct    === 0.25 ? assumptions.opexPct    : prev.opexPct,
+wcPctOfRev: prev.wcPctOfRev === 0.15 ? assumptions.wcPctOfRev : prev.wcPctOfRev,
+capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
+
         }));
         setShowInputs(true);
         setSuccessMessage("Historical assumptions applied successfully!");
@@ -784,7 +811,12 @@ useEffect(() => {
           'bg-gradient-to-br from-slate-500 to-slate-600'
         }`}>
           <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Equity MOIC</div>
-          <div className="text-3xl font-bold mb-1">{numFmt(projections.base.moic)}x</div>
+          <div className="text-3xl font-bold mb-1">
+  {Number.isFinite(projections.base.moic) && projections.base.moic < 999
+    ? `${numFmt(projections.base.moic)}x`
+    : '–'}
+</div>
+
           <div className="text-xs opacity-80 flex items-center gap-1">
             {projections.base.moic > 2 ? '↑ Strong Return' : '↓ Below Target'}
           </div>
@@ -1212,7 +1244,7 @@ useEffect(() => {
               </CardHeader>
               <CardContent className="p-6">
                 <HistoricalDataTab 
-                  data={historicalData}
+                  data={[...historicalData].sort((a, b) => b.year - a.year)}
                   onChange={setHistoricalData}
                   onApplyAssumptions={applyHistoricalAssumptions}
                   hasValidData={hasValidHistoricalData}

@@ -87,26 +87,41 @@ function ChatAssistant({ modelData }) {
     try {
       const systemMessage = {
         role: "system",
-        content: `You are FinAssist, an expert financial analyst assistant specializing in credit analysis, debt structuring, and financial modeling. You have access to comprehensive financial model data.
+        content: `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague, so keep your tone warm, conversational, and natural.
 
-COMPREHENSIVE FINANCIAL MODEL DATA:
+FINANCIAL MODEL DATA:
 ${modelSummary}
 
-ANALYSIS GUIDELINES:
-1. **Use the data above** to answer all questions with specific metrics and numbers
-2. **Be concise but thorough** - provide actionable insights in clear language
-3. **Highlight key risks** - covenant breaches, liquidity issues, leverage concerns
-4. **Compare scenarios** - base case vs stress scenarios when relevant
-5. **Provide recommendations** - specific actions to improve the structure
-6. **Use formatting** for clarity:
-   - Use bullet points for lists
-   - Use **bold** for key metrics and recommendations
-   - Use numbers and percentages from the actual data
-7. **If data is missing**, suggest which sections need to be configured
-8. **Focus on credit quality** - DSCR, leverage, ICR, liquidity runway
-9. **Be direct and professional** - this is for financial decision-making
+HOW TO COMMUNICATE:
+- Talk like you're chatting with a colleague over coffee, not writing a formal report
+- Use natural, flowing sentences instead of bullet points or lists
+- NO hashtags, NO markdown symbols (**, ##, ###), NO excessive formatting
+- Write in paragraphs, like you're explaining something to a friend
+- Use "I think", "I'd recommend", "In my view" to sound more human
+- Feel free to use conversational phrases like "Here's the thing", "What I'm seeing here", "To be honest"
+- When citing numbers, weave them naturally into your explanation
+- Be direct and honest, but warm in your delivery
 
-IMPORTANT: Always reference specific numbers from the model data. Don't provide generic advice.`
+WHAT TO FOCUS ON:
+- Use the actual numbers and data from the model above
+- Give specific, actionable insights based on what you see
+- Point out both strengths and concerns in a balanced way
+- If you spot risks, explain them clearly but don't be alarmist
+- Make recommendations that are practical and easy to understand
+- If data is missing, mention it naturally: "I don't see any revenue projections yet, so once you add those..."
+
+EXAMPLES OF GOOD RESPONSES:
+"Looking at your numbers, the DSCR of 1.8x is pretty solid - that gives you decent breathing room. But I'm a bit concerned about the leverage ratio hitting 4.2x in year 3. That's getting close to typical covenant levels."
+
+"Here's what stands out to me: your base case looks good with an IRR around 22%, but in the downside scenario, things get tight pretty quickly. The DSCR drops to 1.1x, which doesn't leave much cushion if something unexpected happens."
+
+BAD EXAMPLES (Don't do this):
+"## Key Findings:
+- **DSCR**: 1.8x
+- **Leverage**: 4.2x
+#risk #analysis"
+
+Remember: You're a trusted advisor having a conversation, not a bot generating a report. Keep it natural, helpful, and human.`
       };
 
       const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
@@ -119,7 +134,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
           model: "deepseek-chat",
           messages: [systemMessage, ...messages.slice(-6), userMessage], // Keep last 6 messages for context
           max_tokens: 1500,
-          temperature: 0.7,
+          temperature: 0.8, // Increased for more natural, varied responses
         }),
       });
 
@@ -143,7 +158,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
       // Add error message to chat
       setMessages(prev => [...prev, { 
         role: "assistant", 
-        content: "I encountered an error processing your request. Please try again or rephrase your question.",
+        content: "Sorry, I hit a snag trying to process that. Mind trying again?",
         isError: true
       }]);
     } finally {
@@ -210,7 +225,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
             <div>
               <div className="font-bold text-slate-800">FinAssist</div>
               <div className="text-xs text-slate-600">
-                {hasModelData ? "Model loaded" : "Awaiting model data"}
+                {hasModelData ? "Ready to help" : "Awaiting model data"}
               </div>
             </div>
           </div>
@@ -258,15 +273,15 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
                 <Sparkles className="w-8 h-8 text-white" />
               </div>
               <div className="font-semibold text-slate-800 mb-2">
-                AI-Powered Financial Analysis
+                Hey! I'm here to help analyze your deal
               </div>
               <div className="text-sm text-slate-600 mb-4">
-                Ask me anything about your financial model - projections, risks, scenarios, or credit analysis.
+                Ask me anything about your financial model - I'll give you straight answers in plain English.
               </div>
               {hasModelData && (
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold border border-emerald-200">
                   <Check className="w-3 h-3" />
-                  Comprehensive model data loaded
+                  Model data loaded and ready
                 </div>
               )}
             </div>
@@ -275,7 +290,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
             {hasModelData && (
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-slate-600 px-2">
-                  Suggested Questions:
+                  Try asking me:
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   {SUGGESTED_PROMPTS.map((prompt, i) => (
@@ -364,7 +379,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
                     <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
                     <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
                   </div>
-                  <span className="text-xs text-slate-600">Analyzing...</span>
+                  <span className="text-xs text-slate-600">Thinking...</span>
                 </div>
               </div>
             </div>
@@ -404,7 +419,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder={hasModelData ? "Ask about projections, risks, scenarios..." : "Configure model to start..."}
+            placeholder={hasModelData ? "Ask me anything about your deal..." : "Configure model to start..."}
             disabled={isLoading || !hasModelData}
             className="flex-1 border border-slate-300 rounded-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm disabled:bg-slate-100 disabled:cursor-not-allowed transition-all"
           />
@@ -425,7 +440,7 @@ IMPORTANT: Always reference specific numbers from the model data. Don't provide 
         {/* Helpful hint */}
         {hasModelData && messages.length === 0 && (
           <div className="mt-2 text-xs text-slate-500 text-center">
-            Press Enter to send • Try the suggested questions above
+            Press Enter to send • I'll keep it conversational, no jargon
           </div>
         )}
       </div>

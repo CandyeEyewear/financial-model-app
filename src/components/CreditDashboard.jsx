@@ -340,7 +340,12 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             <div className="text-xs font-semibold uppercase tracking-wide opacity-90">Min DSCR</div>
             <TrendingUp className="w-4 h-4 opacity-80" />
           </div>
-          <div className="text-3xl font-bold mb-1">{numFmt(summary.minDSCR)}x</div>
+          <div className="text-3xl font-bold mb-1">
+  {Number.isFinite(summary.minDSCR) && summary.minDSCR < 999
+    ? `${numFmt(summary.minDSCR)}x`
+    : "—"}
+</div>
+
           <div className="text-xs opacity-80">Covenant: {numFmt(params.minDSCR)}x</div>
           <div className={`text-xs mt-2 font-semibold ${summary.minDSCR >= params.minDSCR ? 'opacity-100' : 'opacity-70'}`}>
             {summary.minDSCR >= params.minDSCR ? '✓ Compliant' : '✗ Below Covenant'}
@@ -352,7 +357,12 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             <div className="text-xs font-semibold uppercase tracking-wide opacity-90">Min ICR</div>
             <Shield className="w-4 h-4 opacity-80" />
           </div>
-          <div className="text-3xl font-bold mb-1">{numFmt(summary.minICR)}x</div>
+          <div className="text-3xl font-bold mb-1">
+  {Number.isFinite(summary.minICR) && summary.minICR < 999
+    ? `${numFmt(summary.minICR)}x`
+    : "—"}
+</div>
+
           <div className="text-xs opacity-80">Target: {numFmt(params.targetICR)}x</div>
           <div className={`text-xs mt-2 font-semibold ${summary.minICR >= params.targetICR ? 'opacity-100' : 'opacity-70'}`}>
             {summary.minICR >= params.targetICR ? '✓ Above Target' : '✗ Below Target'}
@@ -364,7 +374,12 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             <div className="text-xs font-semibold uppercase tracking-wide opacity-90">Max Leverage</div>
             <BarChart3 className="w-4 h-4 opacity-80" />
           </div>
-          <div className="text-3xl font-bold mb-1">{numFmt(summary.maxLeverage)}x</div>
+          <div className="text-3xl font-bold mb-1">
+  {Number.isFinite(summary.maxLeverage) && summary.maxLeverage < 999
+    ? `${numFmt(summary.maxLeverage)}x`
+    : "—"}
+</div>
+
           <div className="text-xs opacity-80">Limit: {numFmt(params.maxNDToEBITDA)}x</div>
           <div className={`text-xs mt-2 font-semibold ${summary.maxLeverage <= params.maxNDToEBITDA ? 'opacity-100' : 'opacity-70'}`}>
             {summary.maxLeverage <= params.maxNDToEBITDA ? '✓ Within Limit' : '✗ Exceeds Limit'}

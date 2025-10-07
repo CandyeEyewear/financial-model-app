@@ -1,126 +1,204 @@
-import React, { useState } from "react";
-import FinancialModelAndStressTester from "./FinancialModelAndStressTester.js";
-import ChatAssistant from "./ChatAssistant.js";
-import { currencyFmtMM, numFmt, pctFmt } from "./utils/formatters.js";
-import "./index.css";
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { useAuth0 } from '@auth0/auth0-react';
+import FinancialModelAndStressTester from './FinancialModelAndStressTester';
+import ChatAssistant from './ChatAssistant';
+import Callback from './components/Callback';
 
-// Add this function to generate comprehensive tab summaries
-const generateTabSummaries = (modelData) => {
-  if (!modelData) return "No model data available yet. Please configure the financial model first.";
+// Simple icons as SVG
+const MessageCircleIcon = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+  </svg>
+);
 
-  const { projections, params, historicalData } = modelData;
-  
-  let summaries = [];
-
-  // Historical Data Summary
-  if (historicalData && historicalData.length > 0) {
-    const validHistorical = historicalData.filter(d => d.revenue > 0);
-    if (validHistorical.length > 0) {
-      const latestYear = validHistorical[validHistorical.length - 1];
-      const revenueGrowth = validHistorical.length >= 2 
-        ? ((latestYear.revenue - validHistorical[validHistorical.length - 2].revenue) / validHistorical[validHistorical.length - 2].revenue * 100).toFixed(1)
-        : 'N/A';
-      
-      summaries.push(`📈 HISTORICAL DATA: ${validHistorical.length} years of data. Latest year ${latestYear.year}: Revenue ${currencyFmtMM(latestYear.revenue)}, EBITDA ${currencyFmtMM(latestYear.ebitda)}, Net Income ${currencyFmtMM(latestYear.netIncome)}. Revenue growth: ${revenueGrowth}%`);
-    } else {
-      summaries.push("📈 HISTORICAL DATA: Data entered but no valid revenue figures yet.");
-    }
-  } else {
-    summaries.push("📈 HISTORICAL DATA: No historical data entered.");
-  }
-
-  // Capital Structure Summary
-  if (params) {
-    const debtToEquity = params.equityContribution > 0 ? (params.openingDebt / params.equityContribution).toFixed(2) : "N/A";
-    summaries.push(`🏛️ CAPITAL STRUCTURE: Base Revenue ${currencyFmtMM(params.baseRevenue)}, Debt ${currencyFmtMM(params.openingDebt)}, Equity ${currencyFmtMM(params.equityContribution)}, Debt/Equity Ratio ${debtToEquity}x, WACC ${pctFmt(params.wacc)}`);
-  }
-
-  // Credit Dashboard Summary
-  if (projections?.base) {
-    const base = projections.base;
-    const minDSCR = Math.min(...base.rows.map(r => r.dscr));
-    const maxLeverage = Math.max(...base.rows.map(r => r.ndToEbitda));
-    summaries.push(`📊 CREDIT DASHBOARD: Enterprise Value ${currencyFmtMM(base.enterpriseValue)}, Equity Value ${currencyFmtMM(base.equityValue)}, MOIC ${base.moic.toFixed(2)}x, IRR ${pctFmt(base.irr)}, Min DSCR ${minDSCR.toFixed(2)}, Max Leverage ${maxLeverage.toFixed(2)}x`);
-  }
-
-  // Scenario Analysis Summary
-  if (projections) {
-    const scenarioKeys = Object.keys(projections).filter(key => key !== 'base');
-    if (scenarioKeys.length > 0) {
-      const scenarioImpacts = scenarioKeys.map(key => {
-        const proj = projections[key];
-        const baseIrr = projections.base?.irr || 0;
-        const irrChange = baseIrr > 0 ? ((proj.irr - baseIrr) / baseIrr * 100).toFixed(1) : "N/A";
-        return `${key}: IRR ${pctFmt(proj.irr)} (${irrChange}% vs base)`;
-      });
-      summaries.push(`🔄 SCENARIO ANALYSIS: ${scenarioKeys.length} stress scenarios tested: ${scenarioImpacts.join(', ')}`);
-    } else {
-      summaries.push("🔄 SCENARIO ANALYSIS: No stress scenarios configured yet.");
-    }
-  }
-
-  // Debt Stress Testing Summary
-  if (projections?.base) {
-    const base = projections.base;
-    const maxLeverage = Math.max(...base.rows.map(r => r.ndToEbitda));
-    const minDSCR = Math.min(...base.rows.map(r => r.dscr));
-    const minICR = Math.min(...base.rows.map(r => r.icr));
-    const maxICR = Math.max(...base.rows.map(r => r.icr));
-    
-    const covenantStatus = [];
-    if (params?.minDSCR && minDSCR < params.minDSCR) covenantStatus.push("DSCR breach");
-    if (params?.maxNDToEBITDA && maxLeverage > params.maxNDToEBITDA) covenantStatus.push("Leverage breach");
-    if (params?.targetICR && minICR < params.targetICR) covenantStatus.push("ICR breach");
-    
-    const covenantText = covenantStatus.length > 0 
-      ? `⚠️ COVENANT ISSUES: ${covenantStatus.join(', ')}`
-      : "✅ All covenants maintained";
-    
-    summaries.push(`⚡ DEBT STRESS: Peak leverage ${maxLeverage.toFixed(2)}x EBITDA, Minimum DSCR ${minDSCR.toFixed(2)}, ICR range ${minICR.toFixed(2)}-${maxICR.toFixed(2)}. ${covenantText}`);
-  }
-
-  // Deal Structure Summary
-  if (params) {
-    summaries.push(`💼 DEAL STRUCTURE: ${params.dealStructure || 'Term loan'}, ${params.proposedTenor || 5}-year tenor, ${pctFmt(params.proposedPricing || 0.12)} interest rate, ${params.requestedLoanAmount ? currencyFmtMM(params.requestedLoanAmount) : 'No loan'} requested`);
-  }
-
-  return summaries.join('\n\n');
-};
+const XIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
 
 function App() {
-  const [showAssistant, setShowAssistant] = useState(false);
+  const { isLoading, error } = useAuth0();
 
-  // 🔹 Store model data in parent so both tester + assistant can access
-  const [modelData, setModelData] = useState(null);
+  if (isLoading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '1.5rem',
+        color: '#1e40af'
+      }}>
+        Loading FinSight...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '1.2rem',
+        color: '#dc2626',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
+        <div>Oops... {error.message}</div>
+        <button 
+          onClick={() => window.location.href = 'https://salesmasterjm.com/finsight'}
+          style={{
+            padding: '12px 24px',
+            backgroundColor: '#1e40af',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+        >
+          Return to Homepage
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="App h-screen flex relative">
-      {/* Main financial model section */}
-      <div
-        className={`flex-1 overflow-y-auto p-4 transition-all duration-300 ${
-          showAssistant ? "mr-96" : ""
-        }`}
-      >
-        {/* Pass callback so tester can push updates up */}
-        <FinancialModelAndStressTester onDataUpdate={setModelData} />
+    <Router>
+      <Routes>
+        <Route path="/callback" element={<Callback />} />
+        <Route path="/" element={<ProtectedRoute />} />
+      </Routes>
+    </Router>
+  );
+}
+
+function ProtectedRoute() {
+  const { isAuthenticated, loginWithRedirect, user, logout } = useAuth0();
+  const [showAssistant, setShowAssistant] = useState(false);
+   const [modelData, setModelData] = useState(null);
+
+  if (!isAuthenticated) {
+    loginWithRedirect();
+    return null;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {/* Top Bar with Logout */}
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        backgroundColor: 'white',
+        borderBottom: '1px solid #e2e8f0',
+        padding: '12px 24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 40,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ fontSize: '0.9rem', color: '#475569', fontWeight: 500 }}>
+          Welcome, {user?.name || user?.email}
+        </div>
+        <button 
+          onClick={() => logout({ logoutParams: { returnTo: 'https://salesmasterjm.com/finsight' } })}
+          style={{
+            padding: '8px 20px',
+            backgroundColor: '#1e40af',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: 600
+          }}
+        >
+          Logout
+        </button>
       </div>
 
-      {/* Toggle button */}
-      <button
-        onClick={() => setShowAssistant(!showAssistant)}
-        className="absolute top-4 right-4 z-50 bg-indigo-600 text-white px-3 py-1 rounded shadow hover:bg-indigo-700"
-      >
-        {showAssistant ? "Hide Assistant" : "Show Assistant"}
-      </button>
+      {/* Main App */}
+      <div style={{ flex: 1 }}>
+       <FinancialModelAndStressTester onDataUpdate={setModelData} />
+      </div>
 
-      {/* Chat assistant sidebar */}
+      {/* Floating Chat Button */}
+      {!showAssistant && (
+        <button
+          onClick={() => setShowAssistant(true)}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            backgroundColor: '#1e40af',
+            color: 'white',
+            border: 'none',
+            boxShadow: '0 4px 12px rgba(30, 64, 175, 0.4)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
+        >
+          <MessageCircleIcon />
+        </button>
+      )}
+
+      {/* Floating Chat Panel */}
       {showAssistant && (
-        <div className="w-96 border-l bg-slate-50 flex flex-col fixed right-0 top-0 bottom-0 shadow-lg">
-          {/* 🔹 Pass modelData AND tabSummaries down into ChatAssistant */}
-          <ChatAssistant 
-            modelData={modelData}
-            tabSummaries={generateTabSummaries(modelData)}
-          />
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          width: '400px',
+          height: '600px',
+          backgroundColor: 'white',
+          borderRadius: '16px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          border: '1px solid #e2e8f0'
+        }}>
+          <div style={{
+            padding: '16px',
+            backgroundColor: '#1e40af',
+            color: 'white',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <MessageCircleIcon />
+              <span style={{ fontWeight: 600 }}>FinAssist</span>
+            </div>
+            <button
+              onClick={() => setShowAssistant(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                padding: '4px'
+              }}
+            >
+              <XIcon />
+            </button>
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <ChatAssistant modelData={modelData} />
+          </div>
         </div>
       )}
     </div>

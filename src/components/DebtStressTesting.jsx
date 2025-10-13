@@ -1,21 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
-import { KPI } from "./KPI";
-import { ChartWrapper } from "./ChartWrapper";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
-import { exportComprehensiveStressTestReport } from "../utils/exportStressTestReport";
 import { buildProjection } from "../utils/buildProjection";
-import { 
-  BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, ResponsiveContainer,
-  LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ComposedChart,
-  Cell, AreaChart, Area
-} from "recharts";
+import { generateModelDataSummary } from "../utils/ModelDataSummary"; 
 import { 
   AlertTriangle, CheckCircle, XCircle, TrendingDown, Shield, Activity, 
-  Download, History, Calendar, DollarSign, Info, Zap, TrendingUp 
+  Download, History, Calendar, DollarSign, Info, Zap, TrendingUp, Database,
+  ArrowRight, Sparkles, Loader2, FileText, BarChart3
 } from "lucide-react";
 
-// Color palette for consistency
+// Color palette
 const COLORS = {
   primary: { from: 'blue-500', to: 'blue-600', chart: '#2563eb' },
   success: { from: 'emerald-500', to: 'emerald-600', chart: '#10b981' },
@@ -23,6 +17,17 @@ const COLORS = {
   danger: { from: 'red-500', to: 'red-600', chart: '#ef4444' },
   info: { from: 'indigo-500', to: 'indigo-600', chart: '#6366f1' },
   purple: { from: 'purple-500', to: 'purple-600', chart: '#a855f7' },
+};
+
+// Industry benchmarks database
+const INDUSTRY_BENCHMARKS = {
+  'Manufacturing': { medianLeverage: 3.2, medianDSCR: 1.8, medianICR: 3.5, typicalCovenants: '1.25x DSCR, 4.0x Max Leverage' },
+  'Technology': { medianLeverage: 2.5, medianDSCR: 2.2, medianICR: 4.0, typicalCovenants: '1.50x DSCR, 3.0x Max Leverage' },
+  'Retail': { medianLeverage: 3.8, medianDSCR: 1.6, medianICR: 3.0, typicalCovenants: '1.20x DSCR, 4.5x Max Leverage' },
+  'Healthcare': { medianLeverage: 3.0, medianDSCR: 1.9, medianICR: 3.8, typicalCovenants: '1.40x DSCR, 3.5x Max Leverage' },
+  'Real Estate': { medianLeverage: 4.5, medianDSCR: 1.4, medianICR: 2.5, typicalCovenants: '1.15x DSCR, 5.0x Max Leverage' },
+  'Services': { medianLeverage: 2.8, medianDSCR: 2.0, medianICR: 3.5, typicalCovenants: '1.35x DSCR, 3.5x Max Leverage' },
+  'default': { medianLeverage: 3.0, medianDSCR: 1.8, medianICR: 3.2, typicalCovenants: '1.25x DSCR, 3.5x Max Leverage' }
 };
 
 // Enhanced debt stress test scenarios
@@ -98,355 +103,388 @@ const DEBT_STRESS_SCENARIOS = {
     description: "Revenue -10%, COGS +8%, Rates +4%",
     adjustments: { revenueShock: -0.10, cogsShock: 0.08, rateShock: 0.04 },
     color: '#b91c1c'
-  },
-  refinancingRisk: {
-    name: "Refinancing Stress",
-    description: "Balloon payment with market stress",
-    adjustments: { revenueShock: -0.15, rateShock: 0.02, refinancingStress: true },
-    color: '#7c2d12'
   }
 };
 
-// Helper functions
-function getPaymentsPerYear(frequency) {
-  const frequencyMap = {
-    "Monthly": 12, "Quarterly": 4, "Semi-Annually": 2, "Annually": 1, "Bullet": 0
-  };
-  return frequencyMap[frequency] || 4;
-}
-
-// FIXED: Calculate refinancing risk with proper cash accumulation
-function calculateRefinancingRisk(params, stressedMetrics, ccy) {
-  if (!params.balloonPercentage || params.balloonPercentage === 0) {
-    return { level: "LOW", description: "No balloon payment", feasible: true };
+// ✅ FIXED: AI Integration with proper API key handling and detailed context
+const generateStressTestNarrative = async (context) => {
+  // Get API key from environment
+  const apiKey = process.env.REACT_APP_DEEPSEEK_API_KEY;
+  
+  if (!apiKey) {
+    console.error("DeepSeek API key not found");
+    return "AI analysis unavailable: API key not configured. Please add REACT_APP_DEEPSEEK_API_KEY to your .env file.";
   }
-  
-  const balloonAmount = params.requestedLoanAmount * (params.balloonPercentage / 100);
-  const maturityYear = params.proposedTenor || params.debtTenorYears || 5;
-  const maturityYearIndex = Math.min(maturityYear - 1, (stressedMetrics.rows?.length || 1) - 1);
-  const maturityMetrics = stressedMetrics.rows?.[maturityYearIndex];
-  
-  if (!maturityMetrics) {
-    return { level: "UNKNOWN", description: "Unable to assess", feasible: false };
-  }
-  
-  // FIXED: Calculate accumulated free cash flow to maturity
-  const accumulatedFCF = stressedMetrics.rows
-    ?.slice(0, maturityYearIndex + 1)
-    .reduce((sum, row) => sum + (row.fcfToEquity || 0), 0) || 0;
-  
-  const stressedLeverage = maturityMetrics.ndToEbitda;
-  const stressedDSCR = maturityMetrics.dscr;
-  const cashCoverage = accumulatedFCF / balloonAmount;
-  
-  // Multi-factor risk assessment
-  if (cashCoverage < 0.5 || stressedLeverage > 5.0 || stressedDSCR < 0.8) {
-    return {
-      level: "HIGH",
-      description: `Insufficient cash to refinance ${currencyFmtMM(balloonAmount, ccy)}`,
-      feasible: false,
-      metrics: { leverage: stressedLeverage, dscr: stressedDSCR, cashCoverage }
-    };
-  } else if (cashCoverage < 1.0 || stressedLeverage > 4.0 || stressedDSCR < 1.2) {
-    return {
-      level: "ELEVATED",
-      description: `Challenging refinancing for ${currencyFmtMM(balloonAmount, ccy)}`,
-      feasible: true,
-      metrics: { leverage: stressedLeverage, dscr: stressedDSCR, cashCoverage }
-    };
-  }
-  
-  return {
-    level: "MODERATE",
-    description: `Balloon refinancing feasible`,
-    feasible: true,
-    metrics: { leverage: stressedLeverage, dscr: stressedDSCR, cashCoverage }
-  };
-}
 
-// Calculate payment frequency impact
-function calculatePaymentFrequencyImpact(params, ccy) {
-  if (!params.requestedLoanAmount || params.requestedLoanAmount <= 0) {
-    return { riskLevel: "N/A", minCashBuffer: 0 };
+  try {
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        max_tokens: 2500,
+        temperature: 0.7,
+        messages: [
+          {
+            role: "user",
+            content: `You are a senior credit risk analyst providing stress test insights. Analyze these results and provide SPECIFIC, ACTIONABLE recommendations based on the ACTUAL numbers below.
+
+**FACILITY OVERVIEW:**
+- Total Debt Exposure: ${currencyFmtMM(context.totalDebt, context.ccy)}
+- Interest Rate: ${pctFmt(context.interestRate)} ${context.isFloating ? "(Floating - rate risk exposure!)" : "(Fixed)"}
+- Required Min DSCR: ${numFmt(context.covenants.minDSCR)}x
+- Required Max Leverage: ${numFmt(context.covenants.maxLeverage)}x
+${context.hasNewFacility ? `- New Facility Amount: ${currencyFmtMM(context.newFacilityAmount, context.ccy)} (incremental risk)` : ''}
+
+**STRESS TEST RESULTS:**
+- Total Scenarios Tested: ${context.totalScenarios}
+- Scenarios with Covenant Breaches: ${context.breachCount} (${((context.breachCount / context.totalScenarios) * 100).toFixed(0)}%)
+- Worst Case Scenario: ${context.worstCase.name}
+- Worst Case DSCR: ${numFmt(context.worstCase.minDSCR)}x ${context.worstCase.minDSCR < 1.0 ? "⚠️ INSUFFICIENT CASH FLOW" : ""}
+- Base Case DSCR: ${numFmt(context.baseCase.minDSCR)}x
+- Minimum Liquidity Runway: ${context.minRunway} months ${context.minRunway < 6 ? "⚠️ CRITICAL" : context.minRunway < 12 ? "⚠️ TIGHT" : "✅"}
+
+**BREAKING POINTS (Revenue Sensitivity):**
+- Safe Revenue Decline Threshold: ~${context.safeRevenueDip}%
+- DSCR Breach Point: Revenue decline of ${context.dscrBreakPoint}% → DSCR falls below ${numFmt(context.covenants.minDSCR)}x
+- Critical Threshold: Revenue decline of ${context.criticalThreshold}% → DSCR < 1.0x (default risk)
+
+**INTEREST RATE SENSITIVITY:**
+- Current Rate: ${pctFmt(context.interestRate)}
+- Rate Ceiling: Can tolerate +${context.rateCeiling}% increase before DSCR breach
+${context.isFloating ? "⚠️ FLOATING RATE = HIGH RISK. Consider hedging." : ""}
+
+${context.hasHistoricalData ? `
+**HISTORICAL PERFORMANCE:**
+- Years of Data: ${context.historicalYears} years
+- Historical Revenue Growth: ${pctFmt(context.historicalGrowth)} annually
+- Revenue Trajectory: ${context.revenueTrajectory}
+- Margin Trend: ${context.marginTrend}
+- Cash Flow Status: ${context.isPositiveCashFlow ? "✅ Currently profitable" : "⚠️ Operating at a loss (burn mode)"}
+- Historical Volatility: ${context.revenueVolatility}
+
+**TRAJECTORY ANALYSIS:**
+${context.trajectoryInsights}
+` : '**WARNING:** No historical data provided. Analysis based on projections only, which increases uncertainty.'}
+
+**INDUSTRY BENCHMARKING (${context.industry}):**
+- Your Leverage: ${numFmt(context.currentLeverage)}x vs Industry Median: ${numFmt(context.industryBenchmarks.medianLeverage)}x
+  → You are ${context.currentLeverage > context.industryBenchmarks.medianLeverage ? "ABOVE" : "BELOW"} median by ${numFmt(Math.abs(context.currentLeverage - context.industryBenchmarks.medianLeverage))}x
+- Your DSCR: ${numFmt(context.baseCase.minDSCR)}x vs Industry Median: ${numFmt(context.industryBenchmarks.medianDSCR)}x
+- Typical Industry Covenants: ${context.industryBenchmarks.typicalCovenants}
+
+**SCENARIO FAILURE ANALYSIS:**
+${context.failureReasons}
+
+**YOUR TASK:**
+Write a conversational, plain-English analysis (300-350 words) that includes:
+
+1. **Executive Summary** (2-3 sentences): Bottom line - what's the risk level and key concern?
+
+2. **Breaking Point Analysis** (specific numbers): 
+   - "Your facility can withstand a revenue decline of up to ${context.safeRevenueDip}% before approaching covenant limits."
+   - "At ${context.dscrBreakPoint}% revenue decline, you breach the ${numFmt(context.covenants.minDSCR)}x DSCR covenant."
+   - "Critical threshold is ${context.criticalThreshold}% revenue decline where DSCR < 1.0x."
+
+3. **Key Vulnerabilities** (3-4 specific bullets with numbers):
+   - Use ACTUAL numbers from the data above
+   - Example: "Your ${currencyFmtMM(context.totalDebt, context.ccy)} debt at ${numFmt(context.currentLeverage)}x leverage is ${Math.abs(context.currentLeverage - context.industryBenchmarks.medianLeverage) > 0.5 ? "significantly" : "moderately"} above the ${context.industry} industry median of ${numFmt(context.industryBenchmarks.medianLeverage)}x."
+
+4. **Actionable Recommendations** (4-5 specific bullets with numbers):
+   - Be SPECIFIC: "Reduce debt by $${((context.totalDebt - (context.industryBenchmarks.medianLeverage * context.baseCase.ebitda)) / 1000000).toFixed(1)}M to reach industry-standard ${numFmt(context.industryBenchmarks.medianLeverage)}x leverage"
+   - Include: capital structure changes, liquidity targets, operational improvements, hedging strategies
+   - Use phrases like "I recommend", "You should", "Target"
+
+5. **Risk Rating**: Based on the data, assign overall risk: LOW / MODERATE / ELEVATED / HIGH and justify with 1-2 sentences.
+
+Write in first person ("I recommend", "Based on your numbers"), be direct and honest, cite specific metrics, and make it actionable. Focus on what the user can DO about the risks identified.`
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    // ✅ FIXED: Correct path for DeepSeek API response
+    return data.choices?.[0]?.message?.content || "No response from AI service.";
+  } catch (error) {
+    console.error("AI narrative error:", error);
+    return `Unable to generate AI analysis: ${error.message}. Please review the quantitative stress test results above.`;
   }
-  
-  const paymentsPerYear = getPaymentsPerYear(params.paymentFrequency);
-  const annualDebtService = params.requestedLoanAmount * (params.proposedPricing || params.interestRate);
-  const paymentAmount = paymentsPerYear > 0 ? annualDebtService / paymentsPerYear : annualDebtService;
-  
-  const frequencyRisk = {
-    "Monthly": "HIGH", "Quarterly": "MODERATE", 
-    "Semi-Annually": "LOW", "Annually": "LOW", "Bullet": "HIGH"
-  };
-  
-  return {
-    riskLevel: frequencyRisk[params.paymentFrequency] || "MODERATE",
-    minCashBuffer: paymentAmount * 3,
-    paymentsPerYear,
-    paymentAmount,
-    annualDebtService
-  };
-}
+};
 
-// FIXED: Calculate volatility with better handling of edge cases
-function calculateVolatility(values) {
-  if (!values || values.length < 2) return 0;
-  
-  const positiveValues = values.filter(v => v > 0);
-  if (positiveValues.length < 2) return 0;
-  
-  const avg = positiveValues.reduce((sum, val) => sum + val, 0) / positiveValues.length;
-  if (avg === 0) return 0;
-  
-  const variance = positiveValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / positiveValues.length;
-  const stdDev = Math.sqrt(variance);
-  
-  return stdDev / avg; // Coefficient of variation
-}
-
-// FIXED: Calculate historical metrics with proper EBITDA calculation
-function calculateHistoricalBurnRates(historicalData) {
+// ✅ ENHANCED: Calculate historical metrics with trajectory analysis
+function calculateHistoricalMetrics(historicalData) {
   if (!historicalData || historicalData.length === 0) return null;
   
-  const validData = historicalData.filter(d => d.revenue > 0);
-  if (validData.length < 2) return null;
+  const validYears = historicalData.filter(d => d.revenue > 0);
+  if (validYears.length === 0) return null;
   
-  // Calculate operating cash flows
-  const operatingCashFlows = validData.map(year => {
-    const ebitda = year.ebitda || (year.revenue * 0.15); // Conservative estimate
-    const capex = year.capex || (year.revenue * 0.04);
-    const interestExpense = year.interestExpense || 0;
-    const taxes = year.taxExpense || (year.netIncome ? year.netIncome * 0.25 : 0);
-    const wcChange = year.workingCapitalChange || 0;
-    
-    return ebitda - capex - interestExpense - taxes - wcChange;
-  });
+  let avgGrowth = 0;
+  let revenueVolatility = "N/A";
+  let revenueTrajectory = "Insufficient data";
+  let marginTrend = "Unknown";
   
-  // Burn rate only applies when cash flow is negative
-  const burnRates = operatingCashFlows
-    .map(cf => cf < 0 ? Math.abs(cf) : 0)
-    .filter(b => b > 0);
-  
-  if (burnRates.length === 0) {
-    // Positive cash flow company
-    return {
-      avgMonthlyBurn: 0,
-      maxMonthlyBurn: 0,
-      yearsWithNegativeCash: 0,
-      burnVolatility: 0,
-      stressMultipliers: {
-        revenueDecline: 0.85,
-        burnRateIncrease: 1.3,
-        workingCapitalStrain: 1.2
-      },
-      isPositiveCashFlow: true
-    };
-  }
-  
-  const avgAnnualBurn = burnRates.reduce((sum, b) => sum + b, 0) / burnRates.length;
-  const maxAnnualBurn = Math.max(...burnRates);
-  
-  // Calculate revenue volatility
-  const revenueChanges = [];
-  for (let i = 1; i < validData.length; i++) {
-    if (validData[i-1].revenue > 0) {
-      revenueChanges.push((validData[i].revenue - validData[i-1].revenue) / validData[i-1].revenue);
+  if (validYears.length >= 2) {
+    const growthRates = [];
+    for (let i = 1; i < validYears.length; i++) {
+      const growth = (validYears[i].revenue - validYears[i-1].revenue) / validYears[i-1].revenue;
+      growthRates.push(growth);
     }
+    avgGrowth = growthRates.reduce((sum, g) => sum + g, 0) / growthRates.length;
+    
+    // Calculate volatility
+    const stdDev = Math.sqrt(
+      growthRates.reduce((sum, g) => sum + Math.pow(g - avgGrowth, 2), 0) / growthRates.length
+    );
+    
+    if (stdDev < 0.05) revenueVolatility = "Low (stable)";
+    else if (stdDev < 0.15) revenueVolatility = "Moderate";
+    else revenueVolatility = "High (volatile)";
+    
+    // Determine trajectory
+    const recentGrowth = growthRates[growthRates.length - 1];
+    if (recentGrowth > avgGrowth * 1.2) revenueTrajectory = "Accelerating growth";
+    else if (recentGrowth < avgGrowth * 0.8) revenueTrajectory = "Slowing growth";
+    else revenueTrajectory = "Steady growth";
   }
   
-  const worstRevenueDecline = revenueChanges.length > 0 ? Math.min(...revenueChanges, 0) : -0.15;
+  // Margin analysis
+  if (validYears.length >= 2) {
+    const margins = validYears.map(y => (y.ebitda || 0) / y.revenue);
+    const recentMargin = margins[margins.length - 1];
+    const avgMargin = margins.reduce((sum, m) => sum + m, 0) / margins.length;
+    
+    if (recentMargin > avgMargin * 1.1) marginTrend = "Improving (recent margin +10% above avg)";
+    else if (recentMargin < avgMargin * 0.9) marginTrend = "Deteriorating (recent margin -10% below avg)";
+    else marginTrend = "Stable";
+  }
+  
+  const avgRevenue = validYears.reduce((sum, y) => sum + y.revenue, 0) / validYears.length;
+  const avgEBITDA = validYears.reduce((sum, y) => sum + (y.ebitda || 0), 0) / validYears.length;
+  
+  // Generate trajectory insights
+  let trajectoryInsights = "";
+  if (validYears.length >= 3) {
+    const y1 = validYears[0];
+    const y2 = validYears[Math.floor(validYears.length / 2)];
+    const y3 = validYears[validYears.length - 1];
+    
+    trajectoryInsights = `Year 1: ${currencyFmtMM(y1.revenue, "USD")} revenue, ${y1.ebitda > 0 ? `+${currencyFmtMM(y1.ebitda, "USD")}` : `${currencyFmtMM(y1.ebitda, "USD")}`} EBITDA
+Year ${Math.floor(validYears.length / 2) + 1}: ${currencyFmtMM(y2.revenue, "USD")} revenue, ${y2.ebitda > 0 ? `+${currencyFmtMM(y2.ebitda, "USD")}` : `${currencyFmtMM(y2.ebitda, "USD")}`} EBITDA
+Year ${validYears.length}: ${currencyFmtMM(y3.revenue, "USD")} revenue, ${y3.ebitda > 0 ? `+${currencyFmtMM(y3.ebitda, "USD")}` : `${currencyFmtMM(y3.ebitda, "USD")}`} EBITDA
+${y1.ebitda < 0 && y3.ebitda > 0 ? "✅ Successfully achieved profitability" : ""}`;
+  }
   
   return {
-    avgMonthlyBurn: avgAnnualBurn / 12,
-    maxMonthlyBurn: maxAnnualBurn / 12,
-    yearsWithNegativeCash: burnRates.length,
-    burnVolatility: calculateVolatility(burnRates),
-    stressMultipliers: {
-      revenueDecline: 1 + worstRevenueDecline, // e.g., 0.85 for 15% decline
-      burnRateIncrease: 1.5,
-      workingCapitalStrain: 1.3
-    },
-    isPositiveCashFlow: false,
-    historicalMetrics: {
-      avgOperatingCashFlow: operatingCashFlows.reduce((sum, cf) => sum + cf, 0) / operatingCashFlows.length,
-      worstRevenueDecline
-    }
+    yearsOfData: validYears.length,
+    avgGrowth,
+    avgRevenue,
+    avgEBITDA,
+    isPositiveCashFlow: avgEBITDA > 0,
+    revenueVolatility,
+    revenueTrajectory,
+    marginTrend,
+    trajectoryInsights
   };
 }
 
-function calculateHistoricalLiquidityMetrics(historicalData) {
-  if (!historicalData || historicalData.length === 0) return { minCashBalance: 0 };
-  
-  const cashBalances = historicalData
-    .map(d => d.cashBalance || d.workingCapital * 0.3 || 0) // Estimate 30% of WC is cash
-    .filter(b => b > 0);
-    
-  return {
-    minCashBalance: cashBalances.length > 0 ? Math.min(...cashBalances) : 0,
-    avgCashBalance: cashBalances.length > 0 ? cashBalances.reduce((sum, b) => sum + b, 0) / cashBalances.length : 0,
-    cashVolatility: calculateVolatility(cashBalances)
-  };
-}
-
-// FIXED: Improved liquidity runway calculation
-function calculateLiquidityRunway(projection, scenarioKey, historicalAnalysis, params) {
+// ✅ ENHANCED: Calculate liquidity runway with proper stress adjustments
+function calculateLiquidityRunway(projection, scenarioKey, adjustments, params) {
   if (!projection || !projection.rows || projection.rows.length === 0) return 12;
   
   try {
-    // Use first year's cash balance or estimate from assets
     const firstYear = projection.rows[0];
-    const currentCash = firstYear?.cashBalance || 
-                       (firstYear?.workingCapital * 0.3) || 
-                       (params.totalAssets * 0.05) || 
-                       50000;
+    const currentCash = firstYear?.cash || 100000;
     
-    // Calculate OPERATING cash flow (before financing activities)
-    const operatingCashFlows = projection.rows.map(row => {
-      const ebitda = row.ebitda || 0;
-      const capex = row.capex || 0;
-      const wcChange = row.wcChange || 0;
-      const taxes = row.taxes || 0;
-      
-      return ebitda - capex - wcChange - taxes; // Before debt service
-    });
+    // Calculate stressed operating cash flow
+    const baseEBITDA = firstYear?.ebitda || 0;
+    const stressedRevenue = params.baseRevenue * (1 + (adjustments.revenueShock || 0));
+    const stressedEBITDA = baseEBITDA * (1 + (adjustments.revenueShock || 0)) * (1 - (adjustments.cogsShock || 0));
     
-    // Calculate average annual operating cash burn
-    const totalOperatingCF = operatingCashFlows.reduce((sum, cf) => sum + cf, 0);
-    const avgAnnualOperatingCF = totalOperatingCF / projection.rows.length;
+    // Account for increased debt service under rate shock
+    const baseDebtService = (params.openingDebt || 0 + params.requestedLoanAmount || 0) * params.interestRate;
+    const stressedDebtService = baseDebtService * (1 + (adjustments.rateShock || 0) / params.interestRate);
     
-    // If positive operating cash flow, runway is very long
-    if (avgAnnualOperatingCF >= 0) {
-      return 36; // 3+ years, effectively sustainable
-    }
+    // Account for working capital drain
+    const wcDrain = stressedRevenue * (adjustments.wcShock || 0);
     
-    // Calculate burn rate (negative cash flow)
-    const monthlyBurn = Math.abs(avgAnnualOperatingCF) / 12;
+    // Calculate monthly burn
+    const annualCashFlow = stressedEBITDA - stressedDebtService - wcDrain;
+    
+    if (annualCashFlow >= 0) return 36; // Positive cash flow = no liquidity concern
+    
+    const monthlyBurn = Math.abs(annualCashFlow) / 12;
     let runway = currentCash / monthlyBurn;
     
-    // Apply scenario-specific stress multipliers
-    const stressMultipliers = {
-      'revenueDown30': 0.5,
-      'severeRecession': 0.6,
-      'stagflation': 0.55,
-      'revenueDown20': 0.75,
-      'mildRecession': 0.80,
-      'marginCompression': 0.85
-    };
-    
-    const multiplier = stressMultipliers[scenarioKey] || 1.0;
-    runway *= multiplier;
-    
-    // Apply historical adjustments if available
-    if (historicalAnalysis && !historicalAnalysis.isPositiveCashFlow) {
-      runway /= (historicalAnalysis.stressMultipliers?.burnRateIncrease || 1.0);
-    }
-    
-    return Math.min(36, Math.max(0, Math.round(runway * 10) / 10));
+    return Math.round(runway * 10) / 10; // Don't cap artificially
   } catch (error) {
-    console.error("Error calculating liquidity runway:", error);
+    console.error("Error calculating liquidity:", error);
     return 12;
   }
 }
 
-// FIXED: Better risk level determination with weights
-function determineRiskLevel(metrics, params, historicalAnalysis) {
+// ✅ ENHANCED: Comprehensive risk scoring
+function determineRiskLevel(metrics, params, historicalMetrics) {
   const { totalBreaches, liquidityRunway, dscrCushion, leverageCushion, icrCushion } = metrics;
   
   let riskScore = 0;
+  let riskFactors = [];
   
-  // Covenant breaches (critical - 40 points)
-  if (totalBreaches > 0) riskScore += 40;
-  else if (dscrCushion < 0 || leverageCushion < 0 || icrCushion < 0) riskScore += 30;
-  else if (dscrCushion < 0.2 || leverageCushion < 0.5) riskScore += 20;
-  else if (dscrCushion < 0.5 || leverageCushion < 1.0) riskScore += 10;
-  
-  // Liquidity runway (critical - 30 points)
-  if (liquidityRunway < 3) riskScore += 30;
-  else if (liquidityRunway < 6) riskScore += 20;
-  else if (liquidityRunway < 12) riskScore += 10;
-  else if (liquidityRunway < 18) riskScore += 5;
-  
-  // ICR cushion (important - 20 points)
-  if (icrCushion < 0) riskScore += 20;
-  else if (icrCushion < 0.5) riskScore += 10;
-  else if (icrCushion < 1.0) riskScore += 5;
-  
-  // Historical volatility adjustment (10 points)
-  if (historicalAnalysis && historicalAnalysis.burnVolatility > 0.5) {
+  // Covenant breaches (0-40 points)
+  if (totalBreaches > 0) {
+    riskScore += 40;
+    riskFactors.push(`${totalBreaches} covenant breach(es)`);
+  } else if (dscrCushion < 0.2) {
+    riskScore += 20;
+    riskFactors.push("Thin DSCR cushion (<0.2)");
+  } else if (dscrCushion < 0.5) {
     riskScore += 10;
-  } else if (historicalAnalysis && historicalAnalysis.burnVolatility > 0.3) {
+    riskFactors.push("Limited DSCR cushion (<0.5)");
+  }
+  
+  // Liquidity (0-30 points)
+  if (liquidityRunway < 3) {
+    riskScore += 30;
+    riskFactors.push("Critical liquidity (<3 months)");
+  } else if (liquidityRunway < 6) {
+    riskScore += 20;
+    riskFactors.push("Tight liquidity (<6 months)");
+  } else if (liquidityRunway < 12) {
+    riskScore += 10;
+    riskFactors.push("Moderate liquidity (<12 months)");
+  }
+  
+  // Leverage cushion (0-15 points)
+  if (leverageCushion < 0) {
+    riskScore += 15;
+    riskFactors.push("Leverage covenant breach");
+  } else if (leverageCushion < 0.5) {
+    riskScore += 10;
+    riskFactors.push("Limited leverage headroom");
+  }
+  
+  // ICR cushion (0-10 points)
+  if (icrCushion < 0) {
+    riskScore += 10;
+    riskFactors.push("ICR covenant breach");
+  } else if (icrCushion < 0.5) {
     riskScore += 5;
+    riskFactors.push("Thin ICR cushion");
   }
   
-  // Risk level mapping
-  if (riskScore >= 60) return "HIGH";
-  if (riskScore >= 40) return "ELEVATED";
-  if (riskScore >= 20) return "MODERATE";
-  return "LOW";
-}
-
-// Custom tooltip component
-function CustomTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  
-  return (
-    <div className="rounded-lg border bg-white p-3 text-xs shadow-lg">
-      <div className="font-semibold mb-2 text-slate-800">{label}</div>
-      <div className="space-y-1">
-        {payload.map((entry, index) => (
-          <div key={index} className="flex justify-between gap-4">
-            <span className="text-slate-600">{entry.name}:</span>
-            <span className="font-semibold" style={{ color: entry.color }}>
-              {typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function DebtStressTesting({ params, ccy, baseProjection, historicalData = [], newFacilityParams }) {
-  if (!baseProjection) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-600 font-medium">Loading stress testing data...</p>
-          <p className="text-slate-500 text-sm mt-2">Building comprehensive stress scenarios...</p>
-        </div>
-      </div>
-    );
+  // Historical volatility (0-10 points)
+  if (historicalMetrics && historicalMetrics.revenueVolatility === "High (volatile)") {
+    riskScore += 10;
+    riskFactors.push("High revenue volatility");
   }
+  
+  // Floating rate risk (0-5 points)
+  if (params.dayCountConvention === "Actual/360" || !params.interestRate) {
+    riskScore += 5;
+    riskFactors.push("Floating rate exposure");
+  }
+  
+  // Determine level
+  let level = "LOW";
+  if (riskScore >= 60) level = "HIGH";
+  else if (riskScore >= 40) level = "ELEVATED";
+  else if (riskScore >= 20) level = "MODERATE";
+  
+  return { level, score: riskScore, factors: riskFactors };
+}
 
+// ✅ NEW: Calculate breaking points
+function calculateBreakingPoints(params, baseCase) {
+  const minDSCR = params.minDSCR || 1.25;
+  const baseEBITDA = baseCase.ebitda || params.baseRevenue * 0.2;
+  const annualDebtService = (params.openingDebt || 0 + params.requestedLoanAmount || 0) * params.interestRate;
+  
+  // DSCR = EBITDA / Debt Service
+  // Need: EBITDA / Debt Service >= minDSCR
+  // So: EBITDA >= minDSCR * Debt Service
+  const requiredEBITDA = minDSCR * annualDebtService;
+  const safeEBITDA = minDSCR * 1.2 * annualDebtService; // 20% cushion
+  
+  // Convert to revenue impact
+  const ebitdaMargin = baseEBITDA / params.baseRevenue;
+  const dscrBreachRevenue = requiredEBITDA / ebitdaMargin;
+  const safeRevenue = safeEBITDA / ebitdaMargin;
+  
+  const dscrBreakPoint = ((params.baseRevenue - dscrBreachRevenue) / params.baseRevenue) * 100;
+  const safeRevenueDip = ((params.baseRevenue - safeRevenue) / params.baseRevenue) * 100;
+  const criticalThreshold = ((params.baseRevenue - (annualDebtService / ebitdaMargin)) / params.baseRevenue) * 100;
+  
+  // Interest rate ceiling
+  const maxDebtService = baseEBITDA / minDSCR;
+  const maxRate = maxDebtService / (params.openingDebt || 0 + params.requestedLoanAmount || 0);
+  const rateCeiling = (maxRate - params.interestRate) * 100;
+  
+  return {
+    dscrBreakPoint: Math.abs(dscrBreakPoint).toFixed(1),
+    safeRevenueDip: Math.abs(safeRevenueDip).toFixed(1),
+    criticalThreshold: Math.abs(criticalThreshold).toFixed(1),
+    rateCeiling: rateCeiling.toFixed(1)
+  };
+}
+
+export default function DebtStressTesting({ 
+  params,
+  ccy = "USD", 
+  historicalData = [],
+  onNavigateToTab
+}) {
+
+
+  // ============================================================================
+  // ✅ ALL HOOKS FIRST - ALWAYS RUN IN SAME ORDER
+  // ============================================================================
+  
   const [selectedScenarios, setSelectedScenarios] = useState([
     'base', 'revenueDown20', 'rateHike300', 'mildRecession', 'severeRecession'
   ]);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [aiNarrative, setAiNarrative] = useState(null);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
 
-  // Historical analysis
-  const historicalAnalysis = useMemo(() => {
-    return calculateHistoricalBurnRates(historicalData);
+  // Data validation
+  const hasFinancialData = useMemo(() => {
+    return params?.baseRevenue > 0;
+  }, [params]);
+
+  const hasExistingDebt = useMemo(() => {
+    return params?.openingDebt > 0;
+  }, [params]);
+
+  const hasNewFacility = useMemo(() => {
+    return params?.requestedLoanAmount > 0;
+  }, [params]);
+
+  const hasAnyDebt = hasExistingDebt || hasNewFacility;
+
+  const hasHistoricalData = useMemo(() => {
+    return historicalData && historicalData.some(d => d.revenue > 0);
   }, [historicalData]);
 
-  const historicalLiquidityMetrics = useMemo(() => {
-    return calculateHistoricalLiquidityMetrics(historicalData);
+  const historicalMetrics = useMemo(() => {
+    return calculateHistoricalMetrics(historicalData);
   }, [historicalData]);
 
-  // Payment structure analysis
-  const paymentStructureAnalysis = useMemo(() => {
-    return {
-      frequency: calculatePaymentFrequencyImpact(params, ccy),
-      hasBalloon: params.balloonPercentage > 0,
-      balloonAmount: params.requestedLoanAmount * (params.balloonPercentage / 100),
-      dayCountImpact: params.dayCountConvention === "Actual/360" ? 1.014 : 1.0
-    };
-  }, [params, ccy]);
-
-  // Enhanced stress test results
+  // ✅ MUST RUN EVERY RENDER: Calculate stress test results
   const stressTestResults = useMemo(() => {
+    // Return empty if no data
+    if (!hasFinancialData || !hasAnyDebt) {
+      return {};
+    }
+
     setIsCalculating(true);
-    
     try {
       const results = {};
       
@@ -465,31 +503,9 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
         };
         
         // Build projection with stressed parameters
-        const existingDebtProjection = buildProjection(adjustedParams);
+        const projection = buildProjection(adjustedParams);
         
-        // New facility stress test
-        let combinedProjection = existingDebtProjection;
-        let refinancingRisk = { level: "N/A" };
-        
-        if (params.requestedLoanAmount > 0) {
-          const newFacilityAdjusted = {
-            ...adjustedParams,
-            openingDebt: params.openingDebt + params.requestedLoanAmount,
-            interestRate: params.proposedPricing + (adjustments.rateShock || 0),
-            balloonPercentage: params.balloonPercentage,
-            useBalloonPayment: params.useBalloonPayment,
-            customAmortizationIntervals: params.customAmortizationIntervals,
-            paymentFrequency: params.paymentFrequency,
-            dayCountConvention: params.dayCountConvention
-          };
-          
-          combinedProjection = buildProjection(newFacilityAdjusted);
-          refinancingRisk = calculateRefinancingRisk(params, combinedProjection, ccy);
-        }
-        
-        const projection = params.requestedLoanAmount > 0 ? combinedProjection : existingDebtProjection;
-        
-        // Extract metrics with safe defaults
+        // Extract metrics
         const minDSCR = projection.creditStats?.minDSCR || 1.0;
         const maxLeverage = projection.creditStats?.maxLeverage || 0;
         const minICR = projection.creditStats?.minICR || 1.0;
@@ -502,18 +518,13 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
         const leverageCushion = (params.maxNDToEBITDA || 3.5) - maxLeverage;
         const icrCushion = minICR - (params.targetICR || 2.0);
         
-        const liquidityRunway = calculateLiquidityRunway(projection, scenarioKey, historicalAnalysis, params);
+        const liquidityRunway = calculateLiquidityRunway(projection, scenarioKey, adjustments, params);
         
-        let riskLevel = determineRiskLevel(
+        const riskAssessment = determineRiskLevel(
           { totalBreaches, liquidityRunway, dscrCushion, leverageCushion, icrCushion },
-          params, historicalAnalysis
+          params,
+          historicalMetrics
         );
-        
-        // Adjust for refinancing risk
-        if (refinancingRisk.level === "HIGH") riskLevel = "HIGH";
-        if (paymentStructureAnalysis.frequency.riskLevel === "HIGH" && liquidityRunway < 6) {
-          if (riskLevel === "LOW") riskLevel = "MODERATE";
-        }
         
         const riskColorMap = {
           "LOW": COLORS.success.chart,
@@ -522,28 +533,35 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
           "HIGH": COLORS.danger.chart
         };
         
+        // Generate failure reason
+        let failureReason = "";
+        if (totalBreaches > 0 || minDSCR < 1.0) {
+          const revenueImpact = adjustments.revenueShock ? `Revenue drops ${Math.abs(adjustments.revenueShock * 100).toFixed(0)}%` : "";
+          const marginImpact = adjustments.cogsShock ? `Margin compression (COGS +${(adjustments.cogsShock * 100).toFixed(0)}%)` : "";
+          const rateImpact = adjustments.rateShock ? `Interest rates +${(adjustments.rateShock * 100).toFixed(0)}%` : "";
+          const wcImpact = adjustments.wcShock ? `WC drain +${(adjustments.wcShock * 100).toFixed(0)}% of revenue` : "";
+          
+          const impacts = [revenueImpact, marginImpact, rateImpact, wcImpact].filter(Boolean);
+          failureReason = `WHY IT FAILS: ${impacts.join(", ")} → DSCR drops to ${numFmt(minDSCR)}x`;
+        }
+        
         results[scenarioKey] = {
           name: scenario.name,
           description: scenario.description,
           color: scenario.color,
           minDSCR, maxLeverage, minICR, totalBreaches,
           dscrCushion, leverageCushion, icrCushion,
-          liquidityRunway, riskLevel,
-          riskColor: riskColorMap[riskLevel],
+          liquidityRunway, 
+          riskLevel: riskAssessment.level,
+          riskScore: riskAssessment.score,
+          riskFactors: riskAssessment.factors,
+          riskColor: riskColorMap[riskAssessment.level],
           projection,
-          existingDebtMetrics: {
-            minDSCR: existingDebtProjection.creditStats?.minDSCR || 1.0,
-            maxLeverage: existingDebtProjection.creditStats?.maxLeverage || 0
-          },
-          combinedMetrics: params.requestedLoanAmount > 0 ? {
-            minDSCR: combinedProjection.creditStats?.minDSCR || 1.0,
-            maxLeverage: combinedProjection.creditStats?.maxLeverage || 0
-          } : null,
-          refinancingRisk,
           equityValue: projection.equityValue || 0,
           equityMOIC: projection.moic || 0,
           irr: projection.irr || 0,
-          usesHistoricalData: historicalAnalysis !== null
+          failureReason,
+          ebitda: projection.rows?.[0]?.ebitda || 0
         };
       });
       
@@ -554,60 +572,14 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
     } finally {
       setIsCalculating(false);
     }
-  }, [params, baseProjection, historicalAnalysis, paymentStructureAnalysis, ccy]);
+  }, [params, hasFinancialData, hasAnyDebt, historicalMetrics]);
 
-  // Chart data preparation
-  const comparisonData = useMemo(() => {
-    return selectedScenarios.map(key => ({
-      scenario: DEBT_STRESS_SCENARIOS[key].name,
-      minDSCR: stressTestResults[key]?.minDSCR || 0,
-      covenant: params.minDSCR,
-      color: DEBT_STRESS_SCENARIOS[key].color
-    }));
-  }, [selectedScenarios, stressTestResults, params.minDSCR]);
-
-  const cushionRadarData = useMemo(() => {
-    return selectedScenarios.map(key => ({
-      scenario: DEBT_STRESS_SCENARIOS[key].name.substring(0, 15),
-      "DSCR Cushion": Math.max(0, (stressTestResults[key]?.dscrCushion || 0) * 100),
-      "Leverage Cushion": Math.max(0, (stressTestResults[key]?.leverageCushion || 0) * 50),
-      "ICR Cushion": Math.max(0, (stressTestResults[key]?.icrCushion || 0) * 50),
-      "Liquidity": Math.min(100, (stressTestResults[key]?.liquidityRunway || 0) / 24 * 100)
-    }));
-  }, [selectedScenarios, stressTestResults]);
-
-  const liquidityData = useMemo(() => {
-    return selectedScenarios.map(key => ({
-      scenario: DEBT_STRESS_SCENARIOS[key].name,
-      liquidityRunway: Math.min(36, stressTestResults[key]?.liquidityRunway || 0),
-      riskColor: stressTestResults[key]?.riskColor || COLORS.success.chart
-    }));
-  }, [selectedScenarios, stressTestResults]);
-
-  const valuationImpactData = useMemo(() => {
-    const baseValue = stressTestResults.base?.equityValue || 1;
-    return selectedScenarios.map(key => ({
-      scenario: DEBT_STRESS_SCENARIOS[key].name,
-      equityValue: (stressTestResults[key]?.equityValue || 0) / 1_000_000,
-      valueLoss: baseValue > 0 ? ((baseValue - (stressTestResults[key]?.equityValue || 0)) / baseValue) * 100 : 0,
-      moic: stressTestResults[key]?.equityMOIC || 0,
-      irr: (stressTestResults[key]?.irr || 0) * 100
-    }));
-  }, [selectedScenarios, stressTestResults]);
-
-  // Toggle scenario selection
-  const toggleScenario = (scenarioKey) => {
-    if (selectedScenarios.includes(scenarioKey)) {
-      if (selectedScenarios.length > 1) {
-        setSelectedScenarios(selectedScenarios.filter(k => k !== scenarioKey));
-      }
-    } else {
-      setSelectedScenarios([...selectedScenarios, scenarioKey]);
-    }
-  };
-
-  // Find worst case scenario
+  // ✅ MUST RUN EVERY RENDER: Find worst case scenario
   const worstCaseScenario = useMemo(() => {
+    if (!hasFinancialData || !hasAnyDebt || Object.keys(stressTestResults).length === 0) {
+      return null;
+    }
+    
     let worst = null;
     let lowestDSCR = Infinity;
     
@@ -619,21 +591,253 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
     });
     
     return worst;
-    
-    return worst;
-  }, [stressTestResults]);
+  }, [stressTestResults, hasFinancialData, hasAnyDebt]);
 
-  // Handle export
-  const handleExport = () => {
-    exportComprehensiveStressTestReport(
-      stressTestResults, 
-      params, 
-      historicalAnalysis, 
-      historicalLiquidityMetrics, 
-      selectedScenarios, 
+  // ✅ MUST RUN EVERY RENDER: AI Narrative Generation
+  // âœ… MANUAL AI TRIGGER FUNCTION (replaces auto-running useEffect)
+const triggerAIAnalysis = async () => {
+  if (!hasFinancialData || !hasAnyDebt) {
+    setAiNarrative("⚠️ No data available for AI analysis.");
+    return;
+  }
+  if (!stressTestResults || Object.keys(stressTestResults).length === 0) {
+    setAiNarrative("⚠️ Stress test results not ready.");
+    return;
+  }
+  if (!worstCaseScenario) {
+    setAiNarrative("⚠️ Unable to determine worst case scenario.");
+    return;
+  }
+
+  setIsLoadingAI(true);
+  
+  try {
+    const breachCount = Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length;
+    const minRunway = Math.min(...Object.values(stressTestResults).map(r => r.liquidityRunway));
+    const baseCase = stressTestResults.base;
+    
+    // Get industry benchmarks
+    const industryBenchmarks = INDUSTRY_BENCHMARKS[params.industry] || INDUSTRY_BENCHMARKS['default'];
+    
+    // Calculate breaking points
+    const breakingPoints = calculateBreakingPoints(params, baseCase);
+    
+    // Calculate current leverage
+    const totalDebt = (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+    const currentLeverage = totalDebt / (baseCase?.ebitda || params.baseRevenue * 0.2);
+    
+    // Generate failure reasons for worst scenarios
+    const worstScenarios = Object.values(stressTestResults)
+      .filter(r => r.totalBreaches > 0 || r.minDSCR < 1.25)
+      .sort((a, b) => a.minDSCR - b.minDSCR)
+      .slice(0, 3);
+    
+    const failureReasons = worstScenarios.map((s, i) => 
+      `${i + 1}. ${s.name}: ${s.failureReason}`
+    ).join('\n');
+    
+    const narrative = await generateStressTestNarrative({
+      totalScenarios: Object.keys(DEBT_STRESS_SCENARIOS).length,
+      breachCount,
+      worstCase: worstCaseScenario,
+      minRunway,
+      baseCase,
+      totalDebt,
+      interestRate: params.interestRate,
+      isFloating: params.dayCountConvention === "Actual/360",
+      covenants: {
+        minDSCR: params.minDSCR || 1.25,
+        maxLeverage: params.maxNDToEBITDA || 3.5
+      },
+      hasHistoricalData: hasHistoricalData,
+      historicalYears: historicalMetrics?.yearsOfData || 0,
+      historicalGrowth: historicalMetrics?.avgGrowth || 0,
+      isPositiveCashFlow: historicalMetrics?.isPositiveCashFlow || false,
+      revenueVolatility: historicalMetrics?.revenueVolatility || "Unknown",
+      revenueTrajectory: historicalMetrics?.revenueTrajectory || "Unknown",
+      marginTrend: historicalMetrics?.marginTrend || "Unknown",
+      trajectoryInsights: historicalMetrics?.trajectoryInsights || "No historical data available",
+      hasNewFacility: hasNewFacility,
+      newFacilityAmount: params.requestedLoanAmount || 0,
+      industry: params.industry || "General Industry",
+      industryBenchmarks,
+      currentLeverage,
+      safeRevenueDip: breakingPoints.safeRevenueDip,
+      dscrBreakPoint: breakingPoints.dscrBreakPoint,
+      criticalThreshold: breakingPoints.criticalThreshold,
+      rateCeiling: breakingPoints.rateCeiling,
+      failureReasons,
       ccy
+    });
+    
+    setAiNarrative(narrative);
+  } catch (error) {
+    console.error("Failed to fetch AI narrative:", error);
+    setAiNarrative(`Unable to generate AI analysis: ${error.message}. Please review the quantitative results above.`);
+  } finally {
+    setIsLoadingAI(false);
+  }
+};
+  // ============================================================================
+  // ✅ EARLY RETURNS: After ALL hooks are called
+  // ============================================================================
+  
+  if (!hasFinancialData) {
+    return (
+      <div className="space-y-6 p-4 bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+        <Card className="border-l-4 border-l-yellow-600 bg-yellow-50 shadow-lg">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-4">
+              <Database className="w-12 h-12 text-yellow-600 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-yellow-900 mb-3">📊 No Financial Data for Stress Testing</h3>
+                <p className="text-yellow-800 mb-4">
+                  Stress testing requires baseline financial projections. Please enter your company's financial assumptions first.
+                </p>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2 text-sm text-yellow-800">
+                    <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>Enter base revenue and growth assumptions</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm text-yellow-800">
+                    <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>Configure debt parameters (existing or new facility)</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm text-yellow-800">
+                    <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>Add historical data for enhanced accuracy (optional)</span>
+                  </div>
+                </div>
+                {onNavigateToTab && (
+                  <div className="mt-6">
+                    <button
+                      onClick={() => onNavigateToTab('historical-data')}
+                      className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition-all duration-200"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Enter Financial Data
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* What is Stress Testing? */}
+        <Card className="border-l-4 border-l-blue-600 shadow-md">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+            <CardTitle className="flex items-center gap-2">
+              <Info className="w-5 h-5 text-blue-600" />
+              What is Debt Stress Testing?
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <p className="text-slate-700 mb-4">
+              Debt stress testing simulates adverse scenarios to assess whether your business can meet debt obligations 
+              under challenging conditions like revenue declines, margin compression, or rising interest rates.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h4 className="font-bold text-blue-900 mb-2">🎯 Risk Assessment</h4>
+                <p className="text-sm text-blue-800">Identify breaking points before they happen</p>
+              </div>
+              <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                <h4 className="font-bold text-emerald-900 mb-2">📊 Covenant Compliance</h4>
+                <p className="text-sm text-emerald-800">Test DSCR, leverage, and ICR under stress</p>
+              </div>
+              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                <h4 className="font-bold text-purple-900 mb-2">🤖 AI Insights</h4>
+                <p className="text-sm text-purple-800">Get actionable recommendations in plain English</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     );
-  };
+  }
+
+  if (!hasAnyDebt) {
+    return (
+      <div className="space-y-6 p-4 bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+        <Card className="border-l-4 border-l-orange-600 bg-orange-50 shadow-lg">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-4">
+              <FileText className="w-12 h-12 text-orange-600 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-orange-900 mb-3">💰 No Debt to Stress Test</h3>
+                <p className="text-orange-800 mb-4">
+                  Stress testing requires debt obligations. Configure either existing debt or a new facility to begin analysis.
+                </p>
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-start gap-2 text-sm text-orange-800">
+                    <CheckCircle className="w-4 h-4 mt-0.5 text-emerald-600 flex-shrink-0" />
+                    <span className="font-semibold">✅ Financial Data: {currencyFmtMM(params.baseRevenue, ccy)} base revenue</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm text-orange-800">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>❌ Existing Debt: Not configured</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm text-orange-800">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>❌ New Facility: Not configured</span>
+                  </div>
+                </div>
+                {onNavigateToTab && (
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      onClick={() => onNavigateToTab('deal-information')}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-all duration-200"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Configure New Facility
+                    </button>
+                    <button
+                      onClick={() => onNavigateToTab('opening-debt-schedule')}
+                      className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-all duration-200"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Add Existing Debt
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Current Financial Profile */}
+        <Card className="border-l-4 border-l-emerald-600 shadow-md">
+          <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 border-b">
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-emerald-600" />
+              Current Financial Profile
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="text-xs text-slate-500 font-semibold uppercase mb-1">Base Revenue</div>
+                <div className="text-2xl font-bold text-slate-800">{currencyFmtMM(params.baseRevenue, ccy)}</div>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="text-xs text-slate-500 font-semibold uppercase mb-1">Growth Rate</div>
+                <div className="text-2xl font-bold text-slate-800">{pctFmt(params.growth || 0)}</div>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="text-xs text-slate-500 font-semibold uppercase mb-1">Industry</div>
+                <div className="text-lg font-bold text-slate-800">{params.industry || "Not set"}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // ✅ MAIN RENDER: Data is complete - proceed with stress testing
+  // ============================================================================
 
   // Loading state
   if (isCalculating || !stressTestResults || Object.keys(stressTestResults).length === 0) {
@@ -648,90 +852,34 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
     );
   }
 
+  const breachCount = Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length;
+  const totalDebt = (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+
+  // Toggle scenario selection
+  const toggleScenario = (scenarioKey) => {
+    if (selectedScenarios.includes(scenarioKey)) {
+      if (selectedScenarios.length > 1) {
+        setSelectedScenarios(selectedScenarios.filter(k => k !== scenarioKey));
+      }
+    } else {
+      setSelectedScenarios([...selectedScenarios, scenarioKey]);
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Payment Structure Risk Analysis Card */}
-      {params.requestedLoanAmount > 0 && (
-        <Card className="border-l-4 border-l-indigo-600 shadow-md hover:shadow-lg transition-all duration-200">
-          <CardHeader className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b">
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-indigo-600" />
-              Payment Structure Risk Analysis
-            </CardTitle>
-          </CardHeader>
+    <div className="space-y-6 p-4 bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+      {/* Debt Type Banner */}
+      {hasExistingDebt && hasNewFacility && (
+        <Card className="border-l-4 border-l-purple-600 bg-gradient-to-r from-purple-50 to-indigo-50 shadow-md">
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Balloon Refinancing Risk */}
-              {params.balloonPercentage > 0 && (
-                <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                  <h4 className="font-semibold text-sm mb-2 opacity-90">Balloon Refinancing</h4>
-                  <div className="text-2xl font-bold mb-1">
-                    {currencyFmtMM(paymentStructureAnalysis.balloonAmount, ccy)}
-                  </div>
-                  <div className="text-xs opacity-80 mb-3">
-                    Due in Year {params.proposedTenor || params.debtTenorYears}
-                  </div>
-                  <div className="mt-3 space-y-1 bg-white/20 rounded p-2">
-                    {selectedScenarios.slice(0, 3).map(key => {
-                      const risk = stressTestResults[key]?.refinancingRisk || { level: "UNKNOWN", feasible: false };
-                      return (
-                        <div key={key} className="flex justify-between text-xs">
-                          <span className="truncate">{DEBT_STRESS_SCENARIOS[key].name}:</span>
-                          <span className={`font-bold ${risk.feasible ? "text-emerald-200" : "text-red-200"}`}>
-                            {risk.feasible ? "✓" : "✗"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              
-              {/* Payment Frequency Impact */}
-              <div className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                <h4 className="font-semibold text-sm mb-2 opacity-90">Payment Frequency</h4>
-                <div className="text-2xl font-bold mb-1">
-                  {params.paymentFrequency || "Quarterly"}
-                </div>
-                <div className="text-xs opacity-80 mb-3">
-                  {paymentStructureAnalysis.frequency.paymentsPerYear} payments/year
-                </div>
-                <div className="mt-3 text-xs space-y-1 bg-white/20 rounded p-2">
-                  <div className="flex justify-between">
-                    <span>Risk Level:</span>
-                    <span className="font-bold">
-                      {paymentStructureAnalysis.frequency.riskLevel}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Min Buffer:</span>
-                    <span className="font-bold">
-                      {currencyFmtMM(paymentStructureAnalysis.frequency.minCashBuffer, ccy)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Day Count Impact */}
-              <div className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                <h4 className="font-semibold text-sm mb-2 opacity-90">Interest Impact</h4>
-                <div className="text-2xl font-bold mb-1">
-                  {params.dayCountConvention || "Actual/365"}
-                </div>
-                <div className="text-xs opacity-80 mb-3">
-                  {params.dayCountConvention === "Actual/360" 
-                    ? "Higher effective rate" 
-                    : "Standard calculation"}
-                </div>
-                <div className="mt-3 text-xs bg-white/20 rounded p-2">
-                  <div className="flex justify-between">
-                    <span>Extra Interest/yr:</span>
-                    <span className="font-bold">
-                      {params.dayCountConvention === "Actual/360" 
-                        ? currencyFmtMM(params.requestedLoanAmount * params.proposedPricing * 0.014, ccy)
-                        : "None"}
-                    </span>
-                  </div>
+            <div className="flex items-start gap-3">
+              <TrendingUp className="w-6 h-6 text-purple-600 mt-0.5" />
+              <div>
+                <div className="font-bold text-purple-900 text-lg mb-2">🔄 Combined Debt Analysis</div>
+                <div className="text-sm text-purple-800">
+                  Testing <strong>existing debt of {currencyFmtMM(params.openingDebt, ccy)}</strong> plus{' '}
+                  <strong>new facility of {currencyFmtMM(params.requestedLoanAmount, ccy)}</strong>.
+                  Total exposure: <strong>{currencyFmtMM(totalDebt, ccy)}</strong>
                 </div>
               </div>
             </div>
@@ -739,136 +887,217 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
         </Card>
       )}
 
-      {/* Historical Context Card */}
-      {historicalData.length > 0 && (
-        <Card className="border-l-4 border-l-purple-600 shadow-sm hover:shadow-md transition-all duration-200">
-          <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
-            <CardTitle className="flex items-center gap-2">
-              <History className="w-6 h-6 text-purple-600" />
-              Historical Context & Assumptions
-            </CardTitle>
-          </CardHeader>
+      {hasExistingDebt && !hasNewFacility && (
+        <Card className="border-l-4 border-l-blue-600 bg-gradient-to-r from-blue-50 to-cyan-50 shadow-md">
           <CardContent className="pt-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                <div className="text-xs font-semibold opacity-90 mb-1">Historical Years</div>
-                <div className="text-3xl font-bold">{historicalData.length}</div>
-                <div className="text-xs opacity-80">Years of data</div>
-              </div>
-              
-              <div className="text-center p-4 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                <div className="text-xs font-semibold opacity-90 mb-1">Operating CF</div>
-                <div className="text-3xl font-bold">
-                  {historicalAnalysis?.isPositiveCashFlow ? "+" : "-"}
+            <div className="flex items-start gap-3">
+              <Shield className="w-6 h-6 text-blue-600 mt-0.5" />
+              <div>
+                <div className="font-bold text-blue-900 text-lg mb-2">📊 Existing Debt Stress Test</div>
+                <div className="text-sm text-blue-800">
+                  Analyzing resilience of <strong>existing debt of {currencyFmtMM(params.openingDebt, ccy)}</strong> under adverse scenarios.
                 </div>
-                <div className="text-xs opacity-80">
-                  {historicalAnalysis?.isPositiveCashFlow ? "Positive" : "Burn mode"}
-                </div>
-              </div>
-              
-              <div className="text-center p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                <div className="text-xs font-semibold opacity-90 mb-1">Min Cash</div>
-                <div className="text-2xl font-bold">
-                  {currencyFmtMM(historicalLiquidityMetrics.minCashBalance, ccy)}
-                </div>
-                <div className="text-xs opacity-80">Historical low</div>
-              </div>
-              
-              <div className="text-center p-4 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
-                <div className="text-xs font-semibold opacity-90 mb-1">Data Quality</div>
-                <div className="text-3xl font-bold">
-                  {historicalAnalysis?.yearsWithNegativeCash > 0 ? "High" : "Good"}
-                </div>
-                <div className="text-xs opacity-80">Analysis depth</div>
               </div>
             </div>
-            
-            {historicalAnalysis?.stressMultipliers && (
-              <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <h4 className="font-semibold text-sm mb-3 text-slate-800 flex items-center gap-2">
-                  <Info className="w-4 h-4" />
-                  Historical Stress Patterns
-                </h4>
-                <div className="grid grid-cols-3 gap-4 text-xs">
-                  <div className="p-2 bg-white rounded border border-slate-200">
-                    <span className="font-medium text-slate-600">Revenue Decline: </span>
-                    <span className="font-bold text-slate-800">
-                      {pctFmt((historicalAnalysis.stressMultipliers.revenueDecline - 1))}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-white rounded border border-slate-200">
-                    <span className="font-medium text-slate-600">Burn Increase: </span>
-                    <span className="font-bold text-slate-800">
-                      {pctFmt(historicalAnalysis.stressMultipliers.burnRateIncrease - 1)}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-white rounded border border-slate-200">
-                    <span className="font-medium text-slate-600">WC Strain: </span>
-                    <span className="font-bold text-slate-800">
-                      {pctFmt(historicalAnalysis.stressMultipliers.workingCapitalStrain - 1)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}
 
-      {/* Enhanced Summary KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Scenarios Tested</div>
-          <div className="text-3xl font-bold">{Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
-          <div className="text-xs opacity-80">Comprehensive</div>
-        </div>
-        
-        <div className={`p-5 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105 ${
-          worstCaseScenario?.minDSCR < params.minDSCR 
-            ? 'bg-gradient-to-br from-red-500 to-red-600' 
-            : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
-        }`}>
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Worst Case DSCR</div>
-          <div className="text-3xl font-bold">{numFmt(worstCaseScenario?.minDSCR || 0)}</div>
-          <div className="text-xs opacity-80 truncate">{worstCaseScenario?.name || "N/A"}</div>
-        </div>
-        
-        <div className={`p-5 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105 ${
-          Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length > 0
-            ? 'bg-gradient-to-br from-amber-500 to-amber-600'
-            : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
-        }`}>
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">With Breaches</div>
-          <div className="text-3xl font-bold">
-            {Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length}
-          </div>
-          <div className="text-xs opacity-80">Out of {Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
-        </div>
-        
-        {params.balloonPercentage > 0 && (
-          <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
-            <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Refinanceable</div>
-            <div className="text-3xl font-bold">
-              {Object.values(stressTestResults).filter(r => r.refinancingRisk?.feasible).length}
+      {!hasExistingDebt && hasNewFacility && (
+        <Card className="border-l-4 border-l-emerald-600 bg-gradient-to-r from-emerald-50 to-green-50 shadow-md">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <Sparkles className="w-6 h-6 text-emerald-600 mt-0.5" />
+              <div>
+                <div className="font-bold text-emerald-900 text-lg mb-2">🆕 New Facility Stress Test</div>
+                <div className="text-sm text-emerald-800">
+                  Pre-approval stress testing for <strong>proposed facility of {currencyFmtMM(params.requestedLoanAmount, ccy)}</strong>.
+                </div>
+              </div>
             </div>
-            <div className="text-xs opacity-80">Balloon scenarios</div>
-          </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Historical Context Banner */}
+      {hasHistoricalData && (
+        <Card className="border-l-4 border-l-amber-600 bg-gradient-to-r from-amber-50 to-yellow-50 shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <History className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                  ✅ Enhanced with Historical Data
+                </div>
+                <div className="text-sm text-amber-800">
+                  Analysis enhanced with <strong>{historicalMetrics.yearsOfData} years</strong> of historical data. 
+                  Avg growth: <strong>{pctFmt(historicalMetrics.avgGrowth)}</strong>. 
+                  Cash flow: <strong>{historicalMetrics.isPositiveCashFlow ? "Positive ✅" : "Negative (burn mode) ⚠️"}</strong>
+                  {" | "}Trajectory: <strong>{historicalMetrics.revenueTrajectory}</strong>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+  {/* Summary KPIs */}
+<div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+  <div className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
+    <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Scenarios Tested</div>
+    <div className="text-3xl font-bold">{Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
+    <div className="text-xs opacity-80">Comprehensive</div>
+  </div>
+  
+  <div className={`p-5 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105 ${
+    worstCaseScenario?.minDSCR < params.minDSCR 
+      ? 'bg-gradient-to-br from-red-500 to-red-600' 
+      : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
+  }`}>
+    <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Worst Case DSCR</div>
+    <div className="text-3xl font-bold">{numFmt(worstCaseScenario?.minDSCR || 0)}</div>
+    <div className="text-xs opacity-80 truncate">{worstCaseScenario?.name || "N/A"}</div>
+  </div>
+  
+  <div className={`p-5 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105 ${
+    breachCount > 0
+      ? 'bg-gradient-to-br from-amber-500 to-amber-600'
+      : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
+  }`}>
+    <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">With Breaches</div>
+    <div className="text-3xl font-bold">{breachCount}</div>
+    <div className="text-xs opacity-80">Out of {Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
+  </div>
+  
+  <div className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
+    <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Total Exposure</div>
+    <div className="text-2xl font-bold">
+      {currencyFmtMM(totalDebt, ccy)}
+    </div>
+    <div className="text-xs opacity-80">
+      {hasExistingDebt && hasNewFacility ? "Combined" : hasNewFacility ? "New Only" : "Existing Only"}
+    </div>
+  </div>
+  
+  <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
+    <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Data Quality</div>
+    <div className="text-2xl font-bold">{hasHistoricalData ? "Enhanced" : "Standard"}</div>
+    <div className="text-xs opacity-80">{hasHistoricalData ? `${historicalMetrics.yearsOfData} yrs data` : "Projection only"}</div>
+  </div>
+</div>
+
+{/* AI-POWERED RISK NARRATIVE */}
+<Card className="border-l-4 border-l-emerald-600 shadow-xl hover:shadow-2xl transition-all duration-300">
+  <CardHeader className="bg-gradient-to-r from-emerald-50 via-green-50 to-teal-50 border-b">
+    <div className="flex items-center justify-between">
+      <CardTitle className="flex items-center gap-2">
+        <Sparkles className="w-6 h-6 text-emerald-600" />
+        <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+          AI Credit Officer Analysis
+        </span>
+      </CardTitle>
+      {/* Manual trigger button */}
+      <button
+        onClick={triggerAIAnalysis}
+        disabled={isLoadingAI}
+        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold rounded-md shadow hover:from-emerald-600 hover:to-teal-700 transition-all disabled:from-slate-400 disabled:to-slate-500 disabled:cursor-not-allowed"
+      >
+        {isLoadingAI ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Analyzing...</span>
+          </>
+        ) : (
+          <>
+            <Sparkles className="w-4 h-4" />
+            <span>Generate Credit Analysis</span>
+          </>
         )}
-        
-        <div className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Analysis Type</div>
-          <div className="text-2xl font-bold">{params.requestedLoanAmount > 0 ? "Combined" : "Existing"}</div>
-          <div className="text-xs opacity-80">{historicalData.length > 0 ? "Historical+" : "Projection"}</div>
+      </button>
+    </div>
+  </CardHeader>
+  
+  <CardContent className="pt-6">
+    {/* Quick Risk Indicators */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className={`p-4 rounded-lg border-2 shadow-sm ${
+        worstCaseScenario?.riskLevel === "HIGH" 
+          ? "bg-red-50 border-red-200" 
+          : worstCaseScenario?.riskLevel === "ELEVATED"
+          ? "bg-orange-50 border-orange-200"
+          : worstCaseScenario?.riskLevel === "MODERATE"
+          ? "bg-yellow-50 border-yellow-200"
+          : "bg-emerald-50 border-emerald-200"
+      }`}>
+        <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Overall Risk Level</div>
+        <div className={`text-xl font-bold ${
+          worstCaseScenario?.riskLevel === "HIGH" ? "text-red-600" :
+          worstCaseScenario?.riskLevel === "ELEVATED" ? "text-orange-600" :
+          worstCaseScenario?.riskLevel === "MODERATE" ? "text-yellow-600" :
+          "text-emerald-600"
+        }`}>
+          {worstCaseScenario?.riskLevel || "LOW"}
+        </div>
+        <div className="text-xs text-slate-600 mt-1">
+          Risk Score: {worstCaseScenario?.riskScore || 0}/100
         </div>
       </div>
+      
+      <div className="p-4 bg-blue-50 rounded-lg border-2 border-blue-200 shadow-sm">
+        <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Min Liquidity</div>
+        <div className="text-xl font-bold text-blue-600">
+          {Math.min(...Object.values(stressTestResults).map(r => r.liquidityRunway))} mos
+        </div>
+        <div className="text-xs text-slate-600 mt-1">
+          Worst case runway
+        </div>
+      </div>
+      
+      <div className="p-4 bg-purple-50 rounded-lg border-2 border-purple-200 shadow-sm">
+        <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Covenant Cushion</div>
+        <div className="text-xl font-bold text-purple-600">
+          {worstCaseScenario ? numFmt(worstCaseScenario.dscrCushion) : "N/A"}
+        </div>
+        <div className="text-xs text-slate-600 mt-1">
+          DSCR headroom
+        </div>
+      </div>
+    </div>
+    
+    {/* AI Narrative */}
+    <div className="p-5 bg-gradient-to-r from-slate-50 via-white to-slate-50 rounded-lg border-2 border-emerald-200 shadow-inner">
+      <div className="flex items-center gap-2 mb-4">
+        <Sparkles className="w-5 h-5 text-emerald-600 animate-pulse" />
+        <div className="font-bold text-base text-slate-800">Senior Credit Officer Assessment</div>
+      </div>
+      
+      {!aiNarrative && !isLoadingAI ? (
+        <div className="text-center py-8 text-slate-600">
+          <Sparkles className="w-12 h-12 mx-auto mb-3 text-slate-400" />
+          <p className="font-semibold mb-2">AI Credit Analysis Available</p>
+          <p className="text-sm">Click "Generate Credit Analysis" above to get a detailed lender-perspective assessment of default risk, collateral adequacy, and loan approval recommendation</p>
+        </div>
+      ) : isLoadingAI ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+          <span className="ml-3 text-slate-600">Analyzing loan structure and stress scenarios from lender's perspective...</span>
+        </div>
+      ) : (
+        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-white p-4 rounded border border-slate-200 shadow-sm">
+          {aiNarrative}
+        </div>
+      )}
+    </div>
+  </CardContent>
+</Card>
 
-      {/* Scenario Selection Card */}
+      {/* Scenario Selection */}
       <Card className="shadow-sm hover:shadow-md transition-all duration-200">
         <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
           <CardTitle className="flex items-center gap-2">
             <Activity className="w-6 h-6 text-blue-600" />
             Select Scenarios to Compare
-            {historicalData.length > 0 && (
+            {hasHistoricalData && (
               <span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full ml-2 font-semibold border border-emerald-200">
                 Historical Data Integrated
               </span>
@@ -912,12 +1141,6 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                         {result?.liquidityRunway >= 36 ? "36+" : numFmt(result?.liquidityRunway || 0)} mos
                       </span>
                     </div>
-                    {result?.usesHistoricalData && (
-                      <div className="flex items-center gap-1 text-emerald-600">
-                        <History className="w-3 h-3" />
-                        <span className="font-semibold">Historical</span>
-                      </div>
-                    )}
                   </div>
                 </button>
               );
@@ -926,26 +1149,14 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
         </CardContent>
       </Card>
 
-      {/* Covenant Compliance Table - Enhanced */}
+      {/* Covenant Compliance Table */}
       <Card className="shadow-sm hover:shadow-md transition-all duration-200">
         <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="w-6 h-6 text-blue-600" />
               Covenant Compliance Stress Test
-              {historicalData.length > 0 && (
-                <span className="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-semibold border border-purple-200">
-                  Enhanced with Historical Data
-                </span>
-              )}
             </div>
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg font-semibold"
-            >
-              <Download className="w-4 h-4" />
-              Export Report
-            </button>
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
@@ -958,7 +1169,6 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                   <th className="text-right p-3 font-semibold text-slate-700">Min DSCR</th>
                   <th className="text-right p-3 font-semibold text-slate-700">DSCR Cushion</th>
                   <th className="text-right p-3 font-semibold text-slate-700">Max Leverage</th>
-                  <th className="text-right p-3 font-semibold text-slate-700">Lev. Cushion</th>
                   <th className="text-right p-3 font-semibold text-slate-700">Min ICR</th>
                   <th className="text-right p-3 font-semibold text-slate-700">Liquidity</th>
                   <th className="text-right p-3 font-semibold text-slate-700">Breaches</th>
@@ -983,12 +1193,9 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                             style={{ backgroundColor: result?.color || COLORS.success.chart }}
                           />
                           <div>
-                            <div className="font-semibold text-slate-800">{result?.name || DEBT_STRESS_SCENARIOS[key].name}</div>
-                            <div className="text-xs text-slate-500">{result?.description || DEBT_STRESS_SCENARIOS[key].description}</div>
+                            <div className="font-semibold text-slate-800">{result?.name}</div>
+                            <div className="text-xs text-slate-500">{result?.description}</div>
                           </div>
-                          {result?.usesHistoricalData && (
-                            <History className="w-3 h-3 text-purple-500" title="Uses historical data" />
-                          )}
                         </div>
                       </td>
                       <td className="text-center p-3">
@@ -1017,12 +1224,6 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                       </td>
                       <td className={`text-right p-3 font-bold ${result?.maxLeverage > params.maxNDToEBITDA ? 'text-red-600' : 'text-slate-800'}`}>
                         {numFmt(result?.maxLeverage || 0)}x
-                      </td>
-                      <td className={`text-right p-3 font-semibold ${
-                        result?.leverageCushion < 0 ? 'text-red-600' : 
-                        result?.leverageCushion < 0.5 ? 'text-amber-600' : 'text-emerald-600'
-                      }`}>
-                        {result?.leverageCushion >= 0 ? '+' : ''}{numFmt(result?.leverageCushion || 0)}x
                       </td>
                       <td className={`text-right p-3 font-bold ${result?.minICR < params.targetICR ? 'text-red-600' : 'text-slate-800'}`}>
                         {numFmt(result?.minICR || 0)}
@@ -1062,15 +1263,15 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
           <div className="mt-6 p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
             <h4 className="font-semibold text-sm mb-3 text-slate-800 flex items-center gap-2">
               <Info className="w-4 h-4" />
-              Legend
+              Legend & Risk Factors
             </h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div className="flex items-center gap-2 p-2 bg-white rounded border border-slate-200">
-                <div className={`w-3 h-3 rounded-full bg-gradient-to-br from-${COLORS.success.from} to-${COLORS.success.to}`} />
+                <div className="w-3 h-3 rounded-full bg-emerald-500" />
                 <span className="text-slate-700">Low Risk - Strong cushion</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-white rounded border border-slate-200">
-                <div className={`w-3 h-3 rounded-full bg-gradient-to-br from-${COLORS.warning.from} to-${COLORS.warning.to}`} />
+                <div className="w-3 h-3 rounded-full bg-amber-500" />
                 <span className="text-slate-700">Moderate - Adequate</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-white rounded border border-slate-200">
@@ -1078,169 +1279,30 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                 <span className="text-slate-700">Elevated - Limited cushion</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-white rounded border border-slate-200">
-                <div className={`w-3 h-3 rounded-full bg-gradient-to-br from-${COLORS.danger.from} to-${COLORS.danger.to}`} />
+                <div className="w-3 h-3 rounded-full bg-red-500" />
                 <span className="text-slate-700">High - Breach risk</span>
               </div>
             </div>
-            {historicalData.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-slate-300">
-                <div className="flex items-center gap-2 text-purple-600 text-xs font-semibold">
-                  <History className="w-4 h-4" />
-                  <span>Historical data enhances liquidity runway accuracy by {historicalData.length}x</span>
-                </div>
+            {worstCaseScenario && worstCaseScenario.riskFactors && worstCaseScenario.riskFactors.length > 0 && (
+              <div className="mt-4 p-3 bg-amber-50 rounded border border-amber-200">
+                <div className="font-semibold text-sm text-amber-900 mb-2">Key Risk Factors:</div>
+                <ul className="text-xs text-amber-800 space-y-1">
+                  {worstCaseScenario.riskFactors.map((factor, i) => (
+                    <li key={i}>• {factor}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* DSCR Comparison Chart */}
-      <Card className="shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-blue-600" />
-            Debt Service Coverage Comparison
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <ChartWrapper data={comparisonData} height={350} ariaLabel="DSCR comparison across scenarios">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={comparisonData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="scenario" angle={-45} textAnchor="end" height={120} tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Bar dataKey="minDSCR" name="Min DSCR" radius={[8, 8, 0, 0]}>
-                  {comparisonData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-                <Line 
-                  type="monotone" 
-                  dataKey="covenant" 
-                  stroke={COLORS.danger.chart}
-                  strokeWidth={3} 
-                  strokeDasharray="5 5" 
-                  name="DSCR Covenant" 
-                  dot={{ r: 4 }}
-                />
-              </ComposedChart></ResponsiveContainer>
-          </ChartWrapper>
-        </CardContent>
-      </Card>
-
-      {/* Covenant Cushion Radar Chart */}
-      <Card className="shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-purple-600" />
-            Covenant Cushion Analysis
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <ChartWrapper data={cushionRadarData} height={400} ariaLabel="Covenant cushion radar chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={cushionRadarData}>
-                <PolarGrid stroke="#e2e8f0" />
-                <PolarAngleAxis dataKey="scenario" tick={{ fontSize: 11 }} />
-                <PolarRadiusAxis tick={{ fontSize: 10 }} />
-                <Radar name="DSCR Cushion" dataKey="DSCR Cushion" stroke={COLORS.primary.chart} fill={COLORS.primary.chart} fillOpacity={0.5} />
-                <Radar name="Leverage Cushion" dataKey="Leverage Cushion" stroke={COLORS.success.chart} fill={COLORS.success.chart} fillOpacity={0.5} />
-                <Radar name="ICR Cushion" dataKey="ICR Cushion" stroke={COLORS.warning.chart} fill={COLORS.warning.chart} fillOpacity={0.5} />
-                <Radar name="Liquidity" dataKey="Liquidity" stroke={COLORS.purple.chart} fill={COLORS.purple.chart} fillOpacity={0.5} />
-                <Legend />
-                <Tooltip content={<CustomTooltip />} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </ChartWrapper>
-        </CardContent>
-      </Card>
-
-      {/* Liquidity Runway Chart */}
-      <Card className="shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-emerald-600" />
-            Liquidity Runway Under Stress
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <ChartWrapper data={liquidityData} height={350} ariaLabel="Liquidity runway across scenarios">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={liquidityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="scenario" angle={-45} textAnchor="end" height={120} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: 'Months', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 12 }} />
-                <Tooltip 
-                  content={<CustomTooltip />}
-                  formatter={(value) => [`${value >= 36 ? "36+" : numFmt(value)} months`, "Liquidity Runway"]}
-                />
-                <Legend />
-                <Bar 
-                  dataKey="liquidityRunway" 
-                  name="Liquidity Runway"
-                  radius={[8, 8, 0, 0]}
-                >
-                  {liquidityData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.riskColor} />
-                  ))}
-                </Bar>
-                <Line 
-                  type="monotone" 
-                  dataKey={() => 6} 
-                  stroke={COLORS.danger.chart}
-                  strokeWidth={3} 
-                  strokeDasharray="5 5" 
-                  name="Minimum Runway (6 mos)" 
-                  dot={false}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartWrapper>
-        </CardContent>
-      </Card>
-
-      {/* Valuation Impact */}
-      <Card className="shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <CardTitle className="flex items-center gap-2">
-            <TrendingDown className="w-5 h-5 text-red-600" />
-            Equity Value Impact Under Stress
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <ChartWrapper data={valuationImpactData} height={350} ariaLabel="Equity value impact">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={valuationImpactData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="scenario" angle={-45} textAnchor="end" height={120} tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-                <Tooltip 
-                  content={<CustomTooltip />}
-                  formatter={(value, name) => {
-                    if (name === "Equity Value") return [currencyFmtMM(value * 1_000_000, ccy), name];
-                    if (name === "Value Loss %") return [numFmt(value) + "%", name];
-                    if (name === "IRR") return [pctFmt(value / 100), name];
-                    return [numFmt(value) + "x", name];
-                  }} 
-                />
-                <Legend />
-                <Bar yAxisId="left" dataKey="equityValue" fill={COLORS.success.chart} name="Equity Value" radius={[8, 8, 0, 0]} />
-                <Bar yAxisId="right" dataKey="valueLoss" fill={COLORS.danger.chart} name="Value Loss %" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartWrapper>
-        </CardContent>
-      </Card>
-
-      {/* Enhanced Risk Summary */}
+      {/* Risk Summary & Recommendations */}
       <Card className="border-l-4 border-l-orange-600 shadow-md hover:shadow-lg transition-all duration-200">
         <CardHeader className="bg-gradient-to-r from-orange-50 to-red-50 border-b">
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="w-6 h-6 text-orange-600" />
-            Risk Summary & Recommendations
+            Risk Summary & Action Items
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
@@ -1251,12 +1313,12 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                 Critical Findings
               </h4>
               <ul className="space-y-3">
-                {Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length > 0 && (
+                {breachCount > 0 && (
                   <li className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
                     <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
                     <span className="text-sm">
                       <strong className="text-red-700 font-bold">
-                        {Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length} scenarios result in covenant breaches
+                        {breachCount} scenarios result in covenant breaches
                       </strong>
                       <span className="text-red-600"> - Immediate attention required. Review capital structure.</span>
                     </span>
@@ -1270,6 +1332,11 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                         Worst case ({worstCaseScenario.name}): DSCR {numFmt(worstCaseScenario.minDSCR)}
                       </strong>
                       <span className="text-red-600"> - Insufficient cash flow to service debt.</span>
+                      {worstCaseScenario.failureReason && (
+                        <div className="mt-2 text-xs text-red-700 font-mono bg-red-100 p-2 rounded">
+                          {worstCaseScenario.failureReason}
+                        </div>
+                      )}
                     </span>
                   </li>
                 )}
@@ -1284,22 +1351,14 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
                     </span>
                   </li>
                 )}
-                {Object.values(stressTestResults).filter(r => r.riskLevel === "ELEVATED" || r.riskLevel === "HIGH").length > Object.keys(DEBT_STRESS_SCENARIOS).length / 2 && (
-                  <li className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
-                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                    <span className="text-sm text-amber-700">
-                      Over 50% of scenarios show elevated or high risk. Consider reducing leverage or improving margins by 3-5%.
-                    </span>
-                  </li>
-                )}
-                {historicalData.length > 0 && (
+                {hasHistoricalData && (
                   <li className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
                     <CheckCircle className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
                     <span className="text-sm">
                       <strong className="text-emerald-700 font-bold">
-                        Analysis enhanced with {historicalData.length} years of historical data
+                        Analysis enhanced with {historicalMetrics.yearsOfData} years of historical data
                       </strong>
-                      <span className="text-emerald-600"> - Liquidity projections are more accurate than industry averages.</span>
+                      <span className="text-emerald-600"> - Projections are more accurate than industry averages.</span>
                     </span>
                   </li>
                 )}
@@ -1309,7 +1368,7 @@ export function DebtStressTesting({ params, ccy, baseProjection, historicalData 
             <div>
               <h4 className="font-semibold text-base mb-3 text-slate-800 flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-blue-600" />
-                Recommendations
+                Recommended Actions
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">

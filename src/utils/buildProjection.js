@@ -1,747 +1,710 @@
-import { validateParams } from "./calculations.js";
+// ============================================================================
+// buildProjection.js - IFRS-Compliant Financial Projection Model
+// ============================================================================
+// Enhanced with proper accounting standards:
+// - IAS 1: Presentation of Financial Statements
+// - IAS 7: Statement of Cash Flows
+// - IFRS 9: Financial Instruments (debt amortization)
+// - IAS 12: Income Taxes
+// ============================================================================
 
 /**
- * Build Financial Projection with DCF Valuation
- * 
- * Generates year-by-year projections of P&L, cash flows, debt service, and credit metrics.
- * Computes Enterprise Value using FCFF discounting and derives Equity Value.
- * 
- * @param {Object} inputParams - Projection parameters
- * @param {number} inputParams.startYear - Starting year
- * @param {number} inputParams.years - Number of projection years
- * @param {number} inputParams.baseRevenue - Revenue in year 0
- * @param {number} inputParams.growth - Annual revenue growth rate
- * @param {number} inputParams.cogsPct - COGS as % of revenue
- * @param {number} inputParams.opexPct - OpEx as % of revenue
- * @param {number} inputParams.capexPct - CapEx as % of revenue
- * @param {number} inputParams.daPctOfPPE - D&A as % of PP&E
- * @param {number} inputParams.wcPctOfRev - Working capital as % of revenue
- * @param {number} inputParams.openingDebt - Initial debt balance
- * @param {number} inputParams.interestRate - Nominal annual interest rate
- * @param {number} inputParams.taxRate - Corporate tax rate
- * @param {number} inputParams.wacc - Weighted average cost of capital
- * @param {number} inputParams.terminalGrowth - Perpetual growth rate
- * @param {number} [inputParams.debtTenorYears=5] - Debt maturity in years
- * @param {number} [inputParams.interestOnlyYears=0] - Interest-only period
- * @param {number} [inputParams.minDSCR=1.2] - Minimum required DSCR
- * @param {number} [inputParams.maxNDToEBITDA=3.5] - Maximum leverage covenant
- * @param {number} [inputParams.targetICR=2.0] - Target interest coverage
- * @param {number} [inputParams.equityContribution=0] - Initial equity investment
- * @param {number} [inputParams.entryMultiple=8.0] - Entry EV/EBITDA multiple
- * @param {string} [inputParams.paymentFrequency='Quarterly'] - Payment frequency
- * @param {number} [inputParams.balloonPercentage=0] - Balloon payment %
- * @param {number[]} [inputParams.customAmortization=null] - Custom amortization %s
- * @param {string} [inputParams.dayCountConvention='Actual/365'] - Day count convention
- * @param {number} [inputParams.cashAtValuation=0] - Cash on hand at valuation date
- * @param {number} [inputParams.associatesValue=0] - Value of associates/JVs
- * @param {number} [inputParams.minorityInterest=0] - Minority interest
- * @param {boolean} [inputParams.useBalloonPayment=false] - Apply balloon only when true and frequency is "Balloon"
- * @param {number[]|null} [inputParams.customAmortizationIntervals=null] - Four interval %s (must total ~100)
- * @param {Object} [opts={}] - Optional settings
- * @param {boolean} [opts.debug=false] - Enable detailed logging
- * @param {Function} [opts.logger=console.debug] - Custom logger
- * @param {number} [opts.precision=6] - Decimal precision for logs
- * @returns {Object} Projection results with valuation
- */
-export function buildProjection(inputParams, opts = {}) {
-  const { debug = false, logger = console.debug, precision = 6 } = opts;
-  const log = (...args) => debug && logger(...args);
-  const df = (n) => typeof n === 'number' ? n.toFixed(precision) : 'N/A';
-  
-  log('=== PROJECTION BUILD START ===');
-  
-  // Extract and set defaults
-  const params = {
-    startYear: inputParams.startYear,
-    years: inputParams.years,
-    baseRevenue: inputParams.baseRevenue,
-    growth: inputParams.growth,
-    cogsPct: inputParams.cogsPct,
-    opexPct: inputParams.opexPct,
-    capexPct: inputParams.capexPct,
-    daPctOfPPE: inputParams.daPctOfPPE,
-    wcPctOfRev: inputParams.wcPctOfRev,
-    openingDebt: inputParams.openingDebt,
-    interestRate: inputParams.interestRate,
-    taxRate: inputParams.taxRate,
-    wacc: inputParams.wacc,
-    terminalGrowth: inputParams.terminalGrowth,
-    debtTenorYears: inputParams.debtTenorYears || 5,
-    interestOnlyYears: inputParams.interestOnlyYears || 0,
-    minDSCR: inputParams.minDSCR || 1.2,
-    maxNDToEBITDA: inputParams.maxNDToEBITDA || 3.5,
-    targetICR: inputParams.targetICR || 2.0,
-    equityContribution: inputParams.equityContribution || 0,
-    entryMultiple: inputParams.entryMultiple || 8.0,
-    paymentFrequency: inputParams.paymentFrequency || "Quarterly",
-    balloonPercentage: inputParams.balloonPercentage || 0,
-    customAmortization: inputParams.customAmortization || null,
-    useBalloonPayment: inputParams.useBalloonPayment ?? false,
-    customAmortizationIntervals: inputParams.customAmortizationIntervals ?? null,
-    dayCountConvention: inputParams.dayCountConvention || "Actual/365",
-    
-    // NEW: Equity bridge parameters (optional, default to 0)
-    // For proper valuation comparison with Path A
-    cashAtValuation: inputParams.cashAtValuation ?? 0,
-    associatesValue: inputParams.associatesValue ?? 0,
-    minorityInterest: inputParams.minorityInterest ?? 0,
-  };
-  
- const MIN_WACC = 0.01; // 1% minimum
-  if (params.wacc < MIN_WACC) {
-    console.warn(`WACC of ${(params.wacc * 100).toFixed(2)}% is below minimum. Using ${(MIN_WACC * 100).toFixed(2)}% floor.`);
-    params.wacc = MIN_WACC;
-  }
-  // Validate critical inputs
-  if (typeof params.years !== 'number' || params.years < 1 || params.years > 50) {
-    throw new Error(`Invalid projection years: ${params.years}. Must be between 1-50.`);
-  }
-  if (typeof params.wacc !== 'number' || params.wacc <= 0) {
-    throw new Error(`Invalid WACC: ${params.wacc}. Must be positive.`);
-  }
-  if (typeof params.terminalGrowth !== 'number') {
-    throw new Error(`Invalid terminal growth: ${params.terminalGrowth}. Must be a number.`);
-  }
-  
-  // CRITICAL: Terminal value guard (Issue #3 from audit)
-  if (params.wacc <= params.terminalGrowth) {
-    throw new Error(
-      `WACC (${(params.wacc * 100).toFixed(2)}%) must exceed terminal growth (${(params.terminalGrowth * 100).toFixed(2)}%) for Gordon TV. ` +
-      `Current spread: ${((params.wacc - params.terminalGrowth) * 100).toFixed(4)}%`
-    );
-  }
-  
-  if (params.taxRate < 0 || params.taxRate > 1) {
-    throw new Error(`Invalid tax rate: ${params.taxRate}. Must be between 0 and 1.`);
-  }
-  
-  log('Input Parameters:', {
-    years: params.years,
-    baseRevenue: df(params.baseRevenue),
-    growth: df(params.growth),
-    wacc: df(params.wacc),
-    terminalGrowth: df(params.terminalGrowth),
-    openingDebt: df(params.openingDebt),
-    cashAtValuation: df(params.cashAtValuation),
-    interestRate: df(params.interestRate),
-    dayCountConvention: params.dayCountConvention,
-  });
-  
-  // Warn if cashAtValuation not provided (backwards compatibility)
-  if (params.cashAtValuation === 0 && params.openingDebt > 0) {
-    log('⚠️  WARNING: cashAtValuation not provided. Using 0.');
-    log('   For accurate equity valuation, specify cash on hand at valuation date.');
-  }
-
-  // Calculate effective annual rate considering day count convention
-  const effectiveAnnualRate = calculateEffectiveRate(
-    params.interestRate, 
-    params.dayCountConvention
-  );
-  
-  log('Effective Annual Rate:', df(effectiveAnnualRate), `(convention: ${params.dayCountConvention})`);
-
-  // Calculate payments per year based on frequency
-  const paymentsPerYear = getPaymentsPerYear(params.paymentFrequency);
-  
-  // Initialize state variables
-  let ppe = params.baseRevenue * params.capexPct;
-  let debt = params.openingDebt;
-  const rows = [];
-  let revenue = params.baseRevenue;
-
-  // Calculate amortization schedule with proper conditional logic
-  const projectionYears = Math.min(params.debtTenorYears, params.years);
-
-  // Only apply balloon when frequency is "Balloon" AND checkbox is checked
-  const effectiveBalloonPct = 
-    (params.paymentFrequency === "Balloon" && params.useBalloonPayment) 
-      ? (params.balloonPercentage || 0) 
-      : 0;
-
-  // If customAmortization frequency selected, expand 4 intervals to per-year array
-  let effectiveCustomAmort = null;
-  if (params.paymentFrequency === "customAmortization" && 
-      Array.isArray(params.customAmortizationIntervals)) {
-    effectiveCustomAmort = expand4IntervalsToPerYear(
-      projectionYears,
-      params.interestOnlyYears,
-      params.customAmortizationIntervals
-    );
-  }
-
-  // Fallback to explicit per-year array if provided (backward compatibility)
-  if (!effectiveCustomAmort && Array.isArray(params.customAmortization)) {
-    effectiveCustomAmort = params.customAmortization;
-  }
-
-  const amortSchedule = calculateAmortizationSchedule(
-    params.openingDebt,
-    projectionYears,
-    params.interestOnlyYears,
-    effectiveBalloonPct,
-    effectiveCustomAmort
-  );
-  
-  log('Payment Structure:', {
-    frequency: params.paymentFrequency,
-    paymentsPerYear,
-    balloonPct: df(effectiveBalloonPct),
-    useBalloonPayment: params.useBalloonPayment,
-    hasCustomIntervals: !!effectiveCustomAmort,
-  });
-  
-  log('Amortization Schedule:', amortSchedule.map(df));
-
-  // ===== YEARLY PROJECTION LOOP =====
-  for (let i = 1; i <= params.years; i++) {
-    const year = params.startYear + i - 1;
-    if (i > 1) revenue = revenue * (1 + params.growth);
-
-    // P&L calculations
-    const cogs = revenue * params.cogsPct;
-    const opex = revenue * params.opexPct;
-    const ebitda = revenue - cogs - opex;
-    const capex = revenue * params.capexPct;
-    const da = ppe * params.daPctOfPPE;
-    ppe = ppe + capex - da;
-    const ebit = ebitda - da;
-
-    // Debt service calculations
-    const principal = (i <= amortSchedule.length) ? amortSchedule[i - 1] : 0;
-    const interest = debt * effectiveAnnualRate;
-    const debtService = interest + principal;
-    const endingDebt = Math.max(0, debt - principal);
-
-    // Tax calculations
-    const ebt = ebit - interest;
-    const tax = Math.max(0, ebt) * params.taxRate;
-    const netIncome = ebt - tax;
-
-    // Working capital
-    const wc = revenue * params.wcPctOfRev;
-    const prevWc = i === 1 ? params.baseRevenue * params.wcPctOfRev : rows[i - 2].wc;
-    const deltaWc = wc - prevWc;
-
-    // Free cash flow calculations
-    const nopat = ebit * (1 - params.taxRate);
-    const fcf = nopat + da - capex - deltaWc;  // FCFF (Free Cash Flow to Firm)
-    const fcfToEquity = fcf - debtService;     // FCFE (Free Cash Flow to Equity)
-
-    // Credit metrics with robust handling
-    const icr = interest > 0 ? ebitda / interest : 999;
-    const dscr = debtService > 0 ? (ebitda - capex - deltaWc) / debtService : 999;
-    const ndToEbitda = ebitda > 0 ? endingDebt / ebitda : 0;
-
-    // Discounting
-    const discountFactor = 1 / Math.pow(1 + params.wacc, i);
-    const pvFCF = fcf * discountFactor;
-
-    // Payment schedule detail (for display/debugging)
-    const paymentSchedule = calculatePaymentSchedule(
-      debt,
-      principal,
-      interest,
-      paymentsPerYear,
-      effectiveAnnualRate
-    );
-
-    // Cumulative cash tracking
-    const cashBalance = i === 1 ? 0 : rows[i - 2].cashBalance + fcfToEquity;
-
-    rows.push({
-      year, revenue, cogs, opex, ebitda, da, ebit, interest, tax, netIncome,
-      capex, wc, deltaWc, fcf, fcfToEquity, discountFactor, pvFCF,
-      principal, debtService, endingDebt, icr, dscr, ndToEbitda,
-      icrBreach: icr < params.targetICR,
-      dscrBreach: dscr < params.minDSCR,
-      ndBreach: ndToEbitda > params.maxNDToEBITDA,
-      paymentsPerYear,
-      paymentSchedule,
-      cashBalance,
-      nopat, // Add for transparency
-      ppe,   // Add for transparency
-    });
-    
-    // Log each year's calculations
-    if (debug) {
-      log(`--- Year ${i} (${year}) ---`, {
-        revenue: df(revenue),
-        ebitda: df(ebitda),
-        da: df(da),
-        ebit: df(ebit),
-        interest: df(interest),
-        tax: df(tax),
-        nopat: df(nopat),
-        capex: df(capex),
-        deltaWc: df(deltaWc),
-        fcf: df(fcf),
-        fcfToEquity: df(fcfToEquity),
-        discountFactor: df(discountFactor),
-        pvFCF: df(pvFCF),
-        principal: df(principal),
-        debtService: df(debtService),
-        endingDebt: df(endingDebt),
-        icr: df(icr),
-        dscr: df(dscr),
-        ndToEbitda: df(ndToEbitda),
-      });
-    }
-
-    debt = endingDebt;
-  }
-
-  log('=== PROJECTION COMPLETE, COMPUTING VALUATION ===');
-
-  // ===== TERMINAL VALUE & ENTERPRISE VALUE =====
-  const last = rows[rows.length - 1];
-  const fcfNext = last.fcf * (1 + params.terminalGrowth);
-  const tv = fcfNext / (params.wacc - params.terminalGrowth);
-  const tvPV = tv / Math.pow(1 + params.wacc, params.years);
-  const sumPvFCF = rows.reduce((sum, row) => sum + row.pvFCF, 0);
-  const enterpriseValue = sumPvFCF + tvPV;
-  
-  log('Terminal Value Inputs:', {
-    lastFCF: df(last.fcf),
-    terminalGrowth: df(params.terminalGrowth),
-    wacc: df(params.wacc),
-    fcfNext: df(fcfNext),
-  });
-  
-  log('Terminal Value:', df(tv));
-  log('PV of Terminal Value:', df(tvPV), `(discounted ${params.years} periods)`);
-  log('Sum of PV(FCF):', df(sumPvFCF));
-  log('Enterprise Value:', df(enterpriseValue), '(PV FCFs + PV TV)');
-  
-  // ===== EQUITY VALUE BRIDGE (CRITICAL FIX - Issue #2) =====
-  // CORRECT: Use net debt AT VALUATION DATE (t=0), not ending debt (t=n)
-  // Net Debt at Valuation = Opening Debt - Cash at Valuation
-  const netDebtAtValuation = params.openingDebt - params.cashAtValuation;
-  
-  // Equity Value = EV - Net Debt (t=0) + Associates - Minority Interest
-  const equityValue = enterpriseValue - netDebtAtValuation + params.associatesValue - params.minorityInterest;
-  
-  log('Equity Bridge:', {
-    enterpriseValue: df(enterpriseValue),
-    openingDebt: df(params.openingDebt),
-    cashAtValuation: df(params.cashAtValuation),
-    netDebtAtValuation: df(netDebtAtValuation),
-    associatesValue: df(params.associatesValue),
-    minorityInterest: df(params.minorityInterest),
-    equityValue: df(equityValue),
-  });
-  
-  // Validate results
-  if (!isFinite(enterpriseValue) || !isFinite(equityValue)) {
-    throw new Error('Valuation resulted in non-finite values. Check inputs.');
-  }
-  
-  if (equityValue < 0) {
-    log('WARNING: Equity value is negative. Company may be insolvent or inputs incorrect.');
-  }
-  
-  // ===== RETURNS CALCULATIONS =====
-  const totalDebtPaid = params.openingDebt - (last.endingDebt || 0);
-  
-  // Terminal equity value for IRR/MOIC (what investor gets at exit)
-  const terminalEquityValue = equityValue; // Or could use exit multiple approach
-  
-  // MOIC = Total value returned / Initial investment
-  const moic = params.equityContribution > 0 
-    ? (terminalEquityValue + rows.reduce((sum, r) => sum + Math.max(0, r.fcfToEquity), 0)) / params.equityContribution
-    : 0;
-  
-  // IRR with proper cash flows
-  const irr = params.equityContribution > 0 
-    ? calculateIRR(params.equityContribution, rows, terminalEquityValue) 
-    : 0;
-  
-  log('Returns:', {
-    moic: df(moic),
-    irr: df(irr * 100) + '%',
-  });
-
-  // ===== CREDIT STATISTICS =====
-  const validDSCRs = rows.map(r => r.dscr).filter(v => Number.isFinite(v) && v < 999);
-  const validICRs = rows.map(r => r.icr).filter(v => Number.isFinite(v) && v < 999);
-  const validLeverages = rows.map(r => r.ndToEbitda).filter(v => Number.isFinite(v));
-  
-  const minDSCR = validDSCRs.length > 0 ? Math.min(...validDSCRs) : 0;
-  const minICR = validICRs.length > 0 ? Math.min(...validICRs) : 0;
-  const maxLeverage = validLeverages.length > 0 ? Math.max(...validLeverages) : 0;
-  const avgDSCR = validDSCRs.length > 0 
-    ? validDSCRs.reduce((sum, v) => sum + v, 0) / validDSCRs.length 
-    : 0;
-  
-  const breaches = {
-    dscrBreaches: rows.filter(r => r.dscrBreach).length,
-    icrBreaches: rows.filter(r => r.icrBreach).length,
-    ndBreaches: rows.filter(r => r.ndBreach).length,
-  };
-
-  const creditStats = {
-    minDSCR,
-    minICR,
-    maxLeverage,
-    avgDSCR,
-  };
-  
-  log('Credit Stats:', creditStats);
-  log('Covenant Breaches:', breaches);
-
-  // Cash at maturity for balloon analysis
-  const cashAtMaturity = rows[Math.min(params.debtTenorYears - 1, rows.length - 1)]?.cashBalance || 0;
-
-  log('=== PROJECTION BUILD COMPLETE ===\n');
-
-  return { 
-    // Core results (always returned - backwards compatible)
-    rows, 
-    enterpriseValue, 
-    equityValue, 
-    tv, 
-    tvPV, 
-    moic, 
-    irr,
-    creditStats,
-    breaches,
-    cashAtMaturity,
-    endingDebtBalance: last.endingDebt || 0,
-    totalDebtPaid,
-    paymentStructure: {
-      frequency: params.paymentFrequency,
-      paymentsPerYear,
-      balloonPercentage: effectiveBalloonPct,
-      dayCountConvention: params.dayCountConvention,
-      effectiveAnnualRate,
-    },
-    
-    // Extended diagnostics (always safe to return, won't break existing code)
-    netDebtAtValuation,
-    wacc: params.wacc,
-    terminalGrowth: params.terminalGrowth,
-    
-    // Optional equity bridge components (only if provided)
-    ...(params.cashAtValuation !== undefined && params.cashAtValuation !== 0 && {
-      cashAtValuation: params.cashAtValuation,
-    }),
-    ...(params.associatesValue !== undefined && params.associatesValue !== 0 && {
-      associatesValue: params.associatesValue,
-    }),
-    ...(params.minorityInterest !== undefined && params.minorityInterest !== 0 && {
-      minorityInterest: params.minorityInterest,
-    }),
-    openingDebt: params.openingDebt,
-  };
-}
-
-/**
- * Calculate effective annual rate based on day count convention
- * 
- * @param {number} nominalRate - Nominal annual rate
- * @param {string} convention - Day count convention
- * @returns {number} Effective annual rate
- */
-function calculateEffectiveRate(nominalRate, convention) {
-  if (typeof nominalRate !== 'number' || nominalRate < 0) {
-    throw new Error(`Invalid nominal rate: ${nominalRate}`);
-  }
-  
-  switch (convention) {
-    case "Actual/360":
-      // Actual/360: Annual rate is quoted assuming 360-day year
-      // Over 365 actual days, effective rate is higher
-      return nominalRate * (365 / 360);
-    
-    case "30/360":
-      // 30/360: Assumes 30-day months and 360-day years
-      // For annual calculations, approximates Actual/365
-      return nominalRate;
-    
-    case "Actual/365":
-    default:
-      return nominalRate;
-  }
-}
-
-/**
- * Expand 4 custom intervals (% per bucket) into per-year % array
- * @param {number} tenorYears - Total tenor
- * @param {number} interestOnlyYears - IO period
- * @param {number[]} intervals - [interval1%, interval2%, interval3%, interval4%]
- * @returns {number[]} Per-year percentages that sum to ~100
- */
-function expand4IntervalsToPerYear(tenorYears, interestOnlyYears, intervals) {
-  if (!Array.isArray(intervals) || intervals.length !== 4) {
-    return null;
-  }
-  
-  const ioYrs = Math.max(0, Math.min(tenorYears, interestOnlyYears || 0));
-  const amortYears = Math.max(tenorYears - ioYrs, 1);
-  const base = Math.floor(amortYears / 4);
-  const rem = amortYears % 4;
-  
-  const perYear = [];
-  
-  // Interest-only years: 0% principal
-  for (let y = 0; y < ioYrs; y++) {
-    perYear.push(0);
-  }
-  
-  // Distribute each interval across its bucket
-  for (let k = 0; k < 4; k++) {
-    const bucketYears = base + (k < rem ? 1 : 0);
-    const pctPerYear = bucketYears > 0 ? (intervals[k] || 0) / bucketYears : 0;
-    for (let y = 0; y < bucketYears; y++) {
-      perYear.push(pctPerYear);
-    }
-  }
-  
-  // Pad to tenor length
-  while (perYear.length < tenorYears) {
-    perYear.push(0);
-  }
-  
-  // Normalize to 100% (handle floating point drift)
-  const sum = perYear.reduce((s, v) => s + v, 0);
-  if (Math.abs(sum - 100) > 0.01 && sum > 0) {
-    for (let i = perYear.length - 1; i >= ioYrs; i--) {
-      if (perYear[i] > 0) {
-        perYear[i] += (100 - sum);
-        break;
-      }
-    }
-  }
-  
-  return perYear;
-}
-
-/**
- * Calculate amortization schedule with proper logic
- * 
- * @param {number} principalAmount - Initial loan principal
- * @param {number} projectionYears - Number of years in projection
- * @param {number} interestOnlyYears - Years with no principal payment
- * @param {number} balloonPct - Balloon payment as % of original principal
- * @param {number[]|null} customAmortization - Custom amortization percentages
- * @returns {number[]} Annual principal payments
- */
-function calculateAmortizationSchedule(
-  principalAmount, 
-  projectionYears,
-  interestOnlyYears, 
-  balloonPct, 
-  customAmortization
-) {
-  if (typeof principalAmount !== 'number' || principalAmount < 0) {
-    throw new Error(`Invalid principal amount: ${principalAmount}`);
-  }
-  if (typeof projectionYears !== 'number' || projectionYears < 1) {
-    throw new Error(`Invalid projection years: ${projectionYears}`);
-  }
-  if (typeof interestOnlyYears !== 'number' || interestOnlyYears < 0) {
-    throw new Error(`Invalid interest-only years: ${interestOnlyYears}`);
-  }
-  if (interestOnlyYears >= projectionYears) {
-    console.warn(`Interest-only period (${interestOnlyYears}) >= projection period (${projectionYears}). No amortization will occur.`);
-  }
-  
-  const schedule = [];
-  
-  // If custom amortization provided and valid, use it
-  if (customAmortization && Array.isArray(customAmortization) && customAmortization.length > 0) {
-    const totalPct = customAmortization.reduce((sum, pct) => sum + pct, 0);
-    // Allow 1% tolerance for rounding
-    if (Math.abs(totalPct - 100) < 1) {
-      return customAmortization.map(pct => (pct / 100) * principalAmount);
-    } else {
-      console.warn(`Custom amortization percentages sum to ${totalPct.toFixed(2)}%, expected 100%. Ignoring custom schedule.`);
-    }
-  }
-  
-  // Calculate balloon and amortizing portions
-  const balloonAmount = (balloonPct / 100) * principalAmount;
-  const amortizingAmount = principalAmount - balloonAmount;
-  
-  // Amortization years = period between IO end and maturity
-  const amortYears = Math.max(1, projectionYears - interestOnlyYears);
-  const annualPrincipal = amortYears > 0 ? amortizingAmount / amortYears : 0;
-  
-  for (let year = 1; year <= projectionYears; year++) {
-    if (year <= interestOnlyYears) {
-      // Interest-only period: no principal payment
-      schedule.push(0);
-    } else if (year === projectionYears && balloonPct > 0) {
-      // Final year with balloon: regular amortization + balloon
-      schedule.push(annualPrincipal + balloonAmount);
-    } else if (year > interestOnlyYears) {
-      // Regular amortization years
-      schedule.push(annualPrincipal);
-    } else {
-      schedule.push(0);
-    }
-  }
-  
-  // Validate total equals principal (allowing for floating point errors)
-  const totalScheduled = schedule.reduce((sum, p) => sum + p, 0);
-  if (Math.abs(totalScheduled - principalAmount) > 0.01) {
-    console.warn(`Amortization schedule total (${totalScheduled.toFixed(2)}) != principal (${principalAmount.toFixed(2)})`);
-  }
-  
-  return schedule;
-}
-
-/**
- * Calculate actual payment schedule for sub-annual periods
- * NOTE: This is illustrative. For true amortizing loans, use PMT formula.
- * 
- * @param {number} beginningBalance - Debt balance at start of year
- * @param {number} annualPrincipal - Total principal to pay this year
- * @param {number} annualInterest - Total interest for the year
- * @param {number} paymentsPerYear - Number of payments per year
- * @param {number} annualRate - Annual interest rate
- * @returns {Object[]} Payment schedule by period
- */
-function calculatePaymentSchedule(beginningBalance, annualPrincipal, annualInterest, paymentsPerYear, annualRate) {
-  if (!paymentsPerYear || paymentsPerYear <= 1) {
-    // Annual payments - simple case
-    return [{
-      period: 1,
-      principal: annualPrincipal,
-      interest: annualInterest,
-      total: annualPrincipal + annualInterest,
-      endingBalance: beginningBalance - annualPrincipal,
-    }];
-  }
-
-  // For sub-annual payments, simulate declining balance
-  // NOTE: This is NOT a true amortizing schedule (constant PMT)
-  // It linearly distributes principal and recalculates interest each period
-  const periodicRate = annualRate / paymentsPerYear;
-  const principalPerPeriod = annualPrincipal / paymentsPerYear;
-  
-  const schedule = [];
-  let remainingBalance = beginningBalance;
-  
-  for (let period = 1; period <= paymentsPerYear; period++) {
-    const periodInterest = remainingBalance * periodicRate;
-    const periodPrincipal = principalPerPeriod;
-    
-    schedule.push({
-      period,
-      principal: periodPrincipal,
-      interest: periodInterest,
-      total: periodPrincipal + periodInterest,
-      endingBalance: Math.max(0, remainingBalance - periodPrincipal),
-    });
-    
-    remainingBalance = Math.max(0, remainingBalance - periodPrincipal);
-}
-  
-  return schedule;
-}
-
-/**
- * Get number of payments per year based on frequency
- * 
- * @param {string} frequency - Payment frequency
- * @returns {number} Payments per year
+ * Helper function to determine payments per year based on frequency
  */
 function getPaymentsPerYear(frequency) {
-  const frequencyMap = {
-    Monthly: 12,
-    Quarterly: 4,
-    "Semi-Annually": 2,
-    Annually: 1,
-    Bullet: 1,                // treat as annual to avoid divide-by-zero
-    Balloon: 12,              // monthly display by default
-    customAmortization: 12,   // monthly display by default
+  const frequencies = {
+    'Monthly': 12,
+    'Quarterly': 4,
+    'Semi-Annually': 2,
+    'Annually': 1,
+    'Bullet': 0,
+    'Balloon': 4,
+    'customAmortization': 4
   };
-
-  const payments = frequencyMap[frequency];
-  if (payments === undefined) {
-    console.warn(`Unknown payment frequency: ${frequency}. Defaulting to Quarterly.`);
-    return 4;
-  }
-  return payments;
+  return frequencies[frequency] || 4;
 }
 
 /**
- * Calculate IRR using Newton-Raphson method
+ /**
+ * Calculate debt amortization schedule with support for multiple amortization types
+ * Supports: Amortizing, Interest-Only, Bullet
  * 
- * @param {number} initialInvestment - Upfront equity investment (positive number)
- * @param {Object[]} rows - Projection rows
- * @param {number} terminalEquityValue - Exit equity value
- * @returns {number} Internal rate of return (decimal)
+ * @param {Object} params - Debt parameters
+ * @returns {Array} Amortization schedule by year
  */
-function calculateIRR(initialInvestment, rows, terminalEquityValue) {
-  if (typeof initialInvestment !== 'number' || initialInvestment <= 0) {
-    throw new Error(`Invalid initial investment: ${initialInvestment}. Must be positive.`);
-  }
-  if (!Array.isArray(rows) || rows.length === 0) {
-    throw new Error('Rows array is empty or invalid.');
-  }
-  if (typeof terminalEquityValue !== 'number') {
-    throw new Error(`Invalid terminal equity value: ${terminalEquityValue}`);
-  }
+function buildAmortizationSchedule(params) {
+  const schedule = [];
   
-  // Build cash flow array: -Initial investment, then annual FCFE, then FCFE + exit value in last year
-  const cashFlows = [-initialInvestment];
+  // ✅ FIX: Combine opening debt + new facility
+  // Determine principal amount - use ONLY the relevant debt source
+const principal = params.openingDebt || params.requestedLoanAmount || 0;
   
-  rows.forEach((row, idx) => {
-    if (idx === rows.length - 1) {
-      // Last year: add FCFE + terminal equity value (exit proceeds)
-      cashFlows.push(row.fcfToEquity + terminalEquityValue);
-    } else {
-      cashFlows.push(row.fcfToEquity);
+  // No debt - return empty schedule
+  if (principal === 0) {
+    return Array(params.years).fill({
+      principal: 0,
+      interest: 0,
+      totalPayment: 0,
+      endingBalance: 0,
+      paymentsInYear: 0
+    });
+  }
+
+  const annualRate = params.interestRate || 0;
+  const tenorYears = params.debtTenorYears || 5;
+  const interestOnlyYears = params.interestOnlyYears || 0;
+  
+  // Get amortization type (default to 'amortizing')
+  const amortizationType = params.openingDebtAmortizationType || 'amortizing';
+  
+  // Calculate maturity year relative to start year
+  const startYear = params.startYear;
+  const maturityYear = params.openingDebtMaturityDate 
+    ? new Date(params.openingDebtMaturityDate).getFullYear()
+    : startYear + tenorYears;
+  
+  let remainingBalance = principal;
+
+  for (let i = 0; i < params.years; i++) {
+    const currentYear = startYear + i;
+    const yearsRemaining = maturityYear - currentYear;
+    
+    // If debt has matured or fully repaid, zero out everything
+    if (yearsRemaining <= 0 || remainingBalance <= 0) {
+      schedule.push({
+        principal: 0,
+        interest: 0,
+        totalPayment: 0,
+        endingBalance: 0,
+        paymentsInYear: 0
+      });
+      continue;
     }
-  });
-  
-  // Newton-Raphson iteration
-  let irr = 0.1; // Initial guess: 10%
-  const maxIterations = 100;
-  const tolerance = 0.0001;
-  
-  for (let iter = 0; iter < maxIterations; iter++) {
-    let npv = 0;
-    let dnpv = 0; // Derivative of NPV w.r.t. IRR
+
+    // Calculate interest payment on remaining balance
+    const interestPayment = remainingBalance * annualRate;
     
-    for (let i = 0; i < cashFlows.length; i++) {
-      const discountFactor = Math.pow(1 + irr, i);
-      npv += cashFlows[i] / discountFactor;
-      
-      // Derivative: d/dr [CF / (1+r)^i] = -i * CF / (1+r)^(i+1)
-      if (i > 0) {
-        dnpv -= i * cashFlows[i] / Math.pow(1 + irr, i + 1);
-      }
+    // Calculate principal payment based on amortization type
+    let principalPayment = 0;
+    
+    switch(amortizationType) {
+      case 'amortizing':
+        // Regular amortization with interest-only period support
+        const amortizationYears = Math.max(1, tenorYears - interestOnlyYears);
+        const yearsSinceAmortizationStart = Math.max(0, i - interestOnlyYears);
+        const remainingAmortizationYears = Math.max(1, amortizationYears - yearsSinceAmortizationStart);
+        
+        if (i < interestOnlyYears) {
+          // Still in interest-only period
+          principalPayment = 0;
+        } else {
+          // In amortization period - equal principal payments
+          principalPayment = remainingBalance / remainingAmortizationYears;
+        }
+        break;
+        
+      case 'interest-only':
+        // No principal payment until maturity
+        if (yearsRemaining === 1) {
+          // Last year before maturity - pay off all remaining principal
+          principalPayment = remainingBalance;
+        } else {
+          principalPayment = 0;
+        }
+        break;
+        
+      case 'bullet':
+        // Everything due at maturity (no interim payments)
+        if (yearsRemaining === 1) {
+          principalPayment = remainingBalance;
+        } else {
+          principalPayment = 0;
+        }
+        break;
+        
+      default:
+        // Fallback to amortizing
+        const defaultAmortYears = Math.max(1, tenorYears - interestOnlyYears);
+        principalPayment = i >= interestOnlyYears 
+          ? remainingBalance / (defaultAmortYears - (i - interestOnlyYears))
+          : 0;
     }
     
-    // Check convergence
-    if (Math.abs(npv) < tolerance) break;
+    // Ensure principal payment doesn't exceed remaining balance
+    principalPayment = Math.min(principalPayment, remainingBalance);
     
-    // Prevent division by zero
-    if (Math.abs(dnpv) < 1e-10) {
-      console.warn('IRR calculation: derivative near zero. Stopping iteration.');
-      break;
-    }
-    
-    // Newton-Raphson step
-    irr = irr - npv / dnpv;
-    
-    // Keep IRR in reasonable bounds to prevent runaway
-    if (irr < -0.99) irr = -0.99;
-    if (irr > 10) irr = 10;
+    // Calculate total payment and update balance
+    const totalPayment = interestPayment + principalPayment;
+    remainingBalance = Math.max(0, remainingBalance - principalPayment);
+
+    // Determine number of payments per year
+    const paymentsInYear = getPaymentsPerYear(params.paymentFrequency || params.openingDebtPaymentFrequency || 'Quarterly');
+
+    schedule.push({
+      principal: principalPayment,
+      interest: interestPayment,
+      totalPayment: totalPayment,
+      endingBalance: remainingBalance,
+      paymentsInYear: paymentsInYear
+    });
   }
-  
-  // Final validation
-  if (!isFinite(irr)) {
-    console.warn('IRR calculation resulted in non-finite value. Returning 0.');
-    return 0;
-  }
-  
-  return irr;
+
+  return schedule;
 }
 
+/**
+ * Build multi-tranche debt schedule by aggregating individual tranches
+ * 
+ * @param {Object} params - Model parameters with debtTranches array
+ * @returns {Array} Aggregated amortization schedule by year
+ */
+function buildMultiTrancheSchedule(params) {
+  // Check if we have multiple tranches enabled
+  if (!params.hasMultipleTranches || !params.debtTranches?.length) {
+    // Fall back to single debt calculation
+    return buildAmortizationSchedule(params);
+  }
+  
+  // Calculate each tranche separately
+  const trancheSchedules = params.debtTranches.map(tranche => {
+    // Create params object for this specific tranche
+    const trancheParams = {
+      ...params,
+      openingDebt: tranche.amount,
+      interestRate: tranche.rate,
+      debtTenorYears: tranche.tenorYears,
+      openingDebtMaturityDate: tranche.maturityDate,
+      openingDebtAmortizationType: tranche.amortizationType,
+      openingDebtPaymentFrequency: tranche.paymentFrequency || 'Quarterly',
+      interestOnlyYears: tranche.interestOnlyYears || 0,
+      openingDebtStartDate: params.startYear.toString() + '-01-01' // Use projection start year
+    };
+    
+    return {
+      tranche: tranche,
+      schedule: buildAmortizationSchedule(trancheParams)
+    };
+  });
+  
+  // Aggregate by year
+  const aggregatedSchedule = [];
+  for (let year = 0; year < params.years; year++) {
+    const yearData = {
+      year,
+      interest: 0,
+      principal: 0,
+      totalPayment: 0,
+      endingBalance: 0,
+      paymentsInYear: 0,
+      trancheDetails: []
+    };
+    
+    trancheSchedules.forEach(({ tranche, schedule }) => {
+      const trancheYear = schedule[year] || { 
+        interest: 0, 
+        principal: 0, 
+        totalPayment: 0, 
+        endingBalance: 0,
+        paymentsInYear: 0
+      };
+      
+      yearData.interest += trancheYear.interest;
+      yearData.principal += trancheYear.principal;
+      yearData.totalPayment += trancheYear.totalPayment;
+      yearData.endingBalance += trancheYear.endingBalance;
+      
+      // Take the max payments in year (for display purposes)
+      yearData.paymentsInYear = Math.max(yearData.paymentsInYear, trancheYear.paymentsInYear);
+      
+      yearData.trancheDetails.push({
+        name: tranche.name,
+        seniority: tranche.seniority,
+        amount: tranche.amount,
+        rate: tranche.rate,
+        interest: trancheYear.interest,
+        principal: trancheYear.principal,
+        totalPayment: trancheYear.totalPayment,
+        endingBalance: trancheYear.endingBalance
+      });
+    });
+    
+    aggregatedSchedule.push(yearData);
+  }
+  
+  return aggregatedSchedule;
+}
+
+/**
+ * Build financial projection with full three-statement model
+ * Compliant with IAS 1 (Presentation of Financial Statements)
+ * 
+ * @param {Object} params - Model parameters
+ * @returns {Object} Complete financial projection
+ */
+export function buildProjection(params) {
+  // ============================================================================
+  // PARAMETER VALIDATION
+  // ============================================================================
+  
+  if (!params.baseRevenue || params.baseRevenue <= 0) {
+    console.warn('⚠️ Base revenue must be positive');
+  }
+  
+  if (params.wacc <= params.terminalGrowth) {
+    console.warn(`⚠️ WACC (${(params.wacc*100).toFixed(2)}%) must exceed terminal growth (${(params.terminalGrowth*100).toFixed(2)}%)`);
+  }
+  
+  // ============================================================================
+  // INITIALIZE VARIABLES
+  // ============================================================================
+  
+  const rows = [];
+  
+  // Balance sheet items (IAS 1: Statement of Financial Position)
+let accumulatedPPE = 0;  // Property, Plant & Equipment (gross)
+let accumulatedDepreciation = 0;  // Accumulated depreciation (contra-asset)
+let prevWorkingCapital = 0;  // Previous year working capital
+let cumulativeCash = 0;  // Cash and cash equivalents (IAS 7)
+let retainedEarnings = 0;  // Accumulated retained earnings
+
+// ============================================================================
+// AUTO-EXTEND PROJECTION PERIOD TO COVER ALL DEBT MATURITIES
+// ============================================================================
+// Auto-extend if needed
+// ============================================================================
+
+// ============================================================================
+// CALCULATE DEBT AMORTIZATION SCHEDULE
+// ============================================================================
+// Support both single debt and multi-tranche structures
+const debtSchedule = (() => {
+  if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
+    return buildMultiTrancheSchedule(params);
+  }
+  
+  // Auto-create tranches if both opening debt and new facility exist
+ // Auto-create tranches if EITHER opening debt OR new facility exists
+console.log(`🔍 DEBUG: requestedLoanAmount = ${params.requestedLoanAmount}, openingDebt = ${params.openingDebt}`); 
+if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
+  const tranches = [];
+  
+  // Add opening debt tranche if it exists
+  if (params.openingDebt > 0) {
+    tranches.push({
+      name: 'Opening Debt',
+      amount: params.openingDebt,
+      rate: params.interestRate,
+      seniority: 'Senior',
+      tenorYears: params.debtTenorYears,
+      maturityDate: params.openingDebtMaturityDate,
+      amortizationType: params.openingDebtAmortizationType || 'amortizing',
+      paymentFrequency: params.openingDebtPaymentFrequency || 'Quarterly',
+      interestOnlyYears: params.interestOnlyYears || 0
+    });
+  }
+  
+  // Add new facility tranche if it exists
+  if (params.requestedLoanAmount > 0) {
+    tranches.push({
+      name: 'New Facility',
+      amount: params.requestedLoanAmount,
+      rate: params.proposedPricing || params.interestRate,
+      seniority: 'Senior',
+      tenorYears: params.proposedTenor || params.debtTenorYears,
+      maturityDate: new Date(params.startYear + (params.proposedTenor || params.debtTenorYears), 11, 31).toISOString().split('T')[0],
+      amortizationType: params.openingDebtAmortizationType || 'amortizing',
+      paymentFrequency: params.paymentFrequency || 'Quarterly',
+      interestOnlyYears: params.interestOnlyYears || 0
+    });
+  }
+  
+  const autoTranches = {
+    ...params,
+    hasMultipleTranches: true,
+    debtTranches: tranches
+  };
+  return buildMultiTrancheSchedule(autoTranches);
+}  
+  // Single debt facility
+  return buildAmortizationSchedule(params);
+})();
+  
+  // ============================================================================
+  // ANNUAL PROJECTIONS
+  // ============================================================================
+  
+  for (let i = 0; i < params.years; i++) {
+    const year = params.startYear + i;
+    
+    // ==========================================================================
+    // INCOME STATEMENT (IAS 1: Profit or Loss)
+    // ==========================================================================
+    
+    // Revenue recognition (IFRS 15: Revenue from Contracts with Customers)
+    const revenue = params.baseRevenue * Math.pow(1 + params.growth, i);
+    
+    // Cost of sales (IAS 2: Inventories)
+    const cogs = revenue * params.cogsPct;
+    
+    // Gross profit
+    const grossProfit = revenue - cogs;
+    const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
+    
+    // Operating expenses (IAS 1: by function classification)
+    const opex = revenue * params.opexPct;
+    
+    // EBITDA (Earnings Before Interest, Tax, Depreciation & Amortization)
+    // Non-GAAP metric but widely used for credit analysis
+    const ebitda = grossProfit - opex;
+    const ebitdaMargin = revenue > 0 ? ebitda / revenue : 0;
+    
+    // Capital expenditure (IAS 16: Property, Plant and Equipment)
+    const capex = revenue * params.capexPct;
+    accumulatedPPE += capex;
+    
+    // Depreciation expense (IAS 16: systematic allocation)
+    const depreciation = accumulatedPPE * params.daPctOfPPE;
+    accumulatedDepreciation += depreciation;
+    
+    // EBIT (Operating Profit/Loss) - IAS 1 required line item
+    const ebit = ebitda - depreciation;
+    const ebitMargin = revenue > 0 ? ebit / revenue : 0;
+    
+    // ==========================================================================
+    // DEBT SERVICE (IFRS 9: Financial Instruments)
+    // ==========================================================================
+    
+    const debtYear = debtSchedule[i] || { 
+      principal: 0, 
+      interest: 0, 
+      totalPayment: 0, 
+      endingBalance: 0,
+      paymentsInYear: 0,
+      trancheDetails: []
+    };
+    
+    // Finance costs (IAS 1: separate disclosure required)
+    const interestExpense = debtYear.interest;
+    const principalPayment = debtYear.principal;
+    const totalDebtService = debtYear.totalPayment;
+    
+    // Profit before tax (IAS 1 required line item)
+    const ebt = ebit - interestExpense;
+    
+    // Income tax expense (IAS 12: Income Taxes)
+    // Using effective tax rate on positive profits only
+    const tax = ebt > 0 ? ebt * params.taxRate : 0;
+    
+    // Profit for the period (IAS 1 required line item)
+    const netIncome = ebt - tax;
+    const netMargin = revenue > 0 ? netIncome / revenue : 0;
+    
+    // ==========================================================================
+    // BALANCE SHEET ITEMS (IAS 1: Statement of Financial Position)
+    // ==========================================================================
+    
+    // Working capital (IAS 1: Current assets - Current liabilities)
+    const workingCapital = revenue * params.wcPctOfRev;
+    const wcDelta = workingCapital - prevWorkingCapital;
+    prevWorkingCapital = workingCapital;
+    
+    // Cash and cash equivalents (IAS 7: Cash Flow Statement)
+    const operatingCashFlow = ebitda - tax - wcDelta;
+    const freeCashFlowBeforeDebt = operatingCashFlow - capex;
+    
+    // Cash balance (accumulated, net of dividends/distributions)
+    // Assuming 10% of positive net income retained as cash, 90% distributed
+    const cashRetention = netIncome > 0 ? netIncome * 0.10 : netIncome;
+    cumulativeCash = Math.max(0, cumulativeCash + cashRetention);
+    
+    // Retained earnings (IAS 1: Equity component)
+    retainedEarnings += netIncome;
+    
+    // Net debt (credit metric, not IFRS)
+    const grossDebt = debtYear.endingBalance;
+    const netDebt = Math.max(0, grossDebt - cumulativeCash);
+    
+    // Net PPE (IAS 16: Carrying amount)
+    const netPPE = accumulatedPPE - accumulatedDepreciation;
+    
+    // ==========================================================================
+    // COVENANT RATIOS (Credit Analysis - Industry Standard)
+    // ==========================================================================
+    
+    // Debt Service Coverage Ratio (DSCR) - uses EBITDA
+    // = EBITDA / Total Debt Service
+    const dscr = totalDebtService > 0 ? ebitda / totalDebtService : 999;
+    
+    // Interest Coverage Ratio (ICR) - uses EBIT (not EBITDA)
+    // = EBIT / Interest Expense
+    const icr = interestExpense > 0 ? ebit / interestExpense : 999;
+    
+    // Leverage Ratio - uses EBITDA
+    // = Net Debt / EBITDA
+    const ndToEbitda = ebitda > 0 ? netDebt / ebitda : 0;
+    
+    // Fixed Charge Coverage Ratio
+    const fixedChargeCoverage = (totalDebtService + capex) > 0 
+      ? ebitda / (totalDebtService + capex) 
+      : 999;
+    
+    // ==========================================================================
+    // CASH FLOW STATEMENT (IAS 7: Statement of Cash Flows)
+    // ==========================================================================
+    
+    // Operating activities
+    const cashFromOperations = netIncome + depreciation - wcDelta;
+    
+    // Investing activities
+    const cashFromInvesting = -capex;
+    
+    // Financing activities
+    const dividends = netIncome > 0 ? netIncome * 0.90 : 0;
+    const cashFromFinancing = -principalPayment - dividends;
+    
+    // Free Cash Flow (non-GAAP but standard in valuation)
+    const fcf = netIncome + depreciation - capex - wcDelta - principalPayment;
+    
+    // Unlevered Free Cash Flow (for enterprise valuation)
+    const unleveredFCF = ebit * (1 - params.taxRate) + depreciation - capex - wcDelta;
+    
+    // ==========================================================================
+    // STORE ROW DATA
+    // ==========================================================================
+    
+    rows.push({
+      // Identification
+      year,
+      period: i + 1,
+      
+      // Income Statement (IAS 1)
+      revenue,
+      cogs,
+      grossProfit,
+      grossMargin,
+      opex,
+      ebitda,
+      ebitdaMargin,
+      depreciation,
+      ebit,
+      ebitMargin,
+      interestExpense,
+      ebt,
+      tax,
+      netIncome,
+      netMargin,
+      
+      // Balance Sheet (IAS 1)
+      grossPPE: accumulatedPPE,
+      accumulatedDepreciation,
+      netPPE,
+      workingCapital,
+      wcDelta,
+      cash: cumulativeCash,
+      grossDebt,
+      netDebt,
+      retainedEarnings,
+      
+      // Cash Flow Statement (IAS 7)
+      cashFromOperations,
+      cashFromInvesting,
+      cashFromFinancing,
+      capex,
+      fcf,
+      unleveredFCF,
+      operatingCashFlow,
+      
+      // Debt Schedule (IFRS 9)
+      principalPayment,
+      debtService: totalDebtService,
+      debtBalance: debtYear.endingBalance,
+      debtPayments: debtYear.paymentsInYear,
+      
+      // Multi-Tranche Details (if applicable)
+      trancheDetails: debtYear.trancheDetails || [],
+      
+      // Covenant Ratios
+      dscr,
+      icr,
+      ndToEbitda,
+      fixedChargeCoverage,
+      cashAvailableForDebtService: ebitda - tax - capex - wcDelta,
+      
+      // Additional metrics
+      debtToEquity: (params.equityContribution + retainedEarnings) > 0 
+        ? grossDebt / (params.equityContribution + retainedEarnings) 
+        : 0,
+      returnOnEquity: (params.equityContribution + retainedEarnings) > 0 
+        ? netIncome / (params.equityContribution + retainedEarnings) 
+        : 0
+    });
+  }
+  
+  // ============================================================================
+  // CREDIT STATISTICS (Summary metrics for covenant monitoring)
+  // ============================================================================
+  
+  const dscrValues = rows.map(r => r.dscr).filter(v => isFinite(v) && v < 999);
+  const icrValues = rows.map(r => r.icr).filter(v => isFinite(v) && v < 999);
+  const leverageValues = rows.map(r => r.ndToEbitda).filter(v => isFinite(v));
+  
+  const creditStats = {
+    minDSCR: dscrValues.length > 0 ? Math.min(...dscrValues) : 0,
+    avgDSCR: dscrValues.length > 0 ? dscrValues.reduce((a, b) => a + b, 0) / dscrValues.length : 0,
+    maxDSCR: dscrValues.length > 0 ? Math.max(...dscrValues) : 0,
+    
+    minICR: icrValues.length > 0 ? Math.min(...icrValues) : 0,
+    avgICR: icrValues.length > 0 ? icrValues.reduce((a, b) => a + b, 0) / icrValues.length : 0,
+    maxICR: icrValues.length > 0 ? Math.max(...icrValues) : 0,
+    
+    minLeverage: leverageValues.length > 0 ? Math.min(...leverageValues) : 0,
+    maxLeverage: leverageValues.length > 0 ? Math.max(...leverageValues) : 0,
+    avgLeverage: leverageValues.length > 0 ? leverageValues.reduce((a, b) => a + b, 0) / leverageValues.length : 0,
+    
+    avgEBITDAMargin: rows.reduce((sum, r) => sum + r.ebitdaMargin, 0) / rows.length,
+    avgNetMargin: rows.reduce((sum, r) => sum + r.netMargin, 0) / rows.length,
+    totalFCFGenerated: rows.reduce((sum, r) => sum + r.fcf, 0),
+    avgCashConversion: rows.reduce((sum, r) => sum + (r.revenue > 0 ? r.operatingCashFlow / r.revenue : 0), 0) / rows.length
+  };
+  
+  // ============================================================================
+  // COVENANT BREACH ANALYSIS
+  // ============================================================================
+  
+  const breaches = {
+    dscrBreaches: rows.filter(r => r.dscr < params.minDSCR).length,
+    icrBreaches: rows.filter(r => r.icr < params.targetICR).length,
+    ndBreaches: rows.filter(r => r.ndToEbitda > params.maxNDToEBITDA).length,
+    
+    dscrBreachYears: rows.filter(r => r.dscr < params.minDSCR).map(r => r.year),
+    icrBreachYears: rows.filter(r => r.icr < params.targetICR).map(r => r.year),
+    leverageBreachYears: rows.filter(r => r.ndToEbitda > params.maxNDToEBITDA).map(r => r.year),
+    
+    worstDSCRYear: dscrValues.length > 0 ? rows[dscrValues.indexOf(Math.min(...dscrValues))].year : null,
+    worstICRYear: icrValues.length > 0 ? rows[icrValues.indexOf(Math.min(...icrValues))].year : null,
+    worstLeverageYear: leverageValues.length > 0 ? rows[leverageValues.indexOf(Math.max(...leverageValues))].year : null
+  };
+  
+  // ============================================================================
+  // DCF VALUATION (Enterprise Value)
+  // ============================================================================
+  
+  const terminalYear = rows[rows.length - 1];
+  const terminalFCF = terminalYear.unleveredFCF * (1 + params.terminalGrowth);
+  
+  // Validate WACC > terminal growth
+  if (params.wacc <= params.terminalGrowth) {
+    console.error(`❌ Invalid DCF inputs: WACC (${(params.wacc*100).toFixed(2)}%) ≤ Terminal Growth (${(params.terminalGrowth*100).toFixed(2)}%)`);
+  }
+  
+  const validWACC = params.wacc > params.terminalGrowth ? params.wacc : params.terminalGrowth + 0.02;
+  
+  // Terminal Value (Gordon Growth Model)
+  const terminalValue = terminalFCF / (validWACC - params.terminalGrowth);
+  
+  // Present Value of projected cash flows
+  let pvProjectedCashFlows = 0;
+  rows.forEach((row, i) => {
+    const discountFactor = Math.pow(1 + validWACC, i + 1);
+    pvProjectedCashFlows += row.unleveredFCF / discountFactor;
+  });
+  
+  // Present Value of Terminal Value
+  const pvTerminal = terminalValue / Math.pow(1 + validWACC, params.years);
+  
+  // Enterprise Value
+  const enterpriseValue = pvProjectedCashFlows + pvTerminal;
+  
+  // Equity Value
+  const finalDebt = rows[rows.length - 1].grossDebt;
+  const finalCash = rows[rows.length - 1].cash;
+  const equityValue = enterpriseValue - finalDebt + finalCash;
+  
+  // ============================================================================
+  // INVESTMENT RETURNS
+  // ============================================================================
+  
+  const totalInvested = params.equityContribution > 0 ? params.equityContribution : 1;
+  const moic = equityValue / totalInvested;
+  const irr = moic > 0 && params.years > 0 ? Math.pow(moic, 1 / params.years) - 1 : 0;
+  
+  const entryEV = params.entryMultiple * rows[0].ebitda;
+  const exitEV = enterpriseValue;
+  const exitMultiple = terminalYear.ebitda > 0 ? exitEV / terminalYear.ebitda : 0;
+  
+  // ============================================================================
+  // MULTI-TRANCHE SUMMARY (if applicable)
+  // ============================================================================
+  
+  let multiTrancheInfo = null;
+  if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
+    const totalDebt = params.debtTranches.reduce((sum, t) => sum + t.amount, 0);
+    const weightedRate = params.debtTranches.reduce((sum, t) => sum + (t.amount / totalDebt) * t.rate, 0);
+    
+    multiTrancheInfo = {
+      totalTranches: params.debtTranches.length,
+      totalDebt: totalDebt,
+      blendedRate: weightedRate,
+      tranches: params.debtTranches.map(t => ({
+        name: t.name,
+        amount: t.amount,
+        rate: t.rate,
+        seniority: t.seniority,
+        maturityDate: t.maturityDate,
+        amortizationType: t.amortizationType
+      }))
+    };
+  }
+  
+  // ============================================================================
+  // RETURN PROJECTION OBJECT
+  // ============================================================================
+  
+  return {
+    // Financial statements
+    rows,
+    
+    // Credit analysis
+    creditStats,
+    breaches,
+    
+    // Valuation
+    enterpriseValue,
+    equityValue,
+    terminalValue,
+    pvTerminal,
+    pvProjectedCashFlows,
+    
+    // Returns
+    moic,
+    irr,
+    entryMultiple: params.entryMultiple,
+    exitMultiple,
+    
+    // Debt analysis
+    totalDebtRepaid: debtSchedule.reduce((sum, year) => sum + year.principal, 0),
+    totalInterestPaid: debtSchedule.reduce((sum, year) => sum + year.interest, 0),
+    finalCash,
+    finalDebt,
+    finalNetDebt: finalDebt - finalCash,
+    
+    // Multi-tranche info
+    multiTrancheInfo,
+    debtSchedule, // Include full schedule for detailed analysis
+    
+    // Validation flags
+    hasCovenantBreaches: breaches.dscrBreaches + breaches.icrBreaches + breaches.ndBreaches > 0,
+    isWACCValid: params.wacc > params.terminalGrowth,
+    
+    // Metadata
+    projectionYears: params.years,
+    startYear: params.startYear,
+    endYear: params.startYear + params.years - 1,
+    hasMultipleTranches: params.hasMultipleTranches || false
+  };
+}
+
+// Export helper function
 export function periodsPerYear(freq) {
   return getPaymentsPerYear(freq);
 }

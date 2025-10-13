@@ -1,640 +1,640 @@
-import React, { useState, useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "./Card";
-import { currencyFmt, currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
-import { Download, CheckCircle, XCircle, AlertTriangle, Calendar, DollarSign, TrendingUp, Shield, Info } from "lucide-react";
-import { exportLoanMetricsCSV } from "../utils/exportLoanMetrics";
+// src/components/LoanMetricsTable.jsx
+import React, { useState, useMemo, useEffect } from 'react';
 
-// Color palette for consistency
-const COLORS = {
-  primary: { from: 'blue-500', to: 'blue-600', chart: '#2563eb' },
-  success: { from: 'emerald-500', to: 'emerald-600', chart: '#10b981' },
-  warning: { from: 'amber-500', to: 'amber-600', chart: '#f59e0b' },
-  danger: { from: 'red-500', to: 'red-600', chart: '#ef4444' },
-};
-// Import or duplicate the helper
-function expand4IntervalsToPerYear(tenorYears, interestOnlyYears, intervals) {
-  if (!Array.isArray(intervals) || intervals.length !== 4) return null;
-  
-  const ioYrs = Math.max(0, Math.min(tenorYears, interestOnlyYears || 0));
-  const amortYears = Math.max(tenorYears - ioYrs, 1);
-  const base = Math.floor(amortYears / 4);
-  const rem = amortYears % 4;
-  
-  const perYear = [];
-  for (let y = 0; y < ioYrs; y++) perYear.push(0);
-  
-  for (let k = 0; k < 4; k++) {
-    const bucketYears = base + (k < rem ? 1 : 0);
-    const pctPerYear = bucketYears > 0 ? (intervals[k] || 0) / bucketYears : 0;
-    for (let y = 0; y < bucketYears; y++) perYear.push(pctPerYear);
+import { 
+  TrendingDown, 
+  TrendingUp, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Info,
+  DollarSign,
+  Percent,
+  Calendar,
+  BarChart3,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  Sparkles
+} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from './Card';
+import { currencyFmtMM, pctFmt, numFmt } from '../utils/formatters';
+import { MessageCircle as MessageCircleIcon } from "lucide-react";
+ 
+/**
+ * AI-Powered Financial Analysis Component
+ * Provides contextual interpretation of debt metrics
+ */
+
+// Add this function before the AIInsightPanel component
+function generateTableSummary(projection, params, ccy) {
+  if (!projection || !projection.rows || projection.rows.length === 0) {
+    return "No loan metrics data available.";
   }
   
-  while (perYear.length < tenorYears) perYear.push(0);
+  const { rows, creditStats, breaches } = projection;
   
-  const sum = perYear.reduce((s, v) => s + v, 0);
-  if (Math.abs(sum - 100) > 0.01 && sum > 0) {
-    for (let i = perYear.length - 1; i >= ioYrs; i--) {
-      if (perYear[i] > 0) {
-        perYear[i] += (100 - sum);
-        break;
-      }
-    }
+  let summary = `LOAN METRICS ANALYSIS\n`;
+  summary += `====================\n\n`;
+  
+  // Summary stats
+  summary += `COVENANT PARAMETERS:\n`;
+  summary += `• Min DSCR Requirement: ${params.minDSCR}x\n`;
+  summary += `• Min ICR Requirement: ${params.targetICR}x\n`;
+  summary += `• Max Net Debt/EBITDA: ${params.maxNDToEBITDA}x\n\n`;
+  
+  // Year-by-year metrics
+  summary += `YEAR-BY-YEAR LOAN METRICS:\n`;
+  rows.forEach((row) => {
+    summary += `\nYear ${row.year}:\n`;
+    summary += `  Revenue: ${(row.revenue / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `  EBITDA: ${(row.ebitda / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `  EBITDA Margin: ${(row.ebitdaMargin * 100).toFixed(1)}%\n`;
+    summary += `  Debt Balance: ${(row.debtBalance / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `  Interest Expense: ${(row.interestExpense / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `  Principal Payment: ${(row.principalPayment / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `  Total Debt Service: ${(row.debtService / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `  DSCR: ${row.dscr?.toFixed(2) || 'N/A'}x ${row.dscr < params.minDSCR ? '⚠️ BREACH' : '✅'}\n`;
+    summary += `  ICR: ${row.icr?.toFixed(2) || 'N/A'}x ${row.icr < params.targetICR ? '⚠️ BREACH' : '✅'}\n`;
+    summary += `  Net Debt/EBITDA: ${row.ndToEbitda?.toFixed(2) || 'N/A'}x ${row.ndToEbitda > params.maxNDToEBITDA ? '⚠️ BREACH' : '✅'}\n`;
+    summary += `  Free Cash Flow: ${(row.fcf / 1000000).toFixed(2)}M ${ccy}\n`;
+  });
+  
+  // Credit statistics
+  summary += `\n\nCREDIT STATISTICS (Over Projection Period):\n`;
+  summary += `• Average DSCR: ${creditStats.avgDSCR?.toFixed(2)}x\n`;
+  summary += `• Minimum DSCR: ${creditStats.minDSCR?.toFixed(2)}x\n`;
+  summary += `• Average ICR: ${creditStats.avgICR?.toFixed(2)}x\n`;
+  summary += `• Minimum ICR: ${creditStats.minICR?.toFixed(2)}x\n`;
+  summary += `• Average Leverage: ${creditStats.avgLeverage?.toFixed(2)}x\n`;
+  summary += `• Maximum Leverage: ${creditStats.maxLeverage?.toFixed(2)}x\n`;
+  summary += `• Average Cash Conversion: ${(creditStats.avgCashConversion * 100).toFixed(1)}%\n`;
+  summary += `• Total FCF Generated: ${(creditStats.totalFCFGenerated / 1000000).toFixed(2)}M ${ccy}\n`;
+  
+  // Covenant breaches
+  const totalBreaches = (breaches.dscrBreaches || 0) + (breaches.icrBreaches || 0) + (breaches.ndBreaches || 0);
+  summary += `\n\nCOVENANT BREACH SUMMARY:\n`;
+  summary += `• Total Breaches: ${totalBreaches}\n`;
+  if (breaches.dscrBreaches > 0) {
+    summary += `• DSCR Breaches: ${breaches.dscrBreaches} (Years: ${breaches.dscrBreachYears.join(', ')})\n`;
+  }
+  if (breaches.icrBreaches > 0) {
+    summary += `• ICR Breaches: ${breaches.icrBreaches} (Years: ${breaches.icrBreachYears.join(', ')})\n`;
+  }
+  if (breaches.ndBreaches > 0) {
+    summary += `• Leverage Breaches: ${breaches.ndBreaches} (Years: ${breaches.leverageBreachYears.join(', ')})\n`;
   }
   
-  return perYear;
+  // Multi-tranche info if available
+  if (projection.hasMultipleTranches && projection.multiTrancheInfo) {
+    summary += `\n\nCAPITAL STRUCTURE:\n`;
+    summary += `• Total Tranches: ${projection.multiTrancheInfo.totalTranches}\n`;
+    summary += `• Total Debt: ${(projection.multiTrancheInfo.totalDebt / 1000000).toFixed(2)}M ${ccy}\n`;
+    summary += `• Blended Interest Rate: ${(projection.multiTrancheInfo.blendedRate * 100).toFixed(2)}%\n`;
+    projection.multiTrancheInfo.tranches.forEach((tranche, idx) => {
+      summary += `\n  Tranche ${idx + 1}: ${tranche.name}\n`;
+      summary += `    Seniority: ${tranche.seniority}\n`;
+      summary += `    Amount: ${(tranche.amount / 1000000).toFixed(2)}M ${ccy}\n`;
+      summary += `    Rate: ${(tranche.rate * 100).toFixed(2)}%\n`;
+      summary += `    Type: ${tranche.amortizationType}\n`;
+      summary += `    Maturity: ${new Date(tranche.maturityDate).toLocaleDateString()}\n`;
+    });
+  }
+  
+  return summary;
 }
-export default function LoanMetricsTable({ projection, params, title, ccy }) {
-  const [showDetailedSchedule, setShowDetailedSchedule] = useState(false);
 
-  // FIXED: Build new facility schedule with proper balloon and day count
-  const newFacilitySchedule = useMemo(() => {
-    if (!params.requestedLoanAmount || !projection?.rows?.length) return null;
+function AIInsightPanel({ projection, params, ccy }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const insights = useMemo(() => {
+    const analysis = [];
+    const stats = projection.creditStats;
+    const breaches = projection.breaches;
     
-    const paymentsPerYear = params.paymentFrequency === "Monthly" ? 12 :
-      params.paymentFrequency === "Quarterly" ? 4 :
-      params.paymentFrequency === "Semi-Annually" ? 2 : 
-      params.paymentFrequency === "Annually" ? 1 : 4;
-
-    // Apply day count convention to interest rate
-    const effectiveRate = params.dayCountConvention === "Actual/360" 
-      ? (params.proposedPricing ?? params.interestRate ?? 0) * (365/360)
-      : (params.proposedPricing ?? params.interestRate ?? 0);
-
-    const loanAmount = params.requestedLoanAmount;
-    const tenor = params.debtTenorYears || 5;
-    const interestOnlyYears = params.interestOnlyYears || 0;
-    const balloonPercentage = (params.paymentFrequency === "Balloon" && params.useBalloonPayment) 
-  ? (params.balloonPercentage || 0) 
-  : 0;
+    // 1. OVERALL CREDIT QUALITY ASSESSMENT
+    const avgDSCR = stats.avgDSCR;
+    const minDSCR = stats.minDSCR;
     
-    // FIXED: Calculate amortization period correctly
-    const amortizationYears = tenor - interestOnlyYears;
-    const balloonAmount = loanAmount * (balloonPercentage / 100);
-    const amortizingAmount = loanAmount - balloonAmount;
-// Check for custom amortization
-    let customAmortizationSchedule = null;
-    if (params.paymentFrequency === "customAmortization" && 
-        Array.isArray(params.customAmortizationIntervals)) {
-      customAmortizationSchedule = expand4IntervalsToPerYear(
-        tenor,
-        interestOnlyYears,
-        params.customAmortizationIntervals
+    if (avgDSCR >= 1.5) {
+      analysis.push({
+        type: 'positive',
+        category: 'Credit Strength',
+        insight: `Strong debt service coverage averaging ${numFmt(avgDSCR)}x demonstrates robust cash generation relative to debt obligations. This provides a substantial cushion for operational volatility.`,
+        recommendation: 'Consider this a bankable credit profile suitable for favorable lending terms.'
+      });
+    } else if (avgDSCR >= 1.2) {
+      analysis.push({
+        type: 'neutral',
+        category: 'Credit Strength',
+        insight: `Adequate debt service coverage averaging ${numFmt(avgDSCR)}x meets minimum lending standards but leaves limited margin for error.`,
+        recommendation: 'Monitor closely for any revenue deterioration. Consider maintaining higher cash reserves.'
+      });
+    } else {
+      analysis.push({
+        type: 'warning',
+        category: 'Credit Risk',
+        insight: `Below-standard debt service coverage averaging ${numFmt(avgDSCR)}x indicates elevated refinancing risk and potential covenant breach exposure.`,
+        recommendation: 'URGENT: Develop deleveraging plan or seek covenant amendment. Consider asset sales or equity injection.'
+      });
+    }
+    
+    // 2. COVENANT BREACH ANALYSIS
+    if (breaches.dscrBreaches > 0 || breaches.icrBreaches > 0 || breaches.ndBreaches > 0) {
+      const totalBreaches = breaches.dscrBreaches + breaches.icrBreaches + breaches.ndBreaches;
+      const breachYears = [...new Set([
+        ...breaches.dscrBreachYears,
+        ...breaches.icrBreachYears,
+        ...breaches.leverageBreachYears
+      ])].sort();
+      
+      analysis.push({
+        type: 'critical',
+        category: 'Covenant Breaches',
+        insight: `Projected covenant violations in ${breachYears.length} year(s): ${breachYears.join(', ')}. Total breach instances: ${totalBreaches}.`,
+        recommendation: `CRITICAL: Engage lenders proactively for covenant waivers. Breach years suggest structural cash flow inadequacy requiring operational restructuring or capital injection of approximately ${currencyFmtMM(projection.rows[0].cashAvailableForDebtService * 0.2, ccy)}.`
+      });
+    } else {
+      analysis.push({
+        type: 'positive',
+        category: 'Covenant Compliance',
+        insight: 'All financial covenants maintained throughout projection period with no anticipated breaches.',
+        recommendation: 'Credit facility remains in good standing. Maintain current operational discipline.'
+      });
+    }
+    
+    // 3. LEVERAGE TRAJECTORY ANALYSIS
+    const leverageStart = projection.rows[0].ndToEbitda;
+    const leverageEnd = projection.rows[projection.rows.length - 1].ndToEbitda;
+    const leverageDelta = leverageEnd - leverageStart;
+    
+    if (leverageDelta < -0.5) {
+      analysis.push({
+        type: 'positive',
+        category: 'Deleveraging Path',
+        insight: `Strong deleveraging trajectory with Net Debt/EBITDA declining from ${numFmt(leverageStart)}x to ${numFmt(leverageEnd)}x (${numFmt(Math.abs(leverageDelta))}x improvement).`,
+        recommendation: 'Positive credit momentum. Consider refinancing opportunities at improved pricing as leverage declines.'
+      });
+    } else if (leverageDelta > 0.5) {
+      analysis.push({
+        type: 'warning',
+        category: 'Leverage Concern',
+        insight: `Leverage deteriorating from ${numFmt(leverageStart)}x to ${numFmt(leverageEnd)}x. Debt growing faster than EBITDA indicates weakening credit profile.`,
+        recommendation: 'Review growth strategy. Consider EBITDA enhancement initiatives or pause debt-funded expansion.'
+      });
+    } else {
+      analysis.push({
+        type: 'neutral',
+        category: 'Leverage Profile',
+        insight: `Stable leverage profile maintaining ~${numFmt((leverageStart + leverageEnd) / 2)}x Net Debt/EBITDA throughout projection.`,
+        recommendation: 'Maintain current capital allocation discipline. Monitor for opportunities to accelerate deleveraging.'
+      });
+    }
+    
+    // 4. INTEREST COVERAGE ANALYSIS
+    if (stats.minICR < 2.0) {
+      analysis.push({
+        type: 'warning',
+        category: 'Interest Coverage',
+        insight: `Minimum interest coverage of ${numFmt(stats.minICR)}x falls below prudent 2.0x threshold, limiting financial flexibility.`,
+        recommendation: 'Prioritize EBITDA growth or refinance to lower cost of capital. Limited capacity for additional debt.'
+      });
+    } else if (stats.minICR >= 3.0) {
+      analysis.push({
+        type: 'positive',
+        category: 'Interest Coverage',
+        insight: `Robust interest coverage averaging ${numFmt(stats.avgICR)}x demonstrates strong earnings protection against interest obligations.`,
+        recommendation: 'Strong coverage provides capacity for additional debt if strategic opportunities arise.'
+      });
+    }
+    
+    // 5. CASH FLOW GENERATION QUALITY
+    const avgCashConversion = stats.avgCashConversion;
+    if (avgCashConversion >= 0.15) {
+      analysis.push({
+        type: 'positive',
+        category: 'Cash Generation',
+        insight: `Excellent cash conversion averaging ${pctFmt(avgCashConversion)} of revenue demonstrates high-quality earnings and strong working capital management.`,
+        recommendation: 'Superior cash generation supports aggressive debt paydown or growth investment.'
+      });
+    } else if (avgCashConversion < 0.05) {
+      analysis.push({
+        type: 'warning',
+        category: 'Cash Generation',
+        insight: `Weak cash conversion at ${pctFmt(avgCashConversion)} of revenue suggests potential working capital or CapEx drag on cash flow.`,
+        recommendation: 'Review working capital efficiency and capital expenditure requirements. Consider asset-light business model.'
+      });
+    }
+    
+    // 6. MULTI-TRANCHE SPECIFIC INSIGHTS
+    if (projection.hasMultipleTranches && projection.multiTrancheInfo) {
+      const seniorTranches = projection.multiTrancheInfo.tranches.filter(t => 
+        t.seniority.toLowerCase().includes('senior')
       );
-    }
-    
-    let beginningBalance = loanAmount;
-    
-    return projection.rows.map((r, idx) => {
-      const year = idx + 1;
-      const isInterestOnly = year <= interestOnlyYears;
-      const isFinalYear = year === tenor;
+      const subTranches = projection.multiTrancheInfo.tranches.filter(t => 
+        t.seniority.toLowerCase().includes('subordinated') || t.seniority.toLowerCase().includes('mezzanine')
+      );
       
-      // Interest calculation
-      const interestPayment = beginningBalance * effectiveRate;
-      
-      // FIXED: Principal payment logic
-      let principalPayment = 0;
-      if (customAmortizationSchedule && customAmortizationSchedule[idx]) {
-        // Use custom schedule
-        principalPayment = (customAmortizationSchedule[idx] / 100) * loanAmount;
-      } else if (!isInterestOnly && amortizationYears > 0) {
-        // Regular amortization (excluding balloon)
-        principalPayment = amortizingAmount / amortizationYears;
+      if (subTranches.length > 0) {
+        const subDebtTotal = subTranches.reduce((sum, t) => sum + t.amount, 0);
+        const totalDebt = projection.multiTrancheInfo.totalDebt;
+        const subDebtPct = (subDebtTotal / totalDebt) * 100;
+        
+        analysis.push({
+          type: 'info',
+          category: 'Capital Structure',
+          insight: `Multi-layered capital structure with ${subDebtPct.toFixed(0)}% subordinated debt (${currencyFmtMM(subDebtTotal, ccy)}) provides enhanced downside protection for senior lenders.`,
+          recommendation: 'Subordinated layers absorb first-loss risk. Monitor ratio of senior vs total debt service to assess senior lender priority.'
+        });
       }
       
-      // FIXED: Add balloon payment in final year
-      let balloonPayment = 0;
-if (isFinalYear && params.paymentFrequency === "Balloon" && params.useBalloonPayment && balloonAmount > 0) {
-  balloonPayment = balloonAmount;
-}
+      // Maturity concentration risk
+      const maturities = projection.multiTrancheInfo.tranches.map(t => 
+        new Date(t.maturityDate).getFullYear()
+      );
+      const uniqueMaturities = [...new Set(maturities)];
       
-      const totalPrincipal = principalPayment + balloonPayment;
-      const totalPayment = interestPayment + totalPrincipal;
-      const endingBalance = Math.max(0, beginningBalance - totalPrincipal);
-
-      const schedule = {
-        year: r.year,
-        beginningBalance,
-        principalPayment,
-        balloonPayment,
-        totalPrincipal,
-        interestPayment,
-        totalPayment,
-        endingBalance,
-        paymentPerPeriod: paymentsPerYear > 0 ? totalPayment / paymentsPerYear : totalPayment,
-        paymentsPerYear,
-        hasBalloon: isFinalYear && balloonAmount > 0,
-        isInterestOnly,
-        effectiveRate: effectiveRate * 100 // Convert to percentage
-      };
-
-      beginningBalance = endingBalance;
-      return schedule;
-    });
-  }, [params, projection]);
-
-  // Build existing schedule
-  const existingSchedule = useMemo(() => {
-    if (!params.openingDebt || !projection?.rows?.length) return null;
+      if (uniqueMaturities.length < projection.multiTrancheInfo.totalTranches) {
+        analysis.push({
+          type: 'warning',
+          category: 'Refinancing Risk',
+          insight: `Maturity concentration: Multiple tranches mature in ${uniqueMaturities.length} year(s), creating refinancing cliff risk.`,
+          recommendation: 'Ladder maturities to reduce refinancing risk. Begin refinancing discussions 12-18 months before maturity clusters.'
+        });
+      }
+    }
     
-    let beginningBalance = params.openingDebt;
+    // 7. FCF ADEQUACY FOR DEBT SERVICE
+    const totalFCF = stats.totalFCFGenerated;
+    const totalDebtService = projection.rows.reduce((sum, r) => sum + r.debtService, 0);
+    const fcfCoverage = totalFCF / totalDebtService;
     
-    return projection.rows.map((r) => {
-      const schedule = {
-        year: r.year,
-        beginningBalance,
-        principal: r.principal || 0,
-        interest: r.interest || 0,
-        total: r.debtService || 0,
-        endingBalance: r.endingDebt ?? Math.max(0, beginningBalance - (r.principal || 0)),
-      };
-      beginningBalance = schedule.endingBalance;
-      return schedule;
-    });
-  }, [params.openingDebt, projection]);
-
-  // FIXED: Combined metrics calculation
-  const combinedMetrics = useMemo(() => {
-    if (!projection?.rows?.length) return null;
+    if (fcfCoverage >= 1.0) {
+      analysis.push({
+        type: 'positive',
+        category: 'Free Cash Flow',
+        insight: `Cumulative FCF of ${currencyFmtMM(totalFCF, ccy)} fully covers total debt service of ${currencyFmtMM(totalDebtService, ccy)} (${numFmt(fcfCoverage)}x coverage).`,
+        recommendation: 'Self-funding debt service from operations demonstrates financial sustainability. Excess FCF available for growth or returns to shareholders.'
+      });
+    } else {
+      analysis.push({
+        type: 'critical',
+        category: 'Free Cash Flow',
+        insight: `Cumulative FCF of ${currencyFmtMM(totalFCF, ccy)} INSUFFICIENT to cover debt service of ${currencyFmtMM(totalDebtService, ccy)} (${numFmt(fcfCoverage)}x coverage).`,
+        recommendation: 'CRITICAL: FCF shortfall requires external financing or asset sales to meet debt obligations. Immediate action required.'
+      });
+    }
     
-    return projection.rows.map((r, idx) => {
-      const existingDebtService = r.debtService || 0;
-      const newFacilityPayment = newFacilitySchedule?.[idx]?.totalPayment || 0;
-      const totalDebtService = existingDebtService + newFacilityPayment;
-      
-      const existingPrincipal = r.principal || 0;
-      const newPrincipal = newFacilitySchedule?.[idx]?.totalPrincipal || 0;
-      const totalPrincipal = existingPrincipal + newPrincipal;
-      
-      const existingInterest = r.interest || 0;
-      const newInterest = newFacilitySchedule?.[idx]?.interestPayment || 0;
-      const totalInterest = existingInterest + newInterest;
-      
-      // FIXED: Total debt calculation
-      const existingDebt = r.endingDebt || 0;
-      const newDebt = newFacilitySchedule?.[idx]?.endingBalance || 0;
-      const totalDebt = existingDebt + newDebt;
-      
-      // FIXED: LTV calculation with proper debt balance
-      const ltv = params.collateralValue ? (totalDebt / params.collateralValue) * 100 : 0;
-      
-      // FIXED: Cash after debt service (using EBITDA - Capex - Taxes - WC Change - Debt Service)
-      const ebitda = r.ebitda || 0;
-      const capex = r.capex || 0;
-      const taxes = r.taxes || 0;
-      const wcChange = r.wcChange || 0;
-      const operatingCashFlow = ebitda - capex - taxes - wcChange;
-      const cashAfterDS = operatingCashFlow - totalDebtService;
-      
-      // Recalculate coverage ratios with combined debt service
-      const dscr = totalDebtService > 0 ? operatingCashFlow / totalDebtService : 0;
-      const icr = totalInterest > 0 ? ebitda / totalInterest : 0;
-      const ndToEbitda = ebitda > 0 ? totalDebt / ebitda : 0;
-      
-      return {
-        year: r.year,
-        dscr,
-        icr,
-        ndToEbitda,
-        totalDebtService,
-        totalPrincipal,
-        totalInterest,
-        totalDebt,
-        ltv,
-        cashAfterDS,
-        ebitda,
-        operatingCashFlow,
-        hasBalloon: newFacilitySchedule?.[idx]?.hasBalloon || false,
-        balloonAmount: newFacilitySchedule?.[idx]?.balloonPayment || 0
-      };
-    });
-  }, [projection, newFacilitySchedule, params.collateralValue]);
-
-  if (!projection || !projection.rows?.length) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading loan metrics...</p>
+    return analysis;
+  }, [projection, params, ccy]);
+  
+  const insightTypeConfig = {
+    positive: { icon: CheckCircle2, color: 'emerald', label: 'Strength' },
+    neutral: { icon: Info, color: 'blue', label: 'Notice' },
+    warning: { icon: AlertTriangle, color: 'amber', label: 'Concern' },
+    critical: { icon: AlertTriangle, color: 'red', label: 'Critical' },
+    info: { icon: Sparkles, color: 'indigo', label: 'Insight' }
+  };
+  
+  return (
+    <Card className="border-l-4 border-l-indigo-600 shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b transition-colors">
+        <div
+          className="flex items-center justify-between cursor-pointer hover:from-indigo-100 hover:to-purple-100 w-full"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-600 rounded-lg">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-bold text-indigo-900">
+                AI-Powered Financial Analysis
+              </CardTitle>
+              <p className="text-xs text-indigo-700 mt-1">
+                {insights.length} insights • Click to {isExpanded ? 'collapse' : 'expand'}
+              </p>
+            </div>
+          </div>
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-indigo-600" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-indigo-600" />
+          )}
         </div>
+      </CardHeader>
+
+      {isExpanded && (
+        <CardContent className="p-6">
+          <div className="space-y-4">
+            {insights.map((insight, idx) => {
+              const config = insightTypeConfig[insight.type];
+              const Icon = config.icon;
+              
+              return (
+                <div 
+                  key={idx} 
+                  className={`p-4 bg-${config.color}-50 border-l-4 border-${config.color}-500 rounded-r-lg`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Icon className={`w-5 h-5 text-${config.color}-600 flex-shrink-0 mt-0.5`} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-xs font-bold px-2 py-0.5 bg-${config.color}-100 text-${config.color}-800 rounded-full`}>
+                          {config.label}
+                        </span>
+                        <span className="text-sm font-bold text-slate-900">
+                          {insight.category}
+                        </span>
+                      </div>
+                      <p className={`text-sm text-${config.color}-900 mb-2 leading-relaxed`}>
+                        {insight.insight}
+                      </p>
+                      <div className={`text-xs text-${config.color}-800 bg-${config.color}-100 p-2 rounded border border-${config.color}-200`}>
+                        <strong className="font-semibold">💡 Recommendation:</strong> {insight.recommendation}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Covenant Compliance Indicator - FIXED VERSION
+ */
+function CovenantIndicator({ value, threshold, isInverse = false, debtBalance }) {
+  // Check if there's actual debt in this specific year
+  const hasDebt = debtBalance > 0;
+  
+  // Invalid value check
+  const isInvalid =
+    value === null ||
+    value === undefined ||
+    !isFinite(value);
+    
+
+  // If no debt balance in this year, show "No debt"
+  if (!hasDebt) {
+    return (
+      <div className="flex items-center gap-2 text-slate-500 italic">
+        <span className="font-mono text-sm font-semibold">—</span>
+        <span className="text-xs">No debt</span>
       </div>
     );
   }
 
-  // Normalize rate (0.12 -> 12%)
-  const effectiveRate = params.dayCountConvention === "Actual/360" 
-    ? (params.proposedPricing ?? params.interestRate ?? 0) * (365/360)
-    : (params.proposedPricing ?? params.interestRate ?? 0);
-    
-  const ratePct = effectiveRate < 1 ? effectiveRate * 100 : effectiveRate;
-  const loanAmount = params.requestedLoanAmount ?? params.facilityAmount ?? 0;
+  // If invalid value but there IS debt, show 0
+  const safeValue = isInvalid ? 0 : value;
 
-  // Covenant thresholds
-  const minDSCR = params.minDSCR ?? 1.2;
-  const targetICR = params.targetICR ?? 2.0;
-  const maxLTV = params.maxLTV ?? 75;
-  const maxLeverage = params.maxNDToEBITDA ?? 4.0;
-
-  // Summary stats from combined metrics
-  const minDscrVal = combinedMetrics ? Math.min(...combinedMetrics.map(m => m.dscr)) : 0;
-  const minIcrVal = combinedMetrics ? Math.min(...combinedMetrics.map(m => m.icr)) : 0;
-  const maxLevVal = combinedMetrics ? Math.max(...combinedMetrics.map(m => m.ndToEbitda)) : 0;
-  const maxLtvVal = combinedMetrics ? Math.max(...combinedMetrics.map(m => m.ltv)) : 0;
-  
-  // Breach detection
-  const dscrBreaches = combinedMetrics?.filter(m => m.dscr < minDSCR).length || 0;
-  const icrBreaches = combinedMetrics?.filter(m => m.icr < targetICR).length || 0;
-  const leverageBreaches = combinedMetrics?.filter(m => m.ndToEbitda > maxLeverage).length || 0;
-  const ltvBreaches = combinedMetrics?.filter(m => m.ltv > maxLTV).length || 0;
-  const totalBreaches = dscrBreaches + icrBreaches + leverageBreaches + ltvBreaches;
+  // Normal compliance check
+  const isBreached = isInverse ? safeValue > threshold : safeValue < threshold;
+  const isMarginal = isInverse
+    ? safeValue > threshold * 0.9 && safeValue <= threshold
+    : safeValue < threshold * 1.1 && safeValue >= threshold;
 
   return (
+    <div className="flex items-center gap-2">
+      <span className="font-mono text-sm font-bold">{numFmt(safeValue)}x</span>
+      {isBreached ? (
+        <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs font-semibold">
+          <AlertTriangle className="w-3 h-3" />
+          <span>BREACH</span>
+        </div>
+      ) : isMarginal ? (
+        <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">
+          <AlertTriangle className="w-3 h-3" />
+          <span>MARGINAL</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">
+          <CheckCircle2 className="w-3 h-3" />
+          <span>COMPLIANT</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Main Loan Metrics Table Component
+ */
+export default function LoanMetricsTable({ projection, params, ccy }) {
+  const [activeView, setActiveView] = useState('summary');
+  const [aiSummary, setAiSummary] = useState('');
+
+  useEffect(() => {
+    const handleAISummary = (event) => {
+      setAiSummary(event.detail);
+    };
+
+    window.addEventListener('ai-summary-ready', handleAISummary);
+    return () => window.removeEventListener('ai-summary-ready', handleAISummary);
+  }, []);
+
+  if (!projection || !projection.rows || projection.rows.length === 0) {
+    return (
+      <Card className="border-l-4 border-l-red-600">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3 text-red-800">
+            <AlertTriangle className="w-6 h-6" />
+            <div>
+              <p className="font-semibold">No projection data available</p>
+              <p className="text-sm">Please configure financial parameters to generate loan metrics.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  const summaryStats = useMemo(() => {
+    const totalInterest = projection.rows.reduce((sum, r) => sum + r.interestExpense, 0);
+    const totalPrincipal = projection.rows.reduce((sum, r) => sum + r.principalPayment, 0);
+    const totalDebtService = totalInterest + totalPrincipal;
+    const avgDebtBalance = projection.rows.reduce((sum, r) => sum + r.debtBalance, 0) / projection.rows.length;
+    
+    return {
+      totalInterest,
+      totalPrincipal,
+      totalDebtService,
+      avgDebtBalance,
+      openingBalance: projection.rows[0].debtBalance,
+      closingBalance: projection.rows[projection.rows.length - 1].debtBalance,
+      totalRepaid: totalPrincipal
+    };
+  }, [projection]);
+  
+  return (
     <div className="space-y-6">
-      {/* Enhanced Header Card */}
-      <Card className="border-l-4 border-l-blue-600 shadow-md hover:shadow-lg transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-          <div className="flex justify-between items-center">
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="w-6 h-6 text-blue-600" />
-              {title || "Loan Metrics & Covenant Analysis"}
-            </CardTitle>
-            <button
-              onClick={() => exportLoanMetricsCSV(
-                projection,
-                params,
-                title,
-                ccy,
-                { newFacilitySchedule, existingSchedule, combinedMetrics }
+      <AIInsightPanel projection={projection} params={params} ccy={ccy} />
+      
+      <div className="flex justify-end">
+        
+
+<button
+  onClick={() => {
+    console.log("✅ Triggering AI analysis event...");
+    
+    // Create a focused summary from the table data
+    const tableSummary = generateTableSummary(projection, params, ccy);
+    
+    // Trigger the AI analysis with the table data
+    window.dispatchEvent(new CustomEvent("trigger-ai-analysis", {
+      detail: { summary: tableSummary, projection, params, ccy }
+    }));
+  }}
+  className="flex items-center gap-2 px-4 py-2 mt-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold rounded-md shadow hover:from-blue-600 hover:to-indigo-700 transition-all"
+>
+  <MessageCircleIcon className="w-4 h-4 text-white" />
+  <span>FinAssist AI: Interpret Loan Metrics</span>
+</button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-l-4 border-l-blue-600">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <DollarSign className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-slate-600 font-semibold">Total Debt Service</p>
+                <p className="text-xl font-bold text-slate-900">{currencyFmtMM(summaryStats.totalDebtService, ccy)}</p>
+                <p className="text-xs text-slate-500 mt-1">Over {projection.rows.length} years</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-l-4 border-l-emerald-600">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 rounded-lg">
+                <TrendingDown className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-slate-600 font-semibold">Principal Repaid</p>
+                <p className="text-xl font-bold text-slate-900">{currencyFmtMM(summaryStats.totalRepaid, ccy)}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {summaryStats.openingBalance > 0 
+                    ? `${((summaryStats.totalRepaid / summaryStats.openingBalance) * 100).toFixed(0)}% of opening balance`
+                    : 'N/A'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-l-4 border-l-purple-600">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Percent className="w-5 h-5 text-purple-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-slate-600 font-semibold">Avg DSCR</p>
+                <p className="text-xl font-bold text-slate-900">{numFmt(projection.creditStats.avgDSCR)}x</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Min: {numFmt(projection.creditStats.minDSCR)}x
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-l-4 border-l-amber-600">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <BarChart3 className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-slate-600 font-semibold">Avg Leverage</p>
+                <p className="text-xl font-bold text-slate-900">{numFmt(projection.creditStats.avgLeverage)}x</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Max: {numFmt(projection.creditStats.maxLeverage)}x
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      {/* View Toggle */}
+      <Card>
+        <CardHeader className="bg-slate-50 border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-bold text-slate-900">Debt Service Schedule</CardTitle>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveView('summary')}
+                className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+                  activeView === 'summary'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Summary View
+              </button>
+              <button
+                onClick={() => setActiveView('detailed')}
+                className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+                  activeView === 'detailed'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Detailed View
+              </button>
+              {projection.hasMultipleTranches && (
+                <button
+                  onClick={() => setActiveView('tranches')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+                    activeView === 'tranches'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-white text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Tranche Detail
+                </button>
               )}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-sm rounded-lg shadow-md hover:shadow-lg transition-all duration-200 font-semibold"
-            >
-              <Download className="w-4 h-4" />
-              Export Summary
-            </button>
+            </div>
           </div>
         </CardHeader>
         
-        {/* Facility Overview */}
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <OverviewItem 
-              label="Loan Amount" 
-              value={currencyFmtMM(loanAmount, ccy)}
-              icon={<DollarSign className="w-4 h-4" />}
-              color="blue"
-            />
-            <OverviewItem 
-              label="Interest Rate" 
-              value={`${numFmt(ratePct)}%`}
-              subtitle={params.dayCountConvention === "Actual/360" ? "Actual/360" : "Standard"}
-              icon={<TrendingUp className="w-4 h-4" />}
-              color="emerald"
-            />
-            <OverviewItem 
-              label="Tenor" 
-              value={`${params.debtTenorYears} years`}
-              icon={<Calendar className="w-4 h-4" />}
-              color="purple"
-            />
-            <OverviewItem 
-              label="Payment Frequency" 
-              value={params.paymentFrequency || "Quarterly"}
-              icon={<Calendar className="w-4 h-4" />}
-              color="indigo"
-            />
-            <OverviewItem 
-              label="Interest-Only Period" 
-              value={`${params.interestOnlyYears || 0} years`}
-              color="amber"
-            />
-            <OverviewItem 
-              label="Balloon Payment" 
-              value={`${params.balloonPercentage || 0}%`}
-              subtitle={params.balloonPercentage > 0 ? currencyFmtMM(loanAmount * (params.balloonPercentage / 100), ccy) : "None"}
-              color="red"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Covenant Compliance Summary */}
-      <Card className="border-l-4 border-l-emerald-600 shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 border-b">
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="w-6 h-6 text-emerald-600" />
-            Covenant Compliance Summary
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <CovenantMetric
-              label="Min DSCR"
-              value={numFmt(minDscrVal)}
-              threshold={minDSCR}
-              breaches={dscrBreaches}
-              isBetter={(val, thresh) => val >= thresh}
-            />
-            <CovenantMetric
-              label="Min ICR"
-              value={numFmt(minIcrVal)}
-              threshold={targetICR}
-              breaches={icrBreaches}
-              isBetter={(val, thresh) => val >= thresh}
-            />
-            <CovenantMetric
-              label="Max Leverage"
-              value={numFmt(maxLevVal) + "x"}
-              threshold={maxLeverage}
-              breaches={leverageBreaches}
-              isBetter={(val, thresh) => val <= thresh}
-            />
-            <CovenantMetric
-              label="Max LTV"
-              value={numFmt(maxLtvVal) + "%"}
-              threshold={maxLTV}
-              breaches={ltvBreaches}
-              isBetter={(val, thresh) => val <= thresh}
-            />
-          </div>
-          
-          {totalBreaches > 0 && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-              <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <div className="font-bold text-red-800 text-sm">Covenant Breaches Detected</div>
-                <div className="text-red-700 text-xs mt-1">
-                  {totalBreaches} breach{totalBreaches > 1 ? 'es' : ''} across {params.debtTenorYears} years. Review structure immediately.
-                </div>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Detailed Metrics Table */}
-      <Card className="shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <div className="flex justify-between items-center">
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
-              Year-by-Year Analysis
-            </CardTitle>
-            <button
-              onClick={() => setShowDetailedSchedule(!showDetailedSchedule)}
-              className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
-            >
-              <Info className="w-4 h-4" />
-              {showDetailedSchedule ? 'Hide' : 'Show'} Payment Schedule
-            </button>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-6">
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
-              <thead>
-                <tr className="border-b-2 border-slate-300 bg-slate-50">
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Year</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">DSCR</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Cushion</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">ICR</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Cushion</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">ND/EBITDA</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Cushion</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Debt Service</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Principal</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Interest</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">LTV</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Cash After DS</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-700">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {combinedMetrics?.map((m, idx) => {
-                  const dscrBreach = m.dscr < minDSCR;
-                  const icrBreach = m.icr < targetICR;
-                  const levBreach = m.ndToEbitda > maxLeverage;
-                  const ltvBreach = m.ltv > maxLTV;
-                  const anyBreach = dscrBreach || icrBreach || levBreach || ltvBreach;
-
-                  return (
-                    <tr 
-                      key={m.year}
-                      className={`hover:bg-slate-50 transition-colors ${
-                        anyBreach ? 'bg-red-50' : ''
-                      } ${m.hasBalloon ? 'bg-amber-50 font-semibold' : ''}`}
-                    >
-                      <td className="px-3 py-2 font-semibold text-slate-800">
-                        <div className="flex items-center gap-2">
-                          {m.year}
-                          {m.hasBalloon && (
-                            <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">
-                              BALLOON
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className={`px-3 py-2 text-right font-bold ${dscrBreach ? 'text-red-600' : 'text-slate-800'}`}>
-                        {numFmt(m.dscr)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-semibold ${
-                        m.dscr - minDSCR < 0 ? 'text-red-600' : 
-                        m.dscr - minDSCR < 0.2 ? 'text-amber-600' : 'text-emerald-600'
-                      }`}>
-                        {m.dscr - minDSCR >= 0 ? '+' : ''}{numFmt(m.dscr - minDSCR)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-bold ${icrBreach ? 'text-red-600' : 'text-slate-800'}`}>
-                        {numFmt(m.icr)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-semibold ${
-                        m.icr - targetICR < 0 ? 'text-red-600' : 
-                        m.icr - targetICR < 0.5 ? 'text-amber-600' : 'text-emerald-600'
-                      }`}>
-                        {m.icr - targetICR >= 0 ? '+' : ''}{numFmt(m.icr - targetICR)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-bold ${levBreach ? 'text-red-600' : 'text-slate-800'}`}>
-                        {numFmt(m.ndToEbitda)}x
-                      </td>
-                      <td className={`px-3 py-2 text-right font-semibold ${
-                        maxLeverage - m.ndToEbitda < 0 ? 'text-red-600' : 
-                        maxLeverage - m.ndToEbitda < 0.5 ? 'text-amber-600' : 'text-emerald-600'
-                      }`}>
-                        {maxLeverage - m.ndToEbitda >= 0 ? '+' : ''}{numFmt(maxLeverage - m.ndToEbitda)}x
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-800">
-                        {currencyFmt(m.totalDebtService, ccy)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-800">
-                        {currencyFmt(m.totalPrincipal, ccy)}
-                        {m.hasBalloon && m.balloonAmount > 0 && (
-                          <div className="text-[10px] text-amber-600">
-                            (incl. {currencyFmtMM(m.balloonAmount, ccy)} balloon)
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-800">
-                        {currencyFmt(m.totalInterest, ccy)}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-bold ${ltvBreach ? 'text-red-600' : 'text-slate-800'}`}>
-                        {numFmt(m.ltv)}%
-                      </td>
-                      <td className={`px-3 py-2 text-right font-semibold ${
-                        m.cashAfterDS < 0 ? 'text-red-600' : 'text-emerald-600'
-                      }`}>
-                        {currencyFmt(m.cashAfterDS, ccy)}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        {anyBreach ? (
-                          <div className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded-full text-[10px] font-bold border border-red-200">
-                            <XCircle className="w-3 h-3" />
-                            BREACH
-                          </div>
-                        ) : (
-                          <div className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold border border-emerald-200">
-                            <CheckCircle className="w-3 h-3" />
-                            PASS
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              {/* Summary footer */}
-              <tfoot className="bg-gradient-to-r from-slate-100 to-slate-200 border-t-2 border-slate-300">
-                <tr className="font-bold">
-                  <td className="px-3 py-2 text-slate-800">Summary</td>
-                  <td className={`px-3 py-2 text-right ${minDscrVal < minDSCR ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {numFmt(minDscrVal)}
-                  </td>
-                  <td></td>
-                  <td className={`px-3 py-2 text-right ${minIcrVal < targetICR ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {numFmt(minIcrVal)}
-                  </td>
-                  <td></td>
-                  <td className={`px-3 py-2 text-right ${maxLevVal > maxLeverage ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {numFmt(maxLevVal)}x
-                  </td>
-                  <td colSpan="7"></td>
-                </tr>
-              </tfoot>
-            </table>
+            {activeView === 'summary' && (
+              <SummaryView projection={projection} params={params} ccy={ccy} />
+            )}
+            {activeView === 'detailed' && (
+              <DetailedView projection={projection} params={params} ccy={ccy} />
+            )}
+            {activeView === 'tranches' && projection.hasMultipleTranches && (
+              <TrancheView projection={projection} params={params} ccy={ccy} />
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Detailed Payment Schedule (Collapsible) */}
-      {showDetailedSchedule && newFacilitySchedule && (
-        <Card className="border-l-4 border-l-purple-600 shadow-sm">
-          <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-purple-600" />
-              Detailed Payment Schedule - New Facility
+      {aiSummary && (
+        <Card className="border-l-4 border-l-blue-600 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-sm">
+          <CardHeader className="border-b border-blue-200">
+            <CardTitle className="flex items-center gap-2 text-blue-900">
+              <MessageCircleIcon className="w-5 h-5 text-blue-700" />
+              FinAssist AI Summary & Interpretation
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-6">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-300 bg-slate-50">
-                    <th className="px-3 py-2 text-left font-semibold text-slate-700">Year</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Beginning Balance</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Principal</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Balloon</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Interest</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Total Payment</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Ending Balance</th>
-                    <th className="px-3 py-2 text-right font-semibold text-slate-700">Per Period</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {newFacilitySchedule.map((s) => (
-                    <tr 
-                      key={s.year}
-                      className={`hover:bg-slate-50 ${s.hasBalloon ? 'bg-amber-50 font-semibold' : ''} ${s.isInterestOnly ? 'bg-blue-50' : ''}`}
-                    >
-                      <td className="px-3 py-2 font-semibold text-slate-800">
-                        <div className="flex items-center gap-2">
-                          {s.year}
-                          {s.isInterestOnly && (
-                            <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full font-bold">
-                              I/O
-                            </span>
-                          )}
-                          {s.hasBalloon && (
-                            <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">
-                              BALLOON
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-800">{currencyFmt(s.beginningBalance, ccy)}</td>
-                      <td className="px-3 py-2 text-right text-slate-800">{currencyFmt(s.principalPayment, ccy)}</td>
-                      <td className="px-3 py-2 text-right font-bold text-amber-700">{currencyFmt(s.balloonPayment, ccy)}</td>
-                      <td className="px-3 py-2 text-right text-slate-800">{currencyFmt(s.interestPayment, ccy)}</td>
-                      <td className="px-3 py-2 text-right font-bold text-blue-700">{currencyFmt(s.totalPayment, ccy)}</td>
-                      <td className="px-3 py-2 text-right text-slate-800">{currencyFmt(s.endingBalance, ccy)}</td><td className="px-3 py-2 text-right text-slate-600">
-                        {currencyFmt(s.paymentPerPeriod, ccy)}
-                        <div className="text-[10px] text-slate-500">
-                          ({s.paymentsPerYear}x/year)
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-gradient-to-r from-slate-100 to-slate-200 border-t-2 border-slate-300">
-                  <tr className="font-bold">
-                    <td className="px-3 py-2 text-slate-800">Totals</td>
-                    <td></td>
-                    <td className="px-3 py-2 text-right text-slate-800">
-                      {currencyFmt(newFacilitySchedule.reduce((sum, s) => sum + s.principalPayment, 0), ccy)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-amber-700">
-                      {currencyFmt(newFacilitySchedule.reduce((sum, s) => sum + s.balloonPayment, 0), ccy)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-slate-800">
-                      {currencyFmt(newFacilitySchedule.reduce((sum, s) => sum + s.interestPayment, 0), ccy)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-blue-700">
-                      {currencyFmt(newFacilitySchedule.reduce((sum, s) => sum + s.totalPayment, 0), ccy)}
-                    </td>
-                    <td colSpan="2"></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-            
-            <div className="mt-4 p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
-              <h4 className="font-semibold text-sm mb-3 text-slate-800 flex items-center gap-2">
-                <Info className="w-4 h-4" />
-                Payment Schedule Details
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                <div className="p-2 bg-white rounded border border-slate-200">
-                  <span className="font-medium text-slate-600">Effective Rate: </span>
-                  <span className="font-bold text-slate-800">
-                    {numFmt(newFacilitySchedule[0]?.effectiveRate || 0)}%
-                  </span>
-                </div>
-                <div className="p-2 bg-white rounded border border-slate-200">
-                  <span className="font-medium text-slate-600">Total Interest: </span>
-                  <span className="font-bold text-slate-800">
-                    {currencyFmtMM(newFacilitySchedule.reduce((sum, s) => sum + s.interestPayment, 0), ccy)}
-                  </span>
-                </div>
-                <div className="p-2 bg-white rounded border border-slate-200">
-                  <span className="font-medium text-slate-600">Total Payments: </span>
-                  <span className="font-bold text-slate-800">
-                    {currencyFmtMM(newFacilitySchedule.reduce((sum, s) => sum + s.totalPayment, 0), ccy)}
-                  </span>
-                </div>
-                <div className="p-2 bg-white rounded border border-slate-200">
-                  <span className="font-medium text-slate-600">All-In Cost: </span>
-                  <span className="font-bold text-slate-800">
-                    {pctFmt((newFacilitySchedule.reduce((sum, s) => sum + s.interestPayment, 0) / loanAmount) / params.debtTenorYears)}
-                  </span>
-                </div>
-              </div>
-            </div>
+          <CardContent className="p-4">
+            <p className="text-sm leading-relaxed text-slate-800 whitespace-pre-wrap">
+              {aiSummary}
+            </p>
           </CardContent>
         </Card>
       )}
@@ -642,66 +642,753 @@ if (isFinalYear && params.paymentFrequency === "Balloon" && params.useBalloonPay
   );
 }
 
-/* --- Enhanced Reusable Components --- */
-
-function OverviewItem({ label, value, subtitle, icon, color = "blue" }) {
-  const colorClasses = {
-    blue: 'from-blue-500 to-blue-600',
-    emerald: 'from-emerald-500 to-emerald-600',
-    purple: 'from-purple-500 to-purple-600',
-    indigo: 'from-indigo-500 to-indigo-600',
-    amber: 'from-amber-500 to-amber-600',
-    red: 'from-red-500 to-red-600',
-  };
-
+/**
+ * Summary View - High-level metrics
+ */
+function SummaryView({ projection, params, ccy }) {
   return (
-    <div className={`p-4 bg-gradient-to-br ${colorClasses[color]} rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105`}>
-      <div className="flex items-center gap-2 mb-1 opacity-90">
-        {icon}
-        <div className="text-xs font-semibold uppercase tracking-wide">{label}</div>
-      </div>
-      <div className="text-xl font-bold mb-1">{value}</div>
-      {subtitle && <div className="text-xs opacity-80">{subtitle}</div>}
-    </div>
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="bg-slate-100 border-b-2 border-slate-300">
+          <th className="text-left py-3 px-4 font-bold text-slate-700">Metric</th>
+          {projection.rows.map((row) => (
+            <th key={row.year} className="text-right py-3 px-4 font-bold text-slate-700">
+              {row.year}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-200">
+        <tr className="hover:bg-slate-50">
+          <td className="py-2 px-4 font-semibold text-slate-700">Revenue</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+              {currencyFmtMM(row.revenue, ccy)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="hover:bg-blue-50">
+          <td className="py-2 px-4 font-semibold text-blue-900">EBITDA</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-blue-900 font-bold py-2 px-4">
+              {currencyFmtMM(row.ebitda, ccy)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="hover:bg-slate-50">
+          <td className="py-2 px-4 font-semibold text-slate-700 pl-8">└─ EBITDA Margin</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-slate-700 py-2 px-4">
+              {pctFmt(row.ebitdaMargin)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="bg-purple-50 hover:bg-purple-100">
+          <td className="py-2 px-4 font-semibold text-purple-900">Total Debt Service</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-purple-900 font-bold py-2 px-4">
+              {currencyFmtMM(row.debtService, ccy)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="hover:bg-slate-50">
+          <td className="py-2 px-4 font-semibold text-slate-700 pl-8">└─ Interest</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-slate-700 py-2 px-4">
+              {currencyFmtMM(row.interestExpense, ccy)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="hover:bg-slate-50">
+          <td className="py-2 px-4 font-semibold text-slate-700 pl-8">└─ Principal</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-slate-700 py-2 px-4">
+              {currencyFmtMM(row.principalPayment, ccy)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="bg-slate-100 hover:bg-slate-200">
+          <td className="py-2 px-4 font-semibold text-slate-800">Ending Debt Balance</td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+              {currencyFmtMM(row.debtBalance, ccy)}
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="bg-emerald-50 hover:bg-emerald-100">
+          <td className="py-2 px-4 font-semibold text-emerald-900">
+            DSCR
+            <span className="ml-2 text-xs text-slate-600">(Min: {numFmt(params.minDSCR)}x)</span>
+          </td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right py-2 px-4">
+              <CovenantIndicator 
+                value={row.dscr} 
+                threshold={params.minDSCR} 
+                isInverse={false}
+                debtBalance={row.debtBalance}
+              />
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="bg-blue-50 hover:bg-blue-100">
+          <td className="py-2 px-4 font-semibold text-blue-900">
+            ICR
+            <span className="ml-2 text-xs text-slate-600">(Min: {numFmt(params.targetICR)}x)</span>
+          </td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right py-2 px-4">
+              <CovenantIndicator 
+                value={row.icr} 
+                threshold={params.targetICR} 
+                isInverse={false}
+                debtBalance={row.debtBalance}
+              />
+            </td>
+          ))}
+        </tr>
+        
+        <tr className="bg-amber-50 hover:bg-amber-100">
+          <td className="py-2 px-4 font-semibold text-amber-900">
+            Net Debt / EBITDA
+            <span className="ml-2 text-xs text-slate-600">(Max: {numFmt(params.maxNDToEBITDA)}x)</span>
+          </td>
+          {projection.rows.map((row, i) => (
+            <td key={i} className="text-right py-2 px-4">
+              <CovenantIndicator 
+                value={row.ndToEbitda} 
+                threshold={params.maxNDToEBITDA} 
+                isInverse={true}
+                debtBalance={row.debtBalance}
+              />
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
-function CovenantMetric({ label, value, threshold, breaches, isBetter }) {
-  const numValue = parseFloat(value.replace(/[^0-9.-]/g, ''));
-  const isCompliant = isBetter(numValue, threshold);
-  const cushion = isBetter === ((v, t) => v >= t) ? numValue - threshold : threshold - numValue;
-  
+/**
+ * Detailed View - Comprehensive metrics
+ */
+function DetailedView({ projection, params, ccy }) {
   return (
-    <div className={`p-4 rounded-lg border-2 ${
-      !isCompliant ? 'bg-red-50 border-red-300' : 
-      cushion < 0.2 ? 'bg-amber-50 border-amber-300' : 
-      'bg-emerald-50 border-emerald-300'
-    }`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-semibold text-slate-700">{label}</div>
-        {isCompliant ? (
-          <CheckCircle className="w-4 h-4 text-emerald-600" />
-        ) : (
-          <XCircle className="w-4 h-4 text-red-600" />
-        )}
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="bg-slate-100 border-b-2 border-slate-300">
+          <th className="text-left py-3 px-4 font-bold text-slate-700 sticky left-0 bg-slate-100 z-10">
+            Metric
+          </th>
+          {projection.rows.map((row) => (
+            <th key={row.year} className="text-right py-3 px-4 font-bold text-slate-700 min-w-[120px]">
+              {row.year}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-200">
+        <tr className="bg-blue-100">
+          <td colSpan="100%" className="py-2 px-4 font-bold text-blue-900 text-sm">
+      {/* ===============================
+     📊 INCOME STATEMENT + DEBT & CASH FLOW
+================================== */}
+<div className="overflow-x-auto mt-6">
+  <table className="min-w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
+    <tbody>
+      {/* ===============================
+   📊 INCOME STATEMENT
+================================== */}
+<tr className="bg-blue-100">
+  <td colSpan="100%" className="py-2 px-4 font-bold text-blue-900 text-sm">
+    📊 INCOME STATEMENT
+  </td>
+</tr>
+
+{/* Revenue & Growth */}
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Revenue</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.revenue, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 text-slate-600 pl-6 sticky left-0 bg-white">└─ Growth Rate</td>
+  {projection.rows.map((row, i) => {
+    const prevRevenue = i > 0 ? projection.rows[i - 1].revenue : row.revenue;
+    const growth = i > 0 ? (row.revenue - prevRevenue) / prevRevenue : 0;
+    return (
+      <td key={i} className="text-right font-mono text-slate-600 py-2 px-4">
+        {i > 0 ? pctFmt(growth) : "—"}
+      </td>
+    );
+  })}
+</tr>
+
+{/* Gross Profit Band */}
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">COGS</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.cogs, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-slate-100 hover:bg-slate-200">
+  <td className="py-2 px-4 font-semibold text-slate-800 sticky left-0 bg-slate-100">
+    Gross Profit
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.grossProfit, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 text-slate-600 pl-6 sticky left-0 bg-white">└─ Gross Margin</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-600 py-2 px-4">
+      {pctFmt(row.grossMargin)}
+    </td>
+  ))}
+</tr>
+
+{/* Operating Profit Band */}
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">
+    Operating Expenses
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.opex, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-blue-50 hover:bg-blue-100">
+  <td className="py-2 px-4 font-semibold text-blue-900 sticky left-0 bg-blue-50">EBITDA</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-blue-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.ebitda, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 text-slate-600 pl-6 sticky left-0 bg-white">└─ EBITDA Margin</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-600 py-2 px-4">
+      {pctFmt(row.ebitdaMargin)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">
+    Depreciation & Amortization
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.depreciation, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-slate-100 hover:bg-slate-200">
+  <td className="py-2 px-4 font-semibold text-slate-800 sticky left-0 bg-slate-100">EBIT</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.ebit, ccy)}
+    </td>
+  ))}
+</tr>
+
+{/* Interest & Net Income Band */}
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Interest Expense</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.interestExpense, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-slate-100 hover:bg-slate-200">
+  <td className="py-2 px-4 font-semibold text-slate-800 sticky left-0 bg-slate-100">
+    EBT (Pre-Tax Income)
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.ebt, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Income Tax</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.tax, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-emerald-50 hover:bg-emerald-100">
+  <td className="py-2 px-4 font-semibold text-emerald-900 sticky left-0 bg-emerald-50">Net Income</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-emerald-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.netIncome, ccy)}
+    </td>
+  ))}
+</tr>
+
+{/* ===============================
+   💵 CASH FLOW STATEMENT
+================================== */}
+<tr className="bg-indigo-100">
+  <td colSpan="100%" className="py-2 px-4 font-bold text-indigo-900 text-sm">
+    💵 CASH FLOW STATEMENT
+  </td>
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Operating Cash Flow</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.operatingCashFlow, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Working Capital Change</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      ({currencyFmtMM(row.wcDelta, ccy)})
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Capital Expenditure (CapEx)</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      ({currencyFmtMM(row.capex, ccy)})
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-indigo-50 hover:bg-indigo-100">
+  <td className="py-2 px-4 font-semibold text-indigo-900 sticky left-0 bg-indigo-50">
+    Free Cash Flow (FCF)
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-indigo-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.fcf, ccy)}
+    </td>
+  ))}
+</tr>
+
+{/* ===============================
+   💰 DEBT SERVICE
+================================== */}
+<tr className="bg-purple-100">
+  <td colSpan="100%" className="py-2 px-4 font-bold text-purple-900 text-sm">
+    💰 DEBT SERVICE
+  </td>
+</tr>
+
+<tr className="bg-purple-50 hover:bg-purple-100">
+  <td className="py-2 px-4 font-semibold text-purple-900 sticky left-0 bg-purple-50">
+    Total Debt Service
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-purple-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.debtService, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 text-slate-700 pl-6 sticky left-0 bg-white">└─ Interest Payment</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-700 py-2 px-4">
+      {currencyFmtMM(row.interestExpense, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 text-slate-700 pl-6 sticky left-0 bg-white">└─ Principal Payment</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-700 py-2 px-4">
+      {currencyFmtMM(row.principalPayment, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-slate-100 hover:bg-slate-200">
+  <td className="py-2 px-4 font-semibold text-slate-800 sticky left-0 bg-slate-100">
+    Ending Debt Balance
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.debtBalance, ccy)}
+    </td>
+  ))}
+</tr>
+
+{/* ===============================
+   ⚖️ COVENANT RATIOS
+================================== */}
+<tr className="bg-amber-100">
+  <td colSpan="100%" className="py-2 px-4 font-bold text-amber-900 text-sm">
+    ⚖️ COVENANT RATIOS
+  </td>
+</tr>
+
+<tr className="bg-emerald-50 hover:bg-emerald-100">
+  <td className="py-2 px-4 font-semibold text-emerald-900 sticky left-0 bg-emerald-50">
+    DSCR (Debt Service Coverage)
+    <div className="text-xs text-slate-600 font-normal">Covenant: ≥{numFmt(params.minDSCR)}x</div>
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right py-2 px-4">
+     <CovenantIndicator value={row.dscr} threshold={params.minDSCR} debtBalance={row.debtBalance} />
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-blue-50 hover:bg-blue-100">
+  <td className="py-2 px-4 font-semibold text-blue-900 sticky left-0 bg-blue-50">
+    ICR (Interest Coverage)
+    <div className="text-xs text-slate-600 font-normal">Covenant: ≥{numFmt(params.targetICR)}x</div>
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right py-2 px-4">
+      <CovenantIndicator value={row.icr} threshold={params.targetICR} debtBalance={row.debtBalance} />
+
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-amber-50 hover:bg-amber-100">
+  <td className="py-2 px-4 font-semibold text-amber-900 sticky left-0 bg-amber-50">
+    Net Debt / EBITDA (Leverage)
+    <div className="text-xs text-slate-600 font-normal">Covenant: ≤{numFmt(params.maxNDToEBITDA)}x</div>
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right py-2 px-4">
+      <CovenantIndicator
+  value={row.ndToEbitda}
+  threshold={params.maxNDToEBITDA}
+  isInverse
+  debtBalance={row.debtBalance}
+/>
+    </td>
+  ))}
+</tr>
+
+{/* ===============================
+   🏦 BALANCE SHEET SUMMARY
+================================== */}
+<tr className="bg-slate-100">
+  <td colSpan="100%" className="py-2 px-4 font-bold text-slate-900 text-sm">
+    🏦 BALANCE SHEET SUMMARY
+  </td>
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">
+    Cash & Cash Equivalents
+  </td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.cash, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Working Capital</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.workingCapital, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Net PP&E</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.netPPE, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="hover:bg-slate-50">
+  <td className="py-2 px-4 font-semibold text-slate-700 sticky left-0 bg-white">Gross Debt</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+      {currencyFmtMM(row.grossDebt, ccy)}
+    </td>
+  ))}
+</tr>
+
+<tr className="bg-amber-50 hover:bg-amber-100">
+  <td className="py-2 px-4 font-semibold text-amber-900 sticky left-0 bg-amber-50">Net Debt</td>
+  {projection.rows.map((row, i) => (
+    <td key={i} className="text-right font-mono text-amber-900 font-bold py-2 px-4">
+      {currencyFmtMM(row.netDebt, ccy)}
+    </td>
+  ))}
+</tr>
+            </tbody>
+          </table>
+        </div> {/* close overflow-x-auto mt-6 */}
+      </td>
+    </tr>
+  </tbody>
+</table>
+);
+}
+
+/**
+ * Tranche View - Multi-tranche breakdown
+ */
+function TrancheView({ projection, params, ccy }) {
+  if (!projection.hasMultipleTranches || !projection.multiTrancheInfo) {
+    return (
+      <div className="p-8 text-center text-slate-600">
+        <Info className="w-12 h-12 mx-auto mb-4 text-slate-400" />
+        <p className="text-lg font-semibold">Multi-tranche mode not enabled</p>
+        <p className="text-sm mt-2">
+          Enable multiple debt tranches in the Opening Debt Schedule section to view tranche-level details.
+        </p>
       </div>
-      <div className={`text-2xl font-bold mb-1 ${
-        !isCompliant ? 'text-red-700' : 
-        cushion < 0.2 ? 'text-amber-700' : 
-        'text-emerald-700'
-      }`}>
-        {value}
-      </div>
-      <div className="text-xs text-slate-600">
-        Covenant: {typeof threshold === 'number' ? numFmt(threshold) : threshold}
-        {typeof threshold === 'number' && !value.includes('%') && 'x'}
-        {value.includes('%') && '%'}
-      </div>
-      {breaches > 0 && (
-        <div className="mt-2 pt-2 border-t border-current text-xs font-semibold text-red-700">
-          {breaches} breach{breaches > 1 ? 'es' : ''}
+    );
+  }
+
+  return (
+    <div className="p-4">
+      {/* Multi-Tranche Summary */}
+      <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
+        <h3 className="text-lg font-bold text-purple-900 mb-3">Multi-Tranche Summary</h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-purple-700 font-semibold mb-1">Total Tranches</p>
+            <p className="text-2xl font-bold text-purple-900">
+              {projection.multiTrancheInfo.totalTranches}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-purple-700 font-semibold mb-1">Total Debt</p>
+            <p className="text-2xl font-bold text-purple-900">
+              {currencyFmtMM(projection.multiTrancheInfo.totalDebt, ccy)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-purple-700 font-semibold mb-1">Blended Rate</p>
+            <p className="text-2xl font-bold text-purple-900">
+              {pctFmt(projection.multiTrancheInfo.blendedRate)}
+            </p>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Tranche-by-Tranche Tables */}
+      {projection.multiTrancheInfo.tranches.map((tranche, trancheIdx) => (
+        <div key={trancheIdx} className="mb-6">
+          <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-3 rounded-t-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-lg font-bold">{tranche.name}</h4>
+                <p className="text-xs text-slate-300 mt-1">
+                  {tranche.seniority} • {currencyFmtMM(tranche.amount, ccy)} @ {pctFmt(tranche.rate)} •{" "}
+                  {tranche.amortizationType === "amortizing"
+                    ? "Amortizing"
+                    : tranche.amortizationType === "interest-only"
+                    ? "Interest-Only"
+                    : "Bullet"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-300">Maturity</p>
+                <p className="text-sm font-bold">
+                  {new Date(tranche.maturityDate).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto border-2 border-t-0 border-slate-300 rounded-b-lg">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-300">
+                  <th className="text-left py-2 px-4 font-bold text-slate-700">Metric</th>
+                  {projection.rows.map((row) => (
+                    <th key={row.year} className="text-right py-2 px-4 font-bold text-slate-700">
+                      {row.year}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <tr className="hover:bg-slate-50">
+                  <td className="py-2 px-4 font-semibold text-slate-700">Interest Payment</td>
+                  {projection.rows.map((row, i) => {
+                    const trancheData = row.trancheDetails[trancheIdx];
+                    return (
+                      <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+                        {trancheData ? currencyFmtMM(trancheData.interest, ccy) : "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+
+                <tr className="hover:bg-slate-50">
+                  <td className="py-2 px-4 font-semibold text-slate-700">Principal Payment</td>
+                  {projection.rows.map((row, i) => {
+                    const trancheData = row.trancheDetails[trancheIdx];
+                    return (
+                      <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+                        {trancheData ? currencyFmtMM(trancheData.principal, ccy) : "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+
+                <tr className="bg-purple-50 hover:bg-purple-100">
+                  <td className="py-2 px-4 font-semibold text-purple-900">Total Payment</td>
+                  {projection.rows.map((row, i) => {
+                    const trancheData = row.trancheDetails[trancheIdx];
+                    return (
+                      <td key={i} className="text-right font-mono text-purple-900 font-bold py-2 px-4">
+                        {trancheData ? currencyFmtMM(trancheData.totalPayment, ccy) : "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+
+                <tr className="bg-slate-100 hover:bg-slate-200">
+                  <td className="py-2 px-4 font-semibold text-slate-800">Ending Balance</td>
+                  {projection.rows.map((row, i) => {
+                    const trancheData = row.trancheDetails[trancheIdx];
+                    return (
+                      <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+                        {trancheData ? currencyFmtMM(trancheData.endingBalance, ccy) : "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      {/* Aggregated View */}
+      <div className="mt-6">
+        <div className="bg-gradient-to-r from-indigo-700 to-purple-800 text-white p-3 rounded-t-lg">
+          <h4 className="text-lg font-bold">Aggregated Total (All Tranches)</h4>
+          <p className="text-xs text-slate-200 mt-1">
+            Combined debt service across all tranches
+          </p>
+        </div>
+
+        <div className="overflow-x-auto border-2 border-t-0 border-indigo-300 rounded-b-lg">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-indigo-100 border-b border-indigo-300">
+                <th className="text-left py-2 px-4 font-bold text-indigo-900">Metric</th>
+                {projection.rows.map((row) => (
+                  <th key={row.year} className="text-right py-2 px-4 font-bold text-indigo-900">
+                    {row.year}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              <tr className="hover:bg-slate-50">
+                <td className="py-2 px-4 font-semibold text-slate-700">Total Interest</td>
+                {projection.rows.map((row, i) => (
+                  <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+                    {currencyFmtMM(row.interestExpense, ccy)}
+                  </td>
+                ))}
+              </tr>
+
+              <tr className="hover:bg-slate-50">
+                <td className="py-2 px-4 font-semibold text-slate-700">Total Principal</td>
+                {projection.rows.map((row, i) => (
+                  <td key={i} className="text-right font-mono text-slate-900 py-2 px-4">
+                    {currencyFmtMM(row.principalPayment, ccy)}
+                  </td>
+                ))}
+              </tr>
+
+              <tr className="bg-indigo-50 hover:bg-indigo-100">
+                <td className="py-2 px-4 font-semibold text-indigo-900">Total Debt Service</td>
+                {projection.rows.map((row, i) => (
+                  <td key={i} className="text-right font-mono text-indigo-900 font-bold py-2 px-4">
+                    {currencyFmtMM(row.debtService, ccy)}
+                  </td>
+                ))}
+              </tr>
+
+              <tr className="bg-slate-100 hover:bg-slate-200">
+                <td className="py-2 px-4 font-semibold text-slate-800">Total Ending Balance</td>
+                {projection.rows.map((row, i) => (
+                  <td key={i} className="text-right font-mono text-slate-900 font-bold py-2 px-4">
+                    {currencyFmtMM(row.debtBalance, ccy)}
+                  </td>
+                ))}
+              </tr>
+
+              {/* Covenant Ratios using Aggregated Debt Service */}
+              <tr className="bg-emerald-50 hover:bg-emerald-100">
+                <td className="py-2 px-4 font-semibold text-emerald-900">
+                  DSCR (Aggregated)
+                  <div className="text-xs text-slate-600 font-normal">
+                    EBITDA / Total Debt Service
+                  </div>
+                </td>
+                {projection.rows.map((row, i) => (
+                  <td key={i} className="text-right py-2 px-4">
+                    <CovenantIndicator value={row.dscr} threshold={params.minDSCR} />
+                  </td>
+                ))}
+              </tr>
+
+              <tr className="bg-blue-50 hover:bg-blue-100">
+                <td className="py-2 px-4 font-semibold text-blue-900">
+                  ICR (Aggregated)
+                  <div className="text-xs text-slate-600 font-normal">EBIT / Total Interest</div>
+                </td>
+                {projection.rows.map((row, i) => (
+                  <td key={i} className="text-right py-2 px-4">
+                    <CovenantIndicator value={row.icr} threshold={params.targetICR} />
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

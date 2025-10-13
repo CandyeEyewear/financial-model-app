@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import FinancialModelAndStressTester from './FinancialModelAndStressTester';
 import ChatAssistant from './ChatAssistant';
 import Callback from './components/Callback';
+import { generateModelDataSummary } from './utils/ModelDataSummary';
+
+
 
 // Simple icons as SVG
 const MessageCircleIcon = () => (
@@ -81,12 +84,93 @@ function App() {
 function ProtectedRoute() {
   const { isAuthenticated, loginWithRedirect, user, logout } = useAuth0();
   const [showAssistant, setShowAssistant] = useState(false);
-   const [modelData, setModelData] = useState(null);
+   const [projectionData, setProjectionData] = useState(null);
 
   if (!isAuthenticated) {
     loginWithRedirect();
     return null;
   }
+    // 🧠 Global DeepSeek AI listener (Option 2)
+  // In App.js, update the useEffect:
+useEffect(() => {
+  const handleTrigger = (event) => {
+    console.log("🚀 Global listener: AI analysis requested");
+
+    const { summary } = event.detail || {};
+    
+    if (!summary) {
+      window.dispatchEvent(
+        new CustomEvent("ai-summary-ready", {
+          detail: "⚠️ No loan metrics data available.",
+        })
+      );
+      return;
+    }
+
+    // Show loading message
+    window.dispatchEvent(
+      new CustomEvent("ai-summary-ready", {
+        detail: "🧠 FinAssist is analyzing your loan metrics...",
+      })
+    );
+
+    const prompt = `
+You are FinAssist AI, a senior credit analyst. Analyze the following loan metrics from a lender's perspective.
+
+Focus on:
+1. Debt service coverage (DSCR) - Is cash flow sufficient?
+2. Interest coverage (ICR) - Can they handle interest payments?
+3. Leverage (Net Debt/EBITDA) - Is debt level sustainable?
+4. Covenant compliance - Any breaches or concerns?
+5. Refinancing risk - Can they refinance if needed?
+6. Key strengths and weaknesses
+
+Be conversational and practical. Speak like a colleague explaining this deal over coffee.
+
+=== LOAN METRICS DATA ===
+${summary}
+
+Provide your analysis:
+`;
+
+    fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.REACT_APP_DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 800,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const result =
+          data?.choices?.[0]?.message?.content ||
+          "No response received from DeepSeek.";
+        console.log("✅ DeepSeek AI summary generated");
+        window.dispatchEvent(
+          new CustomEvent("ai-summary-ready", { detail: result })
+        );
+      })
+      .catch((err) => {
+        console.error("❌ DeepSeek fetch error:", err);
+        window.dispatchEvent(
+          new CustomEvent("ai-summary-ready", {
+            detail: "Error: Unable to generate AI summary. Please check your API key and try again.",
+          })
+        );
+      });
+  };
+
+  window.addEventListener("trigger-ai-analysis", handleTrigger);
+  console.log("🧠 Global AI listener mounted in App.js");
+
+  return () => window.removeEventListener("trigger-ai-analysis", handleTrigger);
+}, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -125,7 +209,7 @@ function ProtectedRoute() {
 
       {/* Main App */}
       <div style={{ flex: 1 }}>
-       <FinancialModelAndStressTester onDataUpdate={setModelData} />
+       <FinancialModelAndStressTester onDataUpdate={setProjectionData} />
       </div>
 
       {/* Floating Chat Button */}
@@ -197,7 +281,7 @@ function ProtectedRoute() {
             </button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <ChatAssistant modelData={modelData} />
+            <ChatAssistant modelData={projectionData} />} />
           </div>
         </div>
       )}

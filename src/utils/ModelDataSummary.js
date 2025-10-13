@@ -7,11 +7,13 @@ import { currencyFmtMM, numFmt, pctFmt } from "./formatters";
  * Structured for maximum clarity and minimal token usage
  */
 export function generateModelDataSummary(modelData) {
-  if (!modelData) {
-    return "ERROR: No model data available. User must configure the financial model first.";
+  if (!modelData || !modelData.projections || !modelData.params) {
+    return "No data available";
   }
 
   const { projections, params, historicalData, valuationResults } = modelData;
+
+   const baseProjection = projections.base;
 
   if (!projections || !params) {
     return "ERROR: Incomplete model data. Missing projections or parameters.";

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2 } from "lucide-react";
+import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2, Calendar, Info } from "lucide-react";
 
 // Component imports
 import { Card, CardHeader, CardTitle, CardContent } from "./components/Card.jsx";
@@ -9,10 +9,10 @@ import { Label } from "./components/Label.jsx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/Tabs.jsx";
 import { KPI } from "./components/KPI.jsx";
 import { HistoricalDataTab } from "./components/HistoricalDataTab.jsx";
-import { CapitalStructureAnalysis } from "./components/CapitalStructureAnalysis.jsx";
+import CapitalStructureAnalysis from "./components/CapitalStructureAnalysis.jsx";
 import { CreditDashboard } from "./components/CreditDashboard.jsx";
 import { ScenarioComparison } from "./components/ScenarioComparison.jsx";
-import { DebtStressTesting } from "./components/DebtStressTesting.jsx";
+import   DebtStressTesting  from "./components/DebtStressTesting.jsx";
 import { DataTable } from "./components/DataTable.jsx";
 import { ReportGenerator } from "./components/ReportGenerator.jsx";
 import { CustomStressTesting } from "./components/CustomStressTesting.jsx";
@@ -22,15 +22,23 @@ import ChatAssistant from "./ChatAssistant.js";
 import CollapsibleCard from "./components/CollapsibleCard.jsx";
 import { DealBookExport } from "./components/DealBookExport.js";
 import { ValuationTab } from "./components/ValuationTab.jsx";
+import { SmartNumberField } from "./components/SmartFields";
+import { DebtTrancheManager } from "./components/DebtTrancheManager.jsx";
+import { BlendedDebtMetrics } from "./components/BlendedDebtMetrics.jsx";
 
 // Utility imports
 import { currencyFmtMM, numFmt, pctFmt } from "./utils/formatters.js";
 import { calculateHistoricalAssumptions } from "./utils/calculations.js";
 import { buildProjection } from "./utils/buildProjection.js";
 import { applyShocks } from "./utils/applyShocks.js";
+import { getBenchmarksForIndustry } from "./utils/industryBenchmarks.js";
 
 // Hook imports
 import { useDebounce } from "./hooks/debounce.js";
+
+// NEW: Phase 1 component imports
+import { SmartPctField } from "./components/SmartFields";
+import { SmartSuggestion, OpeningDebtWarning } from "./components/SmartSuggestions";
 
 // Color palette for consistency
 const COLORS = {
@@ -282,7 +290,7 @@ function ValidationErrors({ params }) {
         <Card className="border-l-4 border-l-red-600 bg-red-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0">⚠️</div>
+              <div className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0">{'⚠️'}</div>
               <div className="flex-1">
                 <h3 className="font-bold text-red-900 mb-2">Critical Errors - Calculations Disabled</h3>
                 <ul className="space-y-2">
@@ -302,7 +310,7 @@ function ValidationErrors({ params }) {
         <Card className="border-l-4 border-l-amber-600 bg-amber-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0">⚠️</div>
+              <div className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0">{'⚠️'}</div>
               <div className="flex-1">
                 <h3 className="font-bold text-amber-900 mb-2">Warnings</h3>
                 <ul className="space-y-2">
@@ -319,8 +327,7 @@ function ValidationErrors({ params }) {
       )}
     </div>
   );
-}
-  export default function FinancialModelAndStressTester({ onDataUpdate }) {
+}  export default function FinancialModelAndStressTester({ onDataUpdate }) {
   const [ccy, setCcy] = useState("JMD");
   
   // Main params state
@@ -346,7 +353,9 @@ function ValidationErrors({ params }) {
     maxNDToEBITDA: 3.5,        // FIXED
     targetICR: 2.0,            // FIXED
     equityContribution: 0,
-    entryMultiple: 8.0,        // FIXED
+    entryMultiple: 8.0,
+    
+        // FIXED
     
     // Credit Assessment
     industry: "Manufacturing",
@@ -435,6 +444,20 @@ function ValidationErrors({ params }) {
     distributionMethod: "Private Placement",
     investorType: "Accredited Investors",
     possibleUpsizeAmount: 0,
+    
+    // Opening Debt Date Management
+  openingDebtStartDate: '2023-01-01',
+  openingDebtMaturityDate: '2028-12-31',
+  openingDebtAmortizationType: 'amortizing', // NEW: 'amortizing' or 'interest-only'
+  openingDebtPaymentFrequency: 'Quarterly', // NEW: Match new facility options
+   
+// NEW: Multiple-Tranche fields
+  hasMultipleTranches: false,
+  debtTranches: [], 
+
+    // NEW: Track which fields user edited manually
+    _editedFields: new Set(),
+    _historicalValues: null,
   });  // ← CLOSE THE PARAMS OBJECT HERE!
 
   // Now declare custom shocks state
@@ -551,36 +574,37 @@ useEffect(() => {
             ? mostRecent.interestExpense / totalHistoricalDebt
             : null;
 
+        // NEW: Store historical values for comparison
+        const historicalValues = {
+          cogsPct: assumptions.cogsPct,
+          opexPct: assumptions.opexPct,
+          capexPct: assumptions.capexPct,
+          wcPctOfRev: assumptions.wcPctOfRev,
+          growth: assumptions.growth
+        };
+
         return {
           ...prev,
 
-          // ✅ FIX 1: Base Revenue = most recent year's revenue (or average as backup)
+          // Base Revenue
           baseRevenue:
             prev.baseRevenue === 0
               ? mostRecent.revenue || avgRevenue || assumptions.baseRevenue
               : prev.baseRevenue,
 
-          // ✅ FIX 2: These only update automatically if user hasn’t changed them
-          growth:
-            prev.growth === 0.08 ? assumptions.growth : prev.growth,
-          cogsPct:
-            prev.cogsPct === 0.4 ? assumptions.cogsPct : prev.cogsPct,
-          opexPct:
-            prev.opexPct === 0.25 ? assumptions.opexPct : prev.opexPct,
-          wcPctOfRev:
-            prev.wcPctOfRev === 0.15
-              ? assumptions.wcPctOfRev
-              : prev.wcPctOfRev,
-          capexPct:
-            prev.capexPct === 0.05 ? assumptions.capexPct : prev.capexPct,
+          // Only update if not manually edited
+          cogsPct: !prev._editedFields?.has('cogsPct') ? assumptions.cogsPct : prev.cogsPct,
+          opexPct: !prev._editedFields?.has('opexPct') ? assumptions.opexPct : prev.opexPct,
+          capexPct: !prev._editedFields?.has('capexPct') ? assumptions.capexPct : prev.capexPct,
+          wcPctOfRev: !prev._editedFields?.has('wcPctOfRev') ? assumptions.wcPctOfRev : prev.wcPctOfRev,
+          growth: !prev._editedFields?.has('growth') ? assumptions.growth : prev.growth,
 
-          // ✅ Optional: also auto-update these if they’re zero
-          openingDebt:
-            prev.openingDebt === 0 ? totalHistoricalDebt : prev.openingDebt,
-          interestRate:
-            prev.interestRate === 0 && historicalRate
-              ? historicalRate
-              : prev.interestRate,
+          // Optional auto-updates
+          openingDebt: prev.openingDebt === 0 ? totalHistoricalDebt : prev.openingDebt,
+          interestRate: prev.interestRate === 0 && historicalRate ? historicalRate : prev.interestRate,
+          
+          // NEW: Store historical values for variance display
+          _historicalValues: historicalValues
         };
       });
     }
@@ -649,6 +673,7 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
       });
     }
   }, [params, customShocks, projections, historicalData, onDataUpdate]);
+
 
   // Calculate derived data for export - USING LIVE PROJECTION DATA
   const facilityParams = useMemo(() => ({
@@ -748,11 +773,42 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
     );
   }
 
+// Add this after your existing useEffects (around line 700)
+
+
+// Auto-populate covenant ratios when industry changes
+useEffect(() => {
+  if (draftParams.industry) {
+    const benchmarks = getBenchmarksForIndustry(draftParams.industry);
+    
+    setDraftParams(prev => ({
+      ...prev,
+      // Only update if not manually edited
+      minDSCR: !prev._editedFields?.has('minDSCR') ? benchmarks.minDSCR : prev.minDSCR,
+      targetICR: !prev._editedFields?.has('targetICR') ? benchmarks.targetICR : prev.targetICR,
+      maxNDToEBITDA: !prev._editedFields?.has('maxNDToEBITDA') ? benchmarks.maxNDToEBITDA : prev.maxNDToEBITDA,
+      
+      // Store benchmarks for variance display
+      _industryBenchmarks: benchmarks
+    }));
+  }
+}, [draftParams.industry]);
+
+// Auto-populate debt tenor from new facility
+useEffect(() => {
+  if (draftParams.proposedTenor && !draftParams._editedFields?.has('debtTenorYears')) {
+    setDraftParams(prev => ({
+      ...prev,
+      debtTenorYears: prev.proposedTenor
+    }));
+  }
+}, [draftParams.proposedTenor]);
+
   // Helper to check if we have valid historical data for auto-population
   const hasValidHistoricalData = historicalData.some(d => d.revenue > 0);
 
   return (
-    <div className="p-4 max-w-[1800px] mx-auto space-y-6 bg-slate-50">
+    <div className="p-2 sm:p-4 md:p-6 max-w-[1800px] mx-auto space-y-4 sm:space-y-6 bg-slate-50">
       {/* Success Toast */}
       <SuccessToast 
         message={successMessage}
@@ -1275,20 +1331,118 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
                   <NumberField label="Start Year" value={draftParams.startYear} onChange={(v) => setDraftParams({...draftParams, startYear: v})} min={2000} max={2100}/>
                   <NumberField label="Projection Years" value={draftParams.years} onChange={(v) => setDraftParams({...draftParams, years: v})} min={1} max={20}/>
                   <MoneyField label="Base Revenue" value={draftParams.baseRevenue} onChange={(v) => setDraftParams({...draftParams, baseRevenue: v})} ccy={ccy}/>
-                  <PctField label="Revenue Growth" value={draftParams.growth} onChange={(v) => setDraftParams({...draftParams, growth: v})}/>
-                  <PctField label="COGS %" value={draftParams.cogsPct} onChange={(v) => setDraftParams({...draftParams, cogsPct: v})}/>
-                  <PctField label="OPEX %" value={draftParams.opexPct} onChange={(v) => setDraftParams({...draftParams, opexPct: v})}/>
-                  <PctField label="CAPEX %" value={draftParams.capexPct} onChange={(v) => setDraftParams({...draftParams, capexPct: v})}/>
+                  
+                  <SmartPctField 
+                    label="Revenue Growth"
+                    value={draftParams.growth}
+                    onChange={(v) => {
+                      setDraftParams({
+                        ...draftParams, 
+                        growth: v,
+                        _editedFields: new Set([...(draftParams._editedFields || []), 'growth'])
+                      });
+                    }}
+                    isAutoPop={true}
+                    historicalValue={draftParams._historicalValues?.growth}
+                    helper="Annual revenue growth rate"
+                  />
+                  <SmartPctField 
+                    label="COGS %"
+                    value={draftParams.cogsPct}
+                    onChange={(v) => {
+                      setDraftParams({
+                        ...draftParams, 
+                        cogsPct: v,
+                        _editedFields: new Set([...(draftParams._editedFields || []), 'cogsPct'])
+                      });
+                    }}
+                    isAutoPop={true}
+                    historicalValue={draftParams._historicalValues?.cogsPct}
+                    helper="Cost of Goods Sold as % of revenue"
+                  />
+                  <SmartPctField 
+                    label="OPEX %"
+                    value={draftParams.opexPct}
+                    onChange={(v) => {
+                      setDraftParams({
+                        ...draftParams, 
+                        opexPct: v,
+                        _editedFields: new Set([...(draftParams._editedFields || []), 'opexPct'])
+                      });
+                    }}
+                    isAutoPop={true}
+                    historicalValue={draftParams._historicalValues?.opexPct}
+                    helper="Operating expenses as % of revenue"
+                  />
+                  <SmartPctField 
+                    label="CAPEX %"
+                    value={draftParams.capexPct}
+                    onChange={(v) => {
+                      setDraftParams({
+                        ...draftParams, 
+                        capexPct: v,
+                        _editedFields: new Set([...(draftParams._editedFields || []), 'capexPct'])
+                      });
+                    }}
+                    isAutoPop={true}
+                    historicalValue={draftParams._historicalValues?.capexPct}
+                    helper="Capital expenditures as % of revenue"
+                  />
                   <PctField label="Depreciation % of PPE" value={draftParams.daPctOfPPE} onChange={(v) => setDraftParams({...draftParams, daPctOfPPE: v})}/>
-                  <PctField label="Working Capital % of Revenue" value={draftParams.wcPctOfRev} onChange={(v) => setDraftParams({...draftParams, wcPctOfRev: v})}/>
+                  <SmartPctField 
+                    label="Working Capital % of Revenue"
+                    value={draftParams.wcPctOfRev}
+                    onChange={(v) => {
+                      setDraftParams({
+                        ...draftParams, 
+                        wcPctOfRev: v,
+                        _editedFields: new Set([...(draftParams._editedFields || []), 'wcPctOfRev'])
+                      });
+                    }}
+                    isAutoPop={true}
+                    historicalValue={draftParams._historicalValues?.wcPctOfRev}
+                    helper="Working capital as % of revenue"
+                  />
                   <MoneyField label="Opening Debt" value={draftParams.openingDebt} onChange={(v) => setDraftParams({...draftParams, openingDebt: v})} ccy={ccy}/>
                   <PctField label="Interest Rate" value={draftParams.interestRate} onChange={(v) => setDraftParams({...draftParams, interestRate: v})}/>
                   <PctField label="Tax Rate" value={draftParams.taxRate} onChange={(v) => setDraftParams({...draftParams, taxRate: v})}/>
                   <PctField label="WACC" value={draftParams.wacc} onChange={(v) => setDraftParams({...draftParams, wacc: v})}/>
                   <PctField label="Terminal Growth" value={draftParams.terminalGrowth} onChange={(v) => setDraftParams({...draftParams, terminalGrowth: v})}/>
                   <MoneyField label="Equity Contribution" value={draftParams.equityContribution} onChange={(v) => setDraftParams({...draftParams, equityContribution: v})} ccy={ccy}/>
+
+                  {/* NEW: Equity suggestion helper */}
+                  {draftParams.requestedLoanAmount > 0 && (
+                    <div className="col-span-full">
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+                        <div className="text-blue-600 flex-shrink-0 mt-0.5">💡</div>
+                        <div className="flex-1 text-sm">
+                          <p className="font-semibold text-blue-900 mb-1">Equity Recommendation</p>
+                          <p className="text-blue-800">
+                            Industry standard: <strong>15-20% of total capital</strong>. 
+                            For {ccy} {(draftParams.requestedLoanAmount / 1000000).toFixed(1)}M facility, 
+                            consider <strong>{ccy} {((draftParams.requestedLoanAmount * 0.15) / 1000000).toFixed(1)}M - {((draftParams.requestedLoanAmount * 0.20) / 1000000).toFixed(1)}M</strong>.
+                          </p>
+                          {draftParams.equityContribution > 0 && (
+                            <p className="text-blue-700 mt-2 text-xs">
+                              Current: <strong>{ccy} {(draftParams.equityContribution / 1000000).toFixed(1)}M</strong> 
+                              ({((draftParams.equityContribution / (draftParams.equityContribution + draftParams.requestedLoanAmount)) * 100).toFixed(1)}% of total)
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
                   <NumberField label="Entry Multiple" value={draftParams.entryMultiple} onChange={(v) => setDraftParams({...draftParams, entryMultiple: v})} min={1} max={20} step={0.1}/>
-                </div>
+         <NumberField 
+  label="Shares Outstanding" 
+  value={params.sharesOutstanding || 1000000} 
+  onChange={(v) => setParams({...params, sharesOutstanding: v})} 
+  min={1} 
+  step={1000}
+/>       
+
+</div>
               </CardContent>
             </Card>
           </CollapsibleCard>
@@ -1312,33 +1466,125 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
               </CardHeader>
               <CardContent className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <NumberField label="Debt Tenor (Years)" value={draftParams.debtTenorYears} onChange={(v) => setDraftParams({...draftParams, debtTenorYears: v})} min={1} max={30}/>
-                  <NumberField label="Interest Only Years" value={draftParams.interestOnlyYears} onChange={(v) => setDraftParams({...draftParams, interestOnlyYears: v})} min={0} max={draftParams.debtTenorYears}/>
-                  <NumberField label="Min DSCR" value={draftParams.minDSCR} onChange={(v) => setDraftParams({...draftParams, minDSCR: v})} min={1} max={5} step={0.1}/>
-                  <NumberField label="Target ICR" value={draftParams.targetICR} onChange={(v) => setDraftParams({...draftParams, targetICR: v})} min={1} max={10} step={0.1}/>
-                  <NumberField label="Max ND/EBITDA" value={draftParams.maxNDToEBITDA} onChange={(v) => setDraftParams({...draftParams, maxNDToEBITDA: v})} min={1} max={10} step={0.1}/>
                   
+                  <SmartNumberField 
+  label="Debt Tenor (Years)" 
+  value={draftParams.debtTenorYears} 
+  onChange={(v) => {
+    setDraftParams({
+      ...draftParams, 
+      debtTenorYears: v,
+      _editedFields: new Set([...(draftParams._editedFields || []), 'debtTenorYears'])
+    });
+  }}
+  isAutoPop={draftParams.proposedTenor > 0}
+  benchmarkValue={draftParams.proposedTenor}
+  helper={draftParams.proposedTenor > 0 
+    ? `Auto-populated from New Facility tenor (${draftParams.proposedTenor} years)` 
+    : "Manually set debt tenor"}
+  min={1} 
+  max={30}
+  step={1}
+/>
+
+<NumberField 
+  label="Interest Only Years" 
+  value={draftParams.interestOnlyYears} 
+  onChange={(v) => setDraftParams({...draftParams, interestOnlyYears: v})} 
+  min={0} 
+  max={draftParams.debtTenorYears}
+/>
+
+<SmartNumberField 
+  label="Min DSCR" 
+  value={draftParams.minDSCR} 
+  onChange={(v) => {
+    setDraftParams({
+      ...draftParams, 
+      minDSCR: v,
+      _editedFields: new Set([...(draftParams._editedFields || []), 'minDSCR'])
+    });
+  }}
+  isAutoPop={true}
+  benchmarkValue={draftParams._industryBenchmarks?.minDSCR}
+  helper={`${draftParams.industry} industry standard: ${draftParams._industryBenchmarks?.minDSCR?.toFixed(2) || 'N/A'}`}
+  min={1} 
+  max={5} 
+  step={0.1}
+/>
+
+<SmartNumberField 
+  label="Target ICR" 
+  value={draftParams.targetICR} 
+  onChange={(v) => {
+    setDraftParams({
+      ...draftParams, 
+      targetICR: v,
+      _editedFields: new Set([...(draftParams._editedFields || []), 'targetICR'])
+    });
+  }}
+  isAutoPop={true}
+  benchmarkValue={draftParams._industryBenchmarks?.targetICR}
+  helper={`${draftParams.industry} industry standard: ${draftParams._industryBenchmarks?.targetICR?.toFixed(2) || 'N/A'}`}
+  min={1} 
+  max={10} 
+  step={0.1}
+/>
+
+<SmartNumberField 
+  label="Max ND/EBITDA" 
+  value={draftParams.maxNDToEBITDA} 
+  onChange={(v) => {
+    setDraftParams({
+      ...draftParams, 
+      maxNDToEBITDA: v,
+      _editedFields: new Set([...(draftParams._editedFields || []), 'maxNDToEBITDA'])
+    });
+  }}
+  isAutoPop={true}
+  benchmarkValue={draftParams._industryBenchmarks?.maxNDToEBITDA}
+  helper={`${draftParams.industry} industry standard: ${draftParams._industryBenchmarks?.maxNDToEBITDA?.toFixed(2) || 'N/A'}`}
+  min={1} 
+  max={10} 
+  step={0.1}
+/>
                   {/* Credit Assessment Fields */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-semibold text-slate-700">Industry</Label>
-                    <select
-                      value={draftParams.industry}
-                      onChange={(e) => setDraftParams({...draftParams, industry: e.target.value})}
-                      className="w-full h-10 text-sm border-slate-300 rounded-md focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all duration-200"
-                    >
-                      <option value="Manufacturing">Manufacturing</option>
-                      <option value="Services">Services</option>
-                      <option value="Retail">Retail</option>
-                      <option value="Technology">Technology</option>
-                      <option value="Healthcare">Healthcare</option>
-                      <option value="Real Estate">Real Estate</option>
-                      <option value="Financial Services">Financial Services</option>
-                      <option value="Agriculture">Agriculture</option>
-                      <option value="Energy">Energy</option>
-                      <option value="Transportation">Transportation</option>
-                    </select>
-                  </div>
-                  
+  <Label className="text-sm font-semibold text-slate-700">Industry</Label>
+  <select
+    value={draftParams.industry}
+    onChange={(e) => {
+      const newIndustry = e.target.value;
+      const benchmarks = getBenchmarksForIndustry(newIndustry);
+      
+      setDraftParams({
+        ...draftParams, 
+        industry: newIndustry,
+        // Auto-apply benchmarks if not edited
+        minDSCR: !draftParams._editedFields?.has('minDSCR') ? benchmarks.minDSCR : draftParams.minDSCR,
+        targetICR: !draftParams._editedFields?.has('targetICR') ? benchmarks.targetICR : draftParams.targetICR,
+        maxNDToEBITDA: !draftParams._editedFields?.has('maxNDToEBITDA') ? benchmarks.maxNDToEBITDA : draftParams.maxNDToEBITDA,
+        _industryBenchmarks: benchmarks
+      });
+    }}
+ className="w-full h-10 text-sm border border-slate-300 rounded-md focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all duration-200"
+
+  >
+    <option value="Manufacturing">Manufacturing</option>
+    <option value="Services">Services</option>
+    <option value="Retail">Retail</option>
+    <option value="Technology">Technology</option>
+    <option value="Healthcare">Healthcare</option>
+    <option value="Real Estate">Real Estate</option>
+    <option value="Financial Services">Financial Services</option>
+    <option value="Agriculture">Agriculture</option>
+    <option value="Energy">Energy</option>
+    <option value="Transportation">Transportation</option>
+  </select>
+  <p className="text-xs text-slate-500">
+    Changing industry will auto-update covenant ratios to industry standards
+  </p>
+</div>
                   <div className="space-y-2">
                     <Label className="text-sm font-semibold text-slate-700">Credit History</Label>
                     <select
@@ -1374,6 +1620,245 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
               </CardContent>
             </Card>
           </CollapsibleCard>
+
+          {/* Opening Debt Schedule - Updated Section */}
+<CollapsibleCard 
+  title="Opening Debt Schedule" 
+  icon={Calendar} 
+  color="purple" 
+  defaultOpen={false}
+>
+  <Card id="opening-debt-schedule" className="border-l-4 border-l-purple-600">
+    <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
+      <CardTitle className="flex items-center gap-2">
+        <Calendar className="w-6 h-6 text-purple-600" />
+        Opening Debt Schedule & Terms
+      </CardTitle>
+      <p className="text-sm text-slate-600 mt-2">
+        Configure existing debt terms for accurate covenant calculations
+      </p>
+    </CardHeader>
+  <CardContent className="p-4 sm:p-6">
+  <div className="space-y-6">
+    {/* Multi-Tranche Toggle */}
+    <div className="p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-200">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex-1">
+          <h4 className="text-sm font-bold text-purple-900 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" />
+            Multiple Debt Tranches
+          </h4>
+          <p className="text-xs text-purple-700 mt-1">
+            Enable this if the company has multiple existing loans with different terms (e.g., senior + subordinated debt)
+          </p>
+        </div>
+
+        {/* Toggle Switch */}
+        <label className="relative inline-flex items-center cursor-pointer ml-4">
+          <input 
+            type="checkbox" 
+            checked={draftParams.hasMultipleTranches}
+            onChange={(e) => {
+              const isEnabled = e.target.checked;
+              setDraftParams({
+                ...draftParams, 
+                hasMultipleTranches: isEnabled,
+                debtTranches: isEnabled 
+                  ? (draftParams.debtTranches?.length > 0 
+                      ? draftParams.debtTranches 
+                      : [{
+                          id: Date.now(),
+                          name: "Primary Debt",
+                          amount: draftParams.openingDebt || 0,
+                          rate: draftParams.interestRate || 0.10,
+                          maturityDate: draftParams.openingDebtMaturityDate || new Date(Date.now() + 5*365*24*60*60*1000).toISOString().split('T')[0],
+                          amortizationType: draftParams.openingDebtAmortizationType || 'amortizing',
+                          tenorYears: draftParams.debtTenorYears || 5,
+                          paymentFrequency: draftParams.openingDebtPaymentFrequency || 'Quarterly',
+                          seniority: "Senior Secured",
+                          interestOnlyYears: draftParams.interestOnlyYears || 0
+                        }])
+                  : draftParams.debtTranches // preserve when OFF
+              });
+            }}
+            className="sr-only peer"
+          />
+          <div className="w-14 h-7 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-purple-600 shadow-sm"></div>
+        </label>
+      </div>
+    </div>
+
+    {/* Conditional: Multi-Tranche OR Single-Debt */}
+    {draftParams.hasMultipleTranches ? (
+      <>
+        {/* Multi-Tranche Table */}
+        <DebtTrancheManager 
+          tranches={draftParams.debtTranches || []}
+          onChange={(tranches) => setDraftParams({ ...draftParams, debtTranches: tranches })}
+          ccy={ccy}
+        />
+
+        {/* Blended Summary */}
+        {draftParams.debtTranches?.length > 0 && (
+          <BlendedDebtMetrics 
+            tranches={draftParams.debtTranches} 
+            ccy={ccy}
+            startYear={draftParams.startYear}
+            projectionYears={draftParams.years}
+          />
+        )}
+      </>
+    ) : (
+      <>
+        {/* SINGLE DEBT - Your existing inputs (kept) */}
+        {/* Debt Amount & Terms */}
+        <div>
+          <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-200">
+            Debt Amount & Key Terms
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <MoneyField 
+              label="Opening Debt Amount" 
+              value={draftParams.openingDebt} 
+              onChange={(v) => setDraftParams({ ...draftParams, openingDebt: v })} 
+              ccy={ccy}
+            />
+            <PctField 
+              label="Interest Rate" 
+              value={draftParams.interestRate} 
+              onChange={(v) => setDraftParams({ ...draftParams, interestRate: v })}
+            />
+            <NumberField 
+              label="Original Tenor (Years)" 
+              value={draftParams.debtTenorYears} 
+              onChange={(v) => setDraftParams({ ...draftParams, debtTenorYears: v })} 
+              min={1} 
+              max={30}
+            />
+          </div>
+        </div>
+
+        {/* Amortization Structure */}
+        <div>
+          <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-200">
+            Amortization Structure
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700">Amortization Type</Label>
+              <select
+                value={draftParams.openingDebtAmortizationType || 'amortizing'}
+                onChange={(e) => setDraftParams({ ...draftParams, openingDebtAmortizationType: e.target.value })}
+                className="w-full h-10 px-3 text-sm border-2 border-slate-300 rounded-md focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all duration-200"
+              >
+                <option value="amortizing">Amortizing (Principal + Interest)</option>
+                <option value="interest-only">Interest-Only</option>
+                <option value="bullet">Bullet Payment (All at Maturity)</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700">Payment Frequency</Label>
+              <select
+                value={draftParams.openingDebtPaymentFrequency || 'Quarterly'}
+                onChange={(e) => setDraftParams({ ...draftParams, openingDebtPaymentFrequency: e.target.value })}
+                className="w-full h-10 px-3 text-sm border-2 border-slate-300 rounded-md focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all duration-200"
+              >
+                <option value="Monthly">Monthly</option>
+                <option value="Quarterly">Quarterly</option>
+                <option value="Semi-Annually">Semi-Annually</option>
+                <option value="Annually">Annually</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Calculated Annual Debt Service */}
+          {draftParams.openingDebt > 0 && (
+            <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Info className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-purple-900 mb-2">
+                    Calculated Annual Debt Service
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="text-purple-700 font-semibold">Interest Payment</p>
+                      <p className="text-lg font-bold text-purple-900">
+                        {currencyFmtMM(draftParams.openingDebt * draftParams.interestRate, ccy)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-purple-700 font-semibold">Principal Payment</p>
+                      <p className="text-lg font-bold text-purple-900">
+                        {draftParams.openingDebtAmortizationType === 'amortizing' 
+                          ? currencyFmtMM(draftParams.openingDebt / draftParams.debtTenorYears, ccy)
+                          : currencyFmtMM(0, ccy)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-purple-700 font-semibold">Total Annual Debt Service</p>
+                      <p className="text-xl font-bold text-purple-900">
+                        {draftParams.openingDebtAmortizationType === 'amortizing'
+                          ? currencyFmtMM(
+                              (draftParams.openingDebt * draftParams.interestRate) + 
+                              (draftParams.openingDebt / draftParams.debtTenorYears), 
+                              ccy
+                            )
+                          : currencyFmtMM(draftParams.openingDebt * draftParams.interestRate, ccy)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Important Dates */}
+        <div>
+          <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-200">
+            Important Dates
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700">Origination Date</Label>
+              <Input
+                type="date"
+                value={draftParams.openingDebtStartDate}
+                onChange={(e) => setDraftParams({ ...draftParams, openingDebtStartDate: e.target.value })}
+                max={new Date().toISOString().split('T')[0]}
+                className="h-10 text-sm border-2 border-slate-300 rounded-md focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all duration-200"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700">Maturity Date</Label>
+              <Input
+                type="date"
+                value={draftParams.openingDebtMaturityDate}
+                onChange={(e) => setDraftParams({ ...draftParams, openingDebtMaturityDate: e.target.value })}
+                min={draftParams.openingDebtStartDate}
+                className="h-10 text-sm border-2 border-slate-300 rounded-md focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all duration-200"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700">Years Remaining</Label>
+              <div className="h-10 px-3 flex items-center bg-slate-50 border-2 border-slate-200 rounded-md text-sm font-semibold text-slate-700">
+                {draftParams.openingDebtMaturityDate 
+                  ? ((new Date(draftParams.openingDebtMaturityDate) - new Date()) / (365*24*60*60*1000)).toFixed(1) + ' years' 
+                  : 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+  </div>
+</CardContent>
+
+  </Card>
+</CollapsibleCard>
+
 
           {/* Business & Credit Information */}
           <CollapsibleCard 
@@ -1530,34 +2015,41 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
   onValueChange={setActiveTab}
   className="space-y-6"
 >
-        <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 bg-slate-100 p-1 rounded-lg shadow-sm">
-  <TabsTrigger value="capital-structure">
+        <TabsList className="flex overflow-x-auto lg:grid lg:grid-cols-7 w-full bg-slate-100 p-1 rounded-lg shadow-sm scrollbar-hide">
+  <TabsTrigger value="capital-structure" className="flex-shrink-0 text-sm whitespace-nowrap">
     <TrendingUp className="w-4 h-4 mr-2" />
-    Capital Structure
+    <span className="hidden sm:inline">Capital Structure</span>
+    <span className="sm:hidden">Capital</span>
   </TabsTrigger>
-  <TabsTrigger value="credit-dashboard">
+  <TabsTrigger value="credit-dashboard" className="flex-shrink-0 text-sm whitespace-nowrap">
     <BarChart3 className="w-4 h-4 mr-2" />
-    Credit Dashboard
+    <span className="hidden sm:inline">Credit Dashboard</span>
+    <span className="sm:hidden">Credit</span>
   </TabsTrigger>
-  <TabsTrigger value="scenario-comparison">
+  <TabsTrigger value="scenario-comparison" className="flex-shrink-0 text-sm whitespace-nowrap">
     <Shield className="w-4 h-4 mr-2" />
-    Scenario Analysis
+    <span className="hidden sm:inline">Scenario Analysis</span>
+    <span className="sm:hidden">Scenarios</span>
   </TabsTrigger>
-  <TabsTrigger value="stress-testing">
+  <TabsTrigger value="stress-testing" className="flex-shrink-0 text-sm whitespace-nowrap">
     <Building className="w-4 h-4 mr-2" />
-    Stress Testing
+    <span className="hidden sm:inline">Stress Testing</span>
+    <span className="sm:hidden">Stress</span>
   </TabsTrigger>
-  <TabsTrigger value="loan-metrics">
+  <TabsTrigger value="loan-metrics" className="flex-shrink-0 text-sm whitespace-nowrap">
     <DollarSign className="w-4 h-4 mr-2" />
-    Loan Metrics
+    <span className="hidden sm:inline">Loan Metrics</span>
+    <span className="sm:hidden">Metrics</span>
   </TabsTrigger>
-  <TabsTrigger value="valuation">
+  <TabsTrigger value="valuation" className="flex-shrink-0 text-sm whitespace-nowrap">
     <TrendingUp className="w-4 h-4 mr-2" />
-    Valuation
+    <span className="hidden sm:inline">Valuation</span>
+    <span className="sm:hidden">Value</span>
   </TabsTrigger>
-  <TabsTrigger value="report-generator">
+  <TabsTrigger value="report-generator" className="flex-shrink-0 text-sm whitespace-nowrap">
     <FileText className="w-4 h-4 mr-2" />
-    Reports
+    <span className="hidden sm:inline">Reports</span>
+    <span className="sm:hidden">Reports</span>
   </TabsTrigger>
 </TabsList>
         
@@ -1565,7 +2057,7 @@ capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
         <TabsContent value="capital-structure" className="space-y-6">
           <div ref={financialAssumptionsRef}>
             <CapitalStructureAnalysis 
-              projections={projections.base}
+              projection={projections.base}
               params={params}
               ccy={ccy}
             />

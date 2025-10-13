@@ -1,36 +1,72 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { Button } from "./Button";
 import { Label } from "./Label";
 import { Input } from "./Input";
 import { 
   FileText, Download, FileSpreadsheet, CheckSquare, Bot, Sparkles,
-  AlertCircle, Check, Loader, Eye, RefreshCw, Copy
+  AlertCircle, Check, Loader, Eye, RefreshCw, Copy, Upload, Palette, X, ChevronDown, ChevronUp
 } from "lucide-react";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import * as XLSX from "xlsx";
+import ReactMarkdown from 'react-markdown';
 
-// Color palette
-const COLORS = {
-  primary: { from: 'blue-500', to: 'blue-600', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  success: { from: 'emerald-500', to: 'emerald-600', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  warning: { from: 'amber-500', to: 'amber-600', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  danger: { from: 'red-500', to: 'red-600', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
-  purple: { from: 'purple-500', to: 'purple-600', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+
+// Helper to calculate CAGR
+const calculateCAGR = (data, field) => {
+  if (!data || data.length < 2) return 0;
+  const start = data[0][field] || 0;
+  const end = data[data.length - 1][field] || 0;
+  if (start === 0) return 0;
+  const years = data.length - 1;
+  return ((Math.pow(end / start, 1 / years) - 1) * 100).toFixed(1);
+};
+
+// Helper to convert hex to RGB
+const hexToRgb = (hex) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? [
+    parseInt(result[1], 16),
+    parseInt(result[2], 16),
+    parseInt(result[3], 16)
+  ] : [59, 130, 246]; // Default blue
 };
 
 export function ReportGenerator({ projections, params, ccy, historicalData }) {
-  const [selectedSections, setSelectedSections] = useState({
+  
+const [sectionStates, setSectionStates] = useState({
+    branding: false,        // true = OPEN, false = CLOSED
+    aiAnalysis: true,
+    termSheet: false,
+    reportGenerator: true
+  });
+
+  // 👇 ADD THIS FUNCTION TOO!
+  const toggleSection = (sectionName) => {
+    setSectionStates(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }));
+  };
+
+const [selectedSections, setSelectedSections] = useState({
     executiveSummary: true,
     companyProfile: true,
+    historicalPerformance: true,
+    industryBenchmarking: true,
+    sponsorAnalysis: false,
     businessAnalysis: true,
     managementAnalysis: true,
     creditAnalysis: true,
+    collateralAnalysis: true,
+    covenantAnalysis: true,
     financialProjections: true,
     creditMetrics: true,
-    covenantAnalysis: true,
+    sensitivityAnalysis: true,
+    refinancingRisk: true,
+    esgAndRegulatory: true,
     stressTestResults: true,
     recommendation: true,
     appendixTables: true,
@@ -41,6 +77,17 @@ export function ReportGenerator({ projections, params, ccy, historicalData }) {
   const [aiGeneratedContent, setAiGeneratedContent] = useState({});
   const [isExporting, setIsExporting] = useState(false);
   const [showAIPreview, setShowAIPreview] = useState(false);
+
+  // Branding State
+  const [branding, setBranding] = useState({
+    logo: null,
+    logoDataUrl: null,
+    primaryColor: '#3B82F6',
+    secondaryColor: '#10B981',
+    accentColor: '#F59E0B'
+  });
+
+  const logoInputRef = useRef(null);
 
   // Editable Term Sheet Fields
   const [termSheetFields, setTermSheetFields] = useState({
@@ -82,7 +129,7 @@ export function ReportGenerator({ projections, params, ccy, historicalData }) {
 - Compliance with Laws: Maintain all licenses and permits`,
     
     negativeCovenants:
-      `• Dividends: No distributions unless Current Ratio ≥ 1.0x post-   distribution
+      `• Dividends: No distributions unless Current Ratio ≥ 1.0x post-distribution
 - Shareholder Loans: No shareholder loans during bond tenure
 - Asset Sales: No major asset sales without bondholder approval
 - Additional Debt: No additional senior or pari passu debt without consent
@@ -126,6 +173,38 @@ export function ReportGenerator({ projections, params, ccy, historicalData }) {
 
   // REAL AI Integration using DeepSeek API
   const apiKey = process.env.REACT_APP_DEEPSEEK_API_KEY;
+
+  // Logo Upload Handler
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        alert("Logo file size must be less than 2MB");
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setBranding(prev => ({
+          ...prev,
+          logo: file,
+          logoDataUrl: event.target.result
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeLogo = () => {
+    setBranding(prev => ({
+      ...prev,
+      logo: null,
+      logoDataUrl: null
+    }));
+    if (logoInputRef.current) {
+      logoInputRef.current.value = '';
+    }
+  };
 
   // Generate comprehensive model summary for AI
   const generateModelSummary = () => {
@@ -191,12 +270,14 @@ ${Object.keys(projections).filter(k => k !== 'base').map(scenario => {
 
 HISTORICAL DATA:
 ${historicalData && historicalData.length > 0 ? 
-  `${historicalData.length} years of historical data available. Latest year revenue: ${currencyFmtMM(historicalData[historicalData.length - 1]?.revenue || 0, ccy)}` 
+  `${historicalData.length} years of historical data available. Latest year revenue: ${currencyFmtMM(historicalData[historicalData.length - 1]?.revenue || 0, ccy)}
+Revenue CAGR: ${calculateCAGR(historicalData, 'revenue')}%
+EBITDA trend: ${historicalData.map(y => `${y.year}: ${currencyFmtMM(y.ebitda || 0, ccy)}`).join(', ')}` 
   : "No historical data provided"}
 `;
   };
 
-  // REAL AI Analysis Function
+  // Enhanced AI Analysis with Credit Committee Focus
   const generateAIAnalysis = async (section) => {
     if (!apiKey) {
       setAiError("DeepSeek API key not configured. Add REACT_APP_DEEPSEEK_API_KEY to your .env file.");
@@ -208,38 +289,443 @@ ${historicalData && historicalData.length > 0 ?
 
     try {
       const modelSummary = generateModelSummary();
+      const base = projections?.base || {};
+      const minDSCR = base.creditStats?.minDSCR || 0;
+      const maxLeverage = base.creditStats?.maxLeverage || 0;
+      const minICR = base.creditStats?.minICR || 0;
       
       const prompts = {
-        executiveSummary: `Based on the financial model data provided, write a comprehensive 3-paragraph executive summary for a credit committee report. Include: (1) Company overview and transaction details, (2) Key financial metrics and credit quality assessment, (3) Primary risks and recommendation rationale. Be specific with numbers from the data. Keep it professional and concise.`,
-        
-        creditAnalysis: `Analyze the credit quality of this transaction. Discuss: (1) Debt service coverage and cushion against covenants, (2) Leverage profile and trajectory, (3) Collateral adequacy and LTV, (4) Historical credit performance if available, (5) Overall credit rating (Strong/Acceptable/Weak) with justification. Reference specific metrics from the data.`,
-        
-        businessAnalysis: `Provide a business analysis covering: (1) Industry dynamics and competitive position, (2) Business model sustainability and revenue drivers, (3) Management quality and track record, (4) Key customers and concentration risks, (5) Growth prospects and strategic positioning. Use the qualitative data provided and be specific.`,
-        
-        recommendation: `Provide a clear credit recommendation: APPROVE, APPROVE WITH CONDITIONS, or DECLINE. Include: (1) Decision and confidence level, (2) Three key supporting factors, (3) Two primary risks to monitor, (4) Specific conditions if conditional approval, (5) Suggested monitoring frequency. Be direct and actionable.`,
-        
-        riskAssessment: `Identify and analyze the top 5 risks in priority order. For each risk: 
-(1) Describe the risk clearly, 
-(2) Quantify impact if possible using the data, 
-(3) Assess likelihood (High/Medium/Low), 
-(4) Suggest specific mitigation strategies. 
-Focus on material credit risks that could impair repayment.`,
+        executiveSummary: `You are writing for a Credit Committee comprising senior executives who will approve or decline this transaction. Write a 3-paragraph executive summary in formal investment banking style:
 
-        
-        scenarioAnalysis: `Compare the base case against all stress scenarios in the model. Discuss: (1) Range of outcomes (best to worst IRR and DSCR), (2) Sensitivity to key assumptions (revenue, margins, rates), (3) Breaking points where covenants breach, (4) Probability-weighted expected outcome, (5) Recommended scenario for decision-making.`,
+PARAGRAPH 1: Transaction Overview
+- Borrower name, industry, transaction size, and purpose
+- Use precise financial terminology (e.g., "senior secured term facility" not "loan")
+
+PARAGRAPH 2: Credit Assessment
+- Lead with credit metrics: DSCR ${numFmt(minDSCR)}x, Leverage ${numFmt(maxLeverage)}x, ICR ${numFmt(minICR)}x
+- Quantify covenant cushions (e.g., "DSCR covenant of ${numFmt(params.minDSCR || 1.2)}x provides ${numFmt(minDSCR - (params.minDSCR || 1.2))}x cushion")
+- State collateral coverage explicitly
+
+PARAGRAPH 3: Risk Summary & Recommendation
+- Identify 2-3 material risks with quantified impact where possible
+- State clear recommendation: APPROVE / APPROVE WITH CONDITIONS / DECLINE
+- One-sentence rationale for recommendation
+
+TONE: Formal, decisive, data-driven. Avoid hedging language. Use present tense for facts, future tense for projections.
+DO NOT use markdown formatting (**, ##, etc.) - use plain text only.
+Maximum 400 words.`,
+
+        historicalPerformance: `Analyze the borrower's historical financial performance for Credit Committee review:
+
+PERFORMANCE TRACK RECORD:
+${historicalData && historicalData.length > 0 ? 
+  `Historical data available for ${historicalData.length} years
+Revenue CAGR: ${calculateCAGR(historicalData, 'revenue')}%
+Recent revenue: ${historicalData.slice(-3).map(y => `${y.year}: ${currencyFmtMM(y.revenue || 0, ccy)}`).join(', ')}` 
+  : "CRITICAL GAP: No historical data provided - recommend obtaining 3-5 years of historical financials before credit decision"}
+
+QUALITY OF EARNINGS ASSESSMENT:
+- Evaluate revenue sustainability and concentration
+- Identify one-time items or non-recurring charges
+- Assess working capital trends (if data available)
+- Analyze historical volatility of cash flows
+
+MANAGEMENT CREDIBILITY:
+- Have they demonstrated ability to execute? (Track record)
+- Conservative vs. aggressive assumptions in projections?
+- Historical covenant compliance record
+
+CONCLUSION: Rate historical performance as Strong/Acceptable/Weak/Insufficient Data with specific supporting evidence.
+
+TONE: Analytical and objective. Flag data gaps prominently.
+DO NOT use markdown formatting - plain text only.
+Maximum 400 words.`,
+
+        industryBenchmarking: `Provide industry and peer benchmarking analysis for Credit Committee:
+
+INDUSTRY CONTEXT:
+Industry: ${params.industry}
+Based on typical industry metrics (use general knowledge for ${params.industry} sector):
+- Typical industry leverage range
+- Typical EBITDA margins
+- Industry growth outlook and cyclicality
+- Key industry risks
+
+BORROWER RELATIVE TO INDUSTRY:
+- Leverage: ${numFmt(maxLeverage)}x vs. industry typical range
+- EBITDA Margin: ${pctFmt((base.rows?.[0]?.ebitda || 0) / (base.rows?.[0]?.revenue || 1))} vs. industry average
+- Growth expectations vs. industry trends
+
+COMPETITIVE POSITION:
+- Market position (leader/follower based on provided data)
+- Competitive advantages or vulnerabilities
+- Barriers to entry in this industry
+
+ASSESSMENT: Rate borrower as Above Average/Average/Below Average relative to industry peers.
+
+TONE: Comparative and benchmarked. Use industry knowledge appropriately.
+DO NOT use markdown formatting - plain text only.
+Maximum 400 words.`,
+
+        creditAnalysis: `You are the lead credit analyst presenting to the Credit Committee. Provide quantitative credit analysis:
+
+1. DEBT SERVICE CAPACITY:
+- Current DSCR: ${numFmt(minDSCR)}x vs covenant ${numFmt(params.minDSCR || 1.2)}x (cushion: ${numFmt(minDSCR - (params.minDSCR || 1.2))}x)
+- Trend: improving/stable/deteriorating based on projections
+- Stress tolerance: estimate revenue decline before DSCR breaches covenant
+
+2. LEVERAGE PROFILE:
+- Net Debt/EBITDA: ${numFmt(maxLeverage)}x vs limit ${numFmt(params.maxNDToEBITDA || 3.5)}x
+- Deleveraging trajectory over ${base.rows?.length || 5} year projection
+- Assessment of leverage sustainability
+
+3. COLLATERAL ADEQUACY:
+- LTV: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / params.collateralValue) * 100) : 'N/A'}%
+- Lien position: ${params.lienPosition || 'Not specified'}
+- Estimated recovery in default scenario
+
+4. CREDIT RATING ASSESSMENT:
+Assign internal rating (Strong / Acceptable / Weak / Poor) with quantitative justification.
+
+TONE: Clinical, quantitative, professional. Lead with numbers. Avoid subjective adjectives without data.
+DO NOT use markdown formatting - plain text only.
+Maximum 500 words.`,
+
+        collateralAnalysis: `Provide detailed collateral analysis for recovery assessment:
+
+COLLATERAL PACKAGE:
+${params.collateralDescription || "No collateral details provided"}
+
+VALUATION ANALYSIS:
+- As-Is Market Value: ${currencyFmtMM(params.collateralValue || 0, ccy)}
+- Estimated Orderly Liquidation Value: ${currencyFmtMM((params.collateralValue || 0) * 0.70, ccy)} (assume 70% of market)
+- Estimated Forced Sale Value: ${currencyFmtMM((params.collateralValue || 0) * 0.50, ccy)} (assume 50% of market)
+
+LOAN-TO-VALUE ANALYSIS:
+- LTV on Market Value: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / params.collateralValue) * 100) : 'N/A'}%
+- LTV on Orderly Liquidation: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / (params.collateralValue * 0.70)) * 100) : 'N/A'}%
+- LTV on Forced Sale: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / (params.collateralValue * 0.50)) * 100) : 'N/A'}%
+
+RECOVERY ANALYSIS:
+- Estimated recovery rate in default
+- Time to liquidate (estimate in months)
+- Liquidation costs (legal, brokerage - typically 10-15%)
+
+COLLATERAL QUALITY:
+- Liquidity: High/Medium/Low
+- Price volatility assessment
+- Marketability and ease of sale
+
+MONITORING REQUIREMENTS:
+- Recommended appraisal frequency
+- Insurance coverage requirements
+- Restrictions on additional liens
+
+CONCLUSION: Rate collateral as Strong/Adequate/Weak with loss-given-default estimate.
+
+TONE: Conservative and recovery-focused.
+DO NOT use markdown formatting - plain text only.
+Maximum 500 words.`,
+
+        covenantAnalysis: `Analyze covenant structure and headroom for Credit Committee:
+
+FINANCIAL COVENANTS:
+1. Minimum DSCR: ${numFmt(params.minDSCR || 1.2)}x
+   Current: ${numFmt(minDSCR)}x
+   Headroom: ${numFmt(minDSCR - (params.minDSCR || 1.2))}x (${pctFmt((minDSCR - (params.minDSCR || 1.2)) / (params.minDSCR || 1.2))} cushion)
+   Breach point: DSCR falls below covenant if EBITDA declines by approximately ${pctFmt((minDSCR - (params.minDSCR || 1.2)) / minDSCR)}
+
+2. Maximum Net Debt/EBITDA: ${numFmt(params.maxNDToEBITDA || 3.5)}x
+   Current: ${numFmt(maxLeverage)}x
+   Headroom: ${numFmt((params.maxNDToEBITDA || 3.5) - maxLeverage)}x
+   
+3. Minimum Interest Coverage: ${numFmt(params.targetICR || 2.0)}x
+   Current: ${numFmt(minICR)}x
+   Headroom: ${numFmt(minICR - (params.targetICR || 2.0))}x
+
+COVENANT TESTING: Quarterly
+
+MOST AT-RISK COVENANT:
+Identify which covenant has least headroom and explain why it's most vulnerable.
+
+PROJECTED COMPLIANCE:
+Show expected covenant metrics over next 4-8 quarters based on projections.
+
+CURE RIGHTS:
+- Equity cure provisions: Yes/No and limitations
+- Event of Default triggers
+
+RECOMMENDATION: Rate covenant package as Tight/Adequate/Loose with justification.
+
+TONE: Precise and forward-looking.
+DO NOT use markdown formatting - plain text only.
+Maximum 400 words.`,
+
+        sensitivityAnalysis: `Provide detailed sensitivity analysis with decision triggers for Credit Committee:
+
+BASE CASE ASSUMPTIONS:
+- Revenue Growth: ${pctFmt(params.revenueGrowth || 0)}
+- EBITDA Margin: ${pctFmt((base.rows?.[0]?.ebitda || 0) / (base.rows?.[0]?.revenue || 1))}
+- Current Min DSCR: ${numFmt(minDSCR)}x
+
+SENSITIVITY TO KEY VARIABLES:
+
+REVENUE SENSITIVITY:
+- -10% Revenue Impact: Estimate new DSCR and covenant status
+- -20% Revenue Impact: Estimate breach likelihood
+- Break-even Revenue: Calculate minimum revenue to maintain ${numFmt(params.minDSCR || 1.2)}x DSCR
+
+MARGIN SENSITIVITY:
+- -200bps EBITDA Margin: Impact on coverage ratios
+- -500bps EBITDA Margin: Severe stress scenario
+
+INTEREST RATE SENSITIVITY (if applicable):
+- +100bps Rate Increase: Impact on debt service and DSCR
+- +200bps Rate Increase: Stress scenario impact
+
+DECISION TRIGGERS - Recommend monitoring thresholds:
+RED FLAG: DSCR falls below ${numFmt((params.minDSCR || 1.2) + 0.10)}x for two consecutive quarters
+ENHANCED MONITORING: Revenue decline exceeds 15% YoY or margin compression exceeds 300bps
+STANDARD MONITORING: All metrics within expected ranges
+
+BREAKEVEN ANALYSIS:
+Minimum EBITDA required to maintain covenant: Calculate based on debt service.
+
+TONE: Quantitative scenario planning. Help Committee understand vulnerability points.
+DO NOT use markdown formatting - plain text only.
+Maximum 500 words.`,
+
+        refinancingRisk: `Assess refinancing and exit risk for Credit Committee:
+
+MATURITY PROFILE:
+- Facility Maturity Date: ${termSheetFields.maturityDate}
+- Projected Debt at Maturity: ${currencyFmtMM(projections.base?.rows?.[projections.base.rows.length - 1]?.endingDebt || 0, ccy)}
+- Projected Leverage at Maturity: ${numFmt(projections.base?.rows?.[projections.base.rows.length - 1]?.ndToEbitda || 0)}x
+
+REFINANCING FEASIBILITY:
+- Will borrower be "bankable" at maturity? (Compare projected metrics to typical market standards)
+- Alternative refinancing sources available (bank market, private credit, capital markets)
+- Market access assessment based on projected credit profile
+
+REPAYMENT SOURCES AT MATURITY:
+Primary: Refinancing (assess likelihood)
+Secondary: Operating cash flow accumulation, asset sales
+Tertiary: Sponsor support, collateral liquidation
+
+MATURITY RISK FACTORS:
+- Refinancing risk level: Low/Medium/High
+- Dependence on market conditions
+- Borrower credit profile trajectory
+
+RECOMMENDATION:
+Is refinancing risk acceptable given credit profile and structure?
+
+TONE: Forward-looking and market-aware.
+DO NOT use markdown formatting - plain text only.
+Maximum 300 words.`,
+
+        esgAndRegulatory: `Assess Environmental, Social, Governance, and Regulatory risks for Credit Committee:
+
+ENVIRONMENTAL RISKS:
+- Industry environmental profile: High/Medium/Low impact (based on ${params.industry})
+- Climate transition risk assessment
+- Environmental liabilities or contingencies
+
+SOCIAL RISKS:
+- Labor relations and key person dependencies
+- Customer/supplier concentration: ${params.keyCustomers || 'Not specified'}
+- Product liability or reputational risks
+
+GOVERNANCE ASSESSMENT:
+- Management structure and quality
+- Related party transactions or conflicts
+- Financial reporting quality (audited statements available?)
+- Ownership structure
+
+REGULATORY & COMPLIANCE:
+- Key licenses and regulatory requirements for ${params.industry}
+- Regulatory change risks on horizon
+- Historical compliance track record
+- Industry-specific regulations
+
+REPUTATIONAL RISK:
+- Public perception and brand strength
+- Litigation history or ongoing issues
+- Customer satisfaction indicators
+
+OVERALL ESG RISK RATING: Low/Medium/High
+KEY MITIGANTS: Specific actions to address highest risks
+
+TONE: Comprehensive risk assessment covering non-financial factors.
+DO NOT use markdown formatting - plain text only.
+Maximum 400 words.`,
+
+        businessAnalysis: `Provide business quality assessment for Credit Committee:
+
+INDUSTRY POSITION:
+- Market dynamics and competitive intensity in ${params.industry}
+- Industry growth outlook and cyclicality
+- Borrower's competitive position and market share
+
+BUSINESS MODEL SUSTAINABILITY:
+${params.businessModel || "No business model description provided"}
+- Revenue model assessment (recurring vs. transactional)
+- Customer acquisition and retention
+- Switching costs and competitive moat
+
+MANAGEMENT QUALITY:
+- Experience: ${params.managementExperience || 'Not specified'}
+- Track record of execution
+- Depth of management team
+- Succession planning
+
+STRATEGIC RISKS:
+- Key person dependencies
+- Technology or market disruption risks
+- Execution risks in growth strategy
+
+TONE: Objective business fundamentals assessment.
+DO NOT use markdown formatting - plain text only.
+Maximum 400 words.`,
+
+        recommendation: `Provide final credit recommendation to Credit Committee:
+
+RECOMMENDATION: [State clearly: APPROVE / APPROVE WITH CONDITIONS / DECLINE]
+
+CREDIT DECISION RATIONALE (3-4 supporting factors):
+List the key quantitative and qualitative factors driving this recommendation.
+Example format:
+1. DSCR of ${numFmt(minDSCR)}x provides ${numFmt(minDSCR - (params.minDSCR || 1.2))}x cushion above ${numFmt(params.minDSCR || 1.2)}x covenant
+2. [Second factor with specific metrics]
+3. [Third factor with specific metrics]
+
+KEY RISKS TO MONITOR (2-3 specific risks):
+Identify material risks with measurable indicators.
+Example: Customer concentration - Top 3 customers represent X% of revenue
+
+${minDSCR >= (params.minDSCR || 1.2) ? 
+  `CONDITIONS OF APPROVAL (if conditional):
+- Quarterly compliance certificates within 30 days
+- Annual site inspection rights
+- Notification requirements for material events
+- [Add 2-3 specific conditions based on risk profile]` : ''}
+
+PROPOSED MONITORING FREQUENCY: Quarterly / Semi-Annual / Annual
+Justify frequency based on risk profile and covenant cushions.
+
+TONE: Authoritative and decisive. State recommendation with conviction backed by data.
+DO NOT use markdown formatting - plain text only.
+Maximum 400 words.`,
+
+        riskAssessment: `Identify Top 5 Material Credit Risks in priority order for Credit Committee:
+
+For each risk provide:
+
+RISK 1: [Title]
+Description: What could go wrong (2 sentences)
+Quantified Impact: Financial impact estimate (e.g., "15% revenue decline breaches DSCR covenant")
+Likelihood: High / Medium / Low
+Mitigation: Specific covenants or actions that reduce this risk
+
+RISK 2: [Title]
+[Same format]
+
+RISK 3: [Title]
+[Same format]
+
+RISK 4: [Title]
+[Same format]
+
+RISK 5: [Title]
+[Same format]
+
+Prioritize by (Likelihood × Impact). Focus on risks that impair debt repayment:
+- Covenant breach scenarios
+- Revenue/customer concentration
+- Margin compression
+- Working capital deterioration
+- Refinancing risk at maturity
+- Operational dependencies
+- Market or competitive risks
+
+TONE: Risk-focused but balanced. Committee needs to understand downside scenarios.
+DO NOT use markdown formatting - plain text only.
+Maximum 600 words.`,
+
+        scenarioAnalysis: `Provide scenario analysis for Credit Committee stress testing:
+
+BASE CASE: IRR ${pctFmt(projections.base?.irr || 0)}, Min DSCR ${numFmt(projections.base?.creditStats?.minDSCR || 0)}, Breaches: ${(projections.base?.breaches?.dscrBreaches || 0) + (projections.base?.breaches?.icrBreaches || 0)}
+
+STRESS SCENARIOS SUMMARY:
+${Object.keys(projections).filter(k => k !== 'base').map(scenario => {
+  const proj = projections[scenario];
+  return `${scenario}: IRR ${pctFmt(proj.irr || 0)}, Min DSCR ${numFmt(proj.creditStats?.minDSCR || 0)}, Breaches: ${(proj.breaches?.dscrBreaches || 0) + (proj.breaches?.icrBreaches || 0)}`;
+}).join('\n')}
+
+ANALYSIS REQUIRED:
+1. Range of Outcomes: Best case to worst case metrics across all scenarios
+2. Breaking Point Analysis: At what point do covenants breach? (e.g., "DSCR breaches under 15% revenue decline")
+3. Key Sensitivity Drivers: Revenue vs. margin vs. interest rate - which matters most?
+4. Probability Assessment: Assign likelihood to each scenario
+5. Recommended Decision Case: State which scenario should drive credit decision (typically base or mild stress)
+
+CONCLUSION: Can structure withstand reasonable stress? Yes/No with supporting rationale.
+
+TONE: Analytical scenario comparison. Focus on downside protection.
+DO NOT use markdown formatting - plain text only.
+Maximum 500 words.`,
+
+        sponsorAnalysis: `Analyze sponsor/ownership and alignment of interests (if PE/sponsored deal):
+
+SPONSOR PROFILE:
+- Name/Firm: [If applicable]
+- Track record and reputation
+- Financial capacity for support
+
+SPONSOR COMMITMENT:
+- Equity invested: ${currencyFmtMM(params.sponsorEquity || 0, ccy)} (${numFmt((params.sponsorEquity || 0) / ((params.sponsorEquity || 0) + params.requestedLoanAmount || 1) * 100)}% of capital structure)
+- Meaningful commitment relative to fund size?
+- Additional support mechanisms (guarantees, equity commitments)
+
+ALIGNMENT OF INTERESTS:
+- Management equity ownership
+- Incentive structures
+- Exit timeline expectations
+
+SPONSOR TRACK RECORD:
+- Past portfolio company performance
+- Treatment of lenders in stressed situations
+- Industry expertise in ${params.industry}
+
+RISK ASSESSMENT:
+- Sponsor stability: Strong/Adequate/Weak
+- Likelihood of support if needed: High/Medium/Low
+
+NOTE: If not a sponsored deal, state "Not applicable - direct corporate borrower"
+
+TONE: Assessment of sponsor quality and alignment.
+DO NOT use markdown formatting - plain text only.
+Maximum 300 words.`
       };
 
-      const systemPrompt = `You are a senior credit analyst at a leading financial institution. Analyze the financial model data and provide professional, actionable insights for a credit committee. Be specific, reference actual numbers from the data, and maintain a professional tone suitable for executive decision-making.
+      const systemPrompt = `You are a senior credit analyst at a leading financial institution preparing analysis for a Credit Committee meeting. Your audience consists of C-level executives who will make the final credit decision.
+
+Your analysis must be:
+- PROFESSIONAL: Formal tone suitable for executive decision-making
+- QUANTITATIVE: Lead with specific numbers and metrics from the data
+- DECISIVE: Clear conclusions with supporting evidence
+- RISK-FOCUSED: Honest about concerns and weaknesses
+- ACTIONABLE: Provide specific recommendations
+
+Remember: Credit committees value precision, honesty, and decisiveness over promotional language.
 
 FINANCIAL MODEL DATA:
 ${modelSummary}
 
-Your analysis should be:
-- Specific and data-driven (cite actual metrics)
-- Professional and concise (avoid fluff)
-- Actionable (provide clear recommendations)
-- Risk-focused (highlight concerns honestly)
-- Well-structured (use paragraphs and bullet points)`;
+CRITICAL INSTRUCTION: Do NOT use any markdown formatting in your response. No asterisks for bold (**text**), no hashtags for headers (## Header), no backticks for code (\`code\`). Write in plain text only with proper paragraph breaks and bullet points using dashes or numbers.`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
       const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
         method: "POST",
@@ -256,7 +742,10 @@ Your analysis should be:
           max_tokens: 2000,
           temperature: 0.7,
         }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -266,15 +755,22 @@ Your analysis should be:
       const data = await response.json();
       const aiContent = data.choices?.[0]?.message?.content || "No response from AI service.";
       
+      // Strip any markdown that may have slipped through
+      const cleanedContent = stripMarkdown(aiContent);
+      
       setAiGeneratedContent(prev => ({
         ...prev,
-        [section]: aiContent
+        [section]: cleanedContent
       }));
       
       setShowAIPreview(true);
     } catch (error) {
-      console.error("AI Generation Error:", error);
-      setAiError(error.message || "Failed to generate AI analysis. Please try again.");
+      if (error.name === 'AbortError') {
+        setAiError("Request timed out after 30 seconds. Please try again.");
+      } else {
+        console.error("AI Generation Error:", error);
+        setAiError(error.message || "Failed to generate AI analysis. Please try again.");
+      }
     } finally {
       setIsGeneratingAI(false);
     }
@@ -282,12 +778,26 @@ Your analysis should be:
 
   // Generate all AI sections at once
   const generateAllAIContent = async () => {
-    const sections = ['executiveSummary', 'creditAnalysis', 'businessAnalysis', 'recommendation', 'riskAssessment', 'scenarioAnalysis'];
+    const sections = [
+      'executiveSummary', 
+      'historicalPerformance',
+      'industryBenchmarking',
+      'creditAnalysis', 
+      'collateralAnalysis',
+      'covenantAnalysis',
+      'businessAnalysis', 
+      'sensitivityAnalysis',
+      'refinancingRisk',
+      'esgAndRegulatory',
+      'recommendation', 
+      'riskAssessment', 
+      'scenarioAnalysis'
+    ];
     
     for (const section of sections) {
       await generateAIAnalysis(section);
       // Small delay between requests to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
   };
 
@@ -316,6 +826,22 @@ Your analysis should be:
       totalFees: amount * ((termSheetFields.arrangementFeePercent + termSheetFields.commitmentFeePercent + termSheetFields.legalCostEstimatePercent) / 100)
     };
   }, [termSheetFields.raiseAmount, termSheetFields.arrangementFeePercent, termSheetFields.commitmentFeePercent, termSheetFields.legalCostEstimatePercent]);
+
+  // Validation function
+  const validateReportData = () => {
+    const errors = [];
+    
+    if (!projections?.base) errors.push("No financial projections available");
+    if (!params?.companyLegalName) errors.push("Company name is required");
+    if (!params?.requestedLoanAmount) errors.push("Loan amount is required");
+    if (!params?.proposedTenor) errors.push("Loan tenor is required");
+    
+    if (errors.length > 0) {
+      alert(`Cannot generate report:\n\n${errors.join('\n')}`);
+      return false;
+    }
+    return true;
+  };
 
   // Generate executive summary with AI or template
   const generateExecutiveSummary = () => {
@@ -357,72 +883,41 @@ ${recommendation.summary} ${recommendation.rationale}
 `;
   };
 
-  // Generate Business Analysis Section
-  const generateBusinessAnalysis = () => {
-    if (aiGeneratedContent.businessAnalysis) {
-      return aiGeneratedContent.businessAnalysis;
-    }
-
-    return `
-BUSINESS ANALYSIS
-
-BUSINESS MODEL & OPERATIONS
-${params.businessModel || "No business model description provided."}
-
-PRODUCTS & SERVICES
-${params.productsServices || "No product/service details provided."}
-
-MARKET POSITION & COMPETITION
-${params.competitivePosition || "No competitive analysis provided."}
-${params.marketShare ? `Market Share: ${params.marketShare}` : ""}
-
-CUSTOMER BASE
-${params.keyCustomers || "No customer concentration analysis provided."}
-
-INDUSTRY CONTEXT
-Industry: ${params.industry}
-Business Age: ${params.businessAge} years
-Management Experience: ${params.managementExperience}
-`;
-  };
-
-  // Generate Credit Analysis Section
-  const generateCreditAnalysis = () => {
-    if (aiGeneratedContent.creditAnalysis) {
-      return aiGeneratedContent.creditAnalysis;
-    }
-
-    return `
-CREDIT ANALYSIS
-
-CREDIT STRENGTHS
-${params.creditStrengths || "No specific credit strengths identified."}
-
-KEY RISKS
-${params.keyRisks || "No specific risks identified."}
-
-RISK MITIGATION
-${params.mitigatingFactors || "No mitigating factors specified."}
-
-COLLATERAL ANALYSIS
-${params.collateralDescription || "No collateral details provided."}
-Collateral Value: ${currencyFmtMM(params.collateralValue || 0, ccy)}
-LTV Ratio: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / params.collateralValue) * 100) : "N/A"}%
-Lien Position: ${params.lienPosition}
-
-REPAYMENT SOURCES
-Primary: ${params.primaryRepaymentSource || "Not specified"}
-Secondary: ${params.secondaryRepaymentSource || "Not specified"}
-`;
-  };
-
-  // Generate Term Sheet PDF with proper calculations
-  const generateTermSheet = () => {
+  // Generate comprehensive PDF Report with professional styling
+  const generatePDF = () => {
+    if (!validateReportData()) return;
+    
     setIsExporting(true);
     
     try {
       const doc = new jsPDF();
       let yPos = 20;
+
+      // Get brand colors
+      const primaryRGB = hexToRgb(branding.primaryColor);
+      const secondaryRGB = hexToRgb(branding.secondaryColor);
+      const accentRGB = hexToRgb(branding.accentColor);
+
+      // Color palette
+      const COLORS = {
+        primary: primaryRGB,
+        secondary: secondaryRGB,
+        accent: accentRGB,
+        success: [34, 197, 94],
+        warning: [245, 158, 11],
+        danger: [239, 68, 68],
+        darkGray: [51, 65, 85],
+        lightGray: [148, 163, 184],
+        background: [248, 250, 252]
+      };
+
+      const FONTS = {
+        title: { size: 16, style: 'bold' },
+        header: { size: 14, style: 'bold' },
+        subheader: { size: 12, style: 'bold' },
+        body: { size: 10, style: 'normal' },
+        caption: { size: 8, style: 'normal' }
+      };
 
       const checkNewPage = (requiredSpace = 20) => {
         if (yPos + requiredSpace > 280) {
@@ -433,37 +928,452 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
         return false;
       };
 
-      // Header
-      doc.setFillColor(59, 130, 246);
-      doc.rect(0, 0, 210, 45, "F");
+      // Helper for professional section headers
+      const addProfessionalSection = (title, level = 1) => {
+        checkNewPage(25);
+        
+        if (level === 1) {
+          // Major section - full width colored band
+          doc.setFillColor(...COLORS.primary);
+          doc.rect(15, yPos - 5, 180, 10, "F");
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(FONTS.header.size);
+          doc.setFont(undefined, FONTS.header.style);
+          doc.text(title.toUpperCase(), 20, yPos + 2);
+          doc.setTextColor(...COLORS.darkGray);
+          yPos += 15;
+        } else {
+          // Subsection - left accent line
+          doc.setDrawColor(...COLORS.primary);
+          doc.setLineWidth(2);
+          doc.line(15, yPos - 2, 15, yPos + 5);
+          doc.setTextColor(...COLORS.primary);
+          doc.setFontSize(FONTS.subheader.size);
+          doc.setFont(undefined, FONTS.subheader.style);
+          doc.text(title, 20, yPos + 2);
+          doc.setTextColor(...COLORS.darkGray);
+          yPos += 10;
+        }
+      };
+
+      // Helper for metric boxes
+      const addMetricBox = (label, value, color = COLORS.primary, x = 20, width = 43) => {
+        // Light background
+        doc.setFillColor(...color, 25); // 25 = ~10% opacity
+        doc.roundedRect(x, yPos, width, 12, 2, 2, "F");
+        
+        doc.setFontSize(FONTS.caption.size);
+        doc.setTextColor(...COLORS.lightGray);
+        doc.text(label, x + 3, yPos + 5);
+        
+        doc.setFontSize(FONTS.subheader.size);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...color);
+        doc.text(value, x + 3, yPos + 10);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(...COLORS.darkGray);
+      };
+
+      // Helper for covenant chart
+      const addCovenantChart = (yStartPos) => {
+        const base = projections?.base || {};
+        const minDSCR = base.creditStats?.minDSCR || 0;
+        const maxLeverage = base.creditStats?.maxLeverage || 0;
+        const minICR = base.creditStats?.minICR || 0;
+
+        const chartData = [
+          { 
+            covenant: 'DSCR', 
+            current: minDSCR, 
+            threshold: params.minDSCR || 1.2, 
+            headroom: minDSCR - (params.minDSCR || 1.2),
+            isMax: false
+          },
+          { 
+            covenant: 'Leverage', 
+            current: maxLeverage, 
+            threshold: params.maxNDToEBITDA || 3.5, 
+            headroom: (params.maxNDToEBITDA || 3.5) - maxLeverage,
+            isMax: true
+          },
+          { 
+            covenant: 'ICR', 
+            current: minICR, 
+            threshold: params.targetICR || 2.0, 
+            headroom: minICR - (params.targetICR || 2.0),
+            isMax: false
+          }
+        ];
+
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...COLORS.primary);
+        doc.text("Covenant Compliance & Headroom", 20, yStartPos);
+        doc.setTextColor(...COLORS.darkGray);
+        
+        let chartY = yStartPos + 8;
+        chartData.forEach(item => {
+          const headroomPercent = item.isMax 
+            ? (item.headroom / item.threshold) * 100
+            : (item.headroom / item.threshold) * 100;
+          const barWidth = Math.max(Math.min(headroomPercent * 1.2, 120), 5);
+          const color = item.headroom > (item.threshold * 0.2) 
+            ? COLORS.success 
+            : item.headroom > 0 
+              ? COLORS.warning 
+              : COLORS.danger;
+          
+          // Draw bar
+          doc.setFillColor(...color);
+          doc.roundedRect(85, chartY - 3, barWidth, 6, 1, 1, 'F');
+          
+          // Label and value
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'bold');
+          doc.text(`${item.covenant}:`, 20, chartY + 1);
+          doc.setFont(undefined, 'normal');
+          doc.text(`${numFmt(item.current)} vs ${numFmt(item.threshold)} (${item.headroom > 0 ? '+' : ''}${numFmt(item.headroom)} headroom)`, 45, chartY + 1);
+          
+          chartY += 10;
+        });
+        
+        return chartY + 5;
+      };
+
+      // ============================================================================
+      // COVER PAGE
+      // ============================================================================
+      doc.setFillColor(...COLORS.primary);
+      doc.rect(0, 0, 210, 100, "F");
+      
+      // Add logo if available
+      if (branding.logoDataUrl) {
+        try {
+          doc.addImage(branding.logoDataUrl, 'PNG', 15, 10, 40, 20, undefined, 'FAST');
+        } catch (err) {
+          console.warn("Could not add logo to PDF:", err);
+        }
+      }
+      
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.text("INDICATIVE TERM SHEET", 105, 15, { align: "center" });
-      doc.setFontSize(16);
-      doc.text(termSheetFields.issuer, 105, 25, { align: "center" });
-      doc.setFontSize(12);
-      doc.text(termSheetFields.facilityType, 105, 33, { align: "center" });
+      doc.setFontSize(10);
+      doc.text("CONFIDENTIAL", 105, 20, { align: "center" });
       
-      // Amount
-      doc.setFontSize(18);
+      doc.setFontSize(26);
       doc.setFont(undefined, 'bold');
-      doc.text(`${termSheetFields.currency} ${numFmt(termSheetFields.raiseAmount / 1000000)}M`, 105, 42, { align: "center" });
+      doc.text("CREDIT COMMITTEE MEMORANDUM", 105, 45, { align: "center" });
       
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'normal');
+      doc.text(params.companyLegalName || "Borrower Name", 105, 60, { align: "center" });
+      
+      // Recommendation badge
+      doc.setFontSize(14);
+      const rec = determineRecommendation(projections?.base || {}, params);
+      const recColor = rec.decision.includes('APPROVE') && !rec.decision.includes('CONDITIONS') 
+        ? COLORS.success 
+        : rec.decision.includes('DECLINE') 
+          ? COLORS.danger 
+          : COLORS.warning;
+      doc.setTextColor(...recColor);
+      doc.text(rec.decision, 105, 75, { align: "center" });
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(12);
+      doc.text(`${currencyFmtMM(params.requestedLoanAmount, ccy)} ${params.dealStructure || 'Term Facility'}`, 105, 85, { align: "center" });
+
+      // Transaction summary box
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 100, 210, 197, "F");
+      
+      doc.setFillColor(...COLORS.background);
+      doc.roundedRect(20, 120, 170, 50, 3, 3, "F");
+      
+      doc.setTextColor(...COLORS.darkGray);
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      doc.text("TRANSACTION SUMMARY", 25, 130);
+      
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(9);
+      const coverDetails = [
+        [`Facility Type:`, params.dealStructure || "Senior Secured Term Loan"],
+        [`Requested Amount:`, currencyFmtMM(params.requestedLoanAmount, ccy)],
+        [`Proposed Tenor:`, `${params.proposedTenor} years`],
+        [`Pricing:`, `${pctFmt(params.proposedPricing)} per annum`],
+        [`Purpose:`, (params.loanPurpose || "General corporate purposes").substring(0, 50)],
+        [`Report Date:`, new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })],
+      ];
+      
+      let detailY = 140;
+      coverDetails.forEach(([label, value]) => {
+        doc.setFont(undefined, 'bold');
+        doc.text(label, 25, detailY);
+        doc.setFont(undefined, 'normal');
+        const valueLines = doc.splitTextToSize(value, 110);
+        doc.text(valueLines, 75, detailY);
+        detailY += Math.max(5, valueLines.length * 5);
+      });
+
       // Disclaimer
       doc.setFontSize(7);
+      doc.setTextColor(...COLORS.lightGray);
+      const disclaimer = "This memorandum is confidential and intended solely for use by the Credit Committee. The information contained herein is proprietary and may not be reproduced or distributed without prior written consent.";
+      const disclaimerLines = doc.splitTextToSize(disclaimer, 170);
+      doc.text(disclaimerLines, 105, 280, { align: "center" });
+
+      // ============================================================================
+      // PAGE 2 - EXECUTIVE SUMMARY
+      // ============================================================================
+      doc.addPage();
+      yPos = 25;
+
+      addProfessionalSection("EXECUTIVE SUMMARY", 1);
+      
+      // Key Metrics Dashboard
+      const base = projections?.base || {};
+      addMetricBox("Enterprise Value", currencyFmtMM(base.enterpriseValue || 0, ccy), COLORS.primary, 20, 43);
+      addMetricBox("Equity IRR", pctFmt(base.irr || 0), COLORS.secondary, 68, 43);
+      addMetricBox("Min DSCR", numFmt(base.creditStats?.minDSCR || 0), 
+        base.creditStats?.minDSCR >= (params.minDSCR || 1.2) ? COLORS.success : COLORS.danger, 116, 43);
+      addMetricBox("Max Leverage", `${numFmt(base.creditStats?.maxLeverage || 0)}x`, 
+        base.creditStats?.maxLeverage <= (params.maxNDToEBITDA || 3.5) ? COLORS.success : COLORS.warning, 164, 43);
+      
+      yPos += 20;
+
+      // Executive summary text
+      doc.setFontSize(FONTS.body.size);
       doc.setFont(undefined, 'normal');
-      doc.setTextColor(200, 200, 200);
+      const summaryText = generateExecutiveSummary();
+      const summaryLines = doc.splitTextToSize(summaryText, 170);
+      doc.text(summaryLines, 20, yPos);
+      yPos += summaryLines.length * 5 + 15;
+
+      // RECOMMENDATION BOX
+      checkNewPage(35);
+      doc.setFillColor(...recColor, 25);
+      doc.roundedRect(20, yPos, 170, 30, 3, 3, "F");
+      doc.setDrawColor(...recColor);
+      doc.setLineWidth(1);
+      doc.roundedRect(20, yPos, 170, 30, 3, 3, "S");
+      
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...recColor);
+      doc.text("RECOMMENDATION", 25, yPos + 8);
+      
+      doc.setFontSize(16);
+      doc.text(rec.decision, 25, yPos + 17);
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...COLORS.darkGray);
+      const recLines = doc.splitTextToSize(rec.rationale, 160);
+      doc.text(recLines, 25, yPos + 24);
+      
+      yPos += 40;
+
+      // ============================================================================
+      // COVENANT ANALYSIS WITH CHART
+      // ============================================================================
+      if (selectedSections.covenantAnalysis) {
+        checkNewPage(50);
+        yPos = addCovenantChart(yPos);
+      }
+
+      // ============================================================================
+      // REMAINING SECTIONS
+      // ============================================================================
+      const addContentSection = (title, content) => {
+        if (!content) return;
+        checkNewPage(30);
+        addProfessionalSection(title, 1);
+        doc.setFontSize(FONTS.body.size);
+        doc.setFont(undefined, 'normal');
+        const lines = doc.splitTextToSize(content, 170);
+        doc.text(lines, 20, yPos);
+        yPos += lines.length * 5 + 15;
+      };
+
+      // Historical Performance
+      if (selectedSections.historicalPerformance && aiGeneratedContent.historicalPerformance) {
+        addContentSection("HISTORICAL PERFORMANCE ANALYSIS", aiGeneratedContent.historicalPerformance);
+      }
+
+      // Industry Benchmarking
+      if (selectedSections.industryBenchmarking && aiGeneratedContent.industryBenchmarking) {
+        addContentSection("INDUSTRY & PEER BENCHMARKING", aiGeneratedContent.industryBenchmarking);
+      }
+
+      // Business Analysis
+      if (selectedSections.businessAnalysis) {
+        const businessContent = aiGeneratedContent.businessAnalysis || `
+BUSINESS MODEL & OPERATIONS
+${params.businessModel || "No business model description provided."}
+
+PRODUCTS & SERVICES
+${params.productsServices || "No product/service details provided."}
+
+MARKET POSITION
+${params.competitivePosition || "No competitive analysis provided."}
+
+CUSTOMER BASE
+${params.keyCustomers || "No customer concentration analysis provided."}`;
+        addContentSection("BUSINESS ANALYSIS", businessContent);
+      }
+
+      // Credit Analysis
+      if (selectedSections.creditAnalysis) {
+        addContentSection("CREDIT ANALYSIS", aiGeneratedContent.creditAnalysis || "No credit analysis generated.");
+      }
+
+      // Collateral Analysis
+      if (selectedSections.collateralAnalysis && aiGeneratedContent.collateralAnalysis) {
+        addContentSection("COLLATERAL & SECURITY ANALYSIS", aiGeneratedContent.collateralAnalysis);
+      }
+
+      // Sensitivity Analysis
+      if (selectedSections.sensitivityAnalysis && aiGeneratedContent.sensitivityAnalysis) {
+        addContentSection("SENSITIVITY & STRESS ANALYSIS", aiGeneratedContent.sensitivityAnalysis);
+      }
+
+      // Refinancing Risk
+      if (selectedSections.refinancingRisk && aiGeneratedContent.refinancingRisk) {
+        addContentSection("REFINANCING & EXIT RISK", aiGeneratedContent.refinancingRisk);
+      }
+
+      // ESG & Regulatory
+      if (selectedSections.esgAndRegulatory && aiGeneratedContent.esgAndRegulatory) {
+        addContentSection("ESG & REGULATORY RISK ASSESSMENT", aiGeneratedContent.esgAndRegulatory);
+      }
+
+      // Risk Assessment
+      if (aiGeneratedContent.riskAssessment) {
+        addContentSection("KEY CREDIT RISKS", aiGeneratedContent.riskAssessment);
+      }
+
+      // Scenario Analysis
+      if (selectedSections.stressTestResults && aiGeneratedContent.scenarioAnalysis) {
+        addContentSection("SCENARIO ANALYSIS", aiGeneratedContent.scenarioAnalysis);
+      }
+
+      // Financial Projections Table
+      if (selectedSections.financialProjections && base.rows) {
+        checkNewPage(60);
+        addProfessionalSection("FINANCIAL PROJECTIONS", 1);
+        
+        const tableData = [["Year", "Revenue", "EBITDA", "DSCR", "Leverage", "ICR"]];
+        base.rows.forEach(row => {
+          tableData.push([
+            `Y${row.year}`,
+            currencyFmtMM(row.revenue || 0, ccy),
+            currencyFmtMM(row.ebitda || 0, ccy),
+            numFmt(row.dscr || 0),
+            `${numFmt(row.ndToEbitda || 0)}x`,
+            `${numFmt(row.icr || 0)}x`
+          ]);
+        });
+
+        doc.autoTable({
+          startY: yPos,
+          head: [tableData[0]],
+          body: tableData.slice(1),
+          theme: 'grid',
+          headStyles: { fillColor: COLORS.primary, textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 9, cellPadding: 3 },
+          columnStyles: {
+            0: { fontStyle: 'bold', halign: 'center' },
+            1: { halign: 'right' },
+            2: { halign: 'right' },
+            3: { halign: 'center' },
+            4: { halign: 'center' },
+            5: { halign: 'center' }
+          }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 15;
+      }
+
+      // Footer on every page
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(...COLORS.lightGray);
+        doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: "center" });
+        doc.text(`Generated: ${new Date().toLocaleDateString()}`, 190, 290, { align: "right" });
+      }
+
+      doc.save(`Credit_Memo_${params.companyLegalName?.replace(/\s+/g, '_') || 'Company'}_${new Date().toISOString().split("T")[0]}.pdf`);
+    } catch (error) {
+      console.error("PDF Generation Error:", error);
+      alert("Error generating PDF. Please check console for details.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Generate Term Sheet PDF
+  const generateTermSheet = () => {
+    if (!validateReportData()) return;
+    
+    setIsExporting(true);
+    
+    try {
+      const doc = new jsPDF();
+      let yPos = 20;
+
+      const primaryRGB = hexToRgb(branding.primaryColor);
+
+      const checkNewPage = (requiredSpace = 20) => {
+        if (yPos + requiredSpace > 280) {
+          doc.addPage();
+          yPos = 20;
+          return true;
+        }
+        return false;
+      };
+
+      // Header with branding
+      doc.setFillColor(...primaryRGB);
+      doc.rect(0, 0, 210, 50, "F");
+      
+      // Logo
+      if (branding.logoDataUrl) {
+        try {
+          doc.addImage(branding.logoDataUrl, 'PNG', 15, 8, 35, 17, undefined, 'FAST');
+        } catch (err) {
+          console.warn("Could not add logo:", err);
+        }
+      }
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont(undefined, 'bold');
+      doc.text("INDICATIVE TERM SHEET", 105, 18, { align: "center" });
+      doc.setFontSize(16);
+      doc.text(termSheetFields.issuer, 105, 28, { align: "center" });
+      doc.setFontSize(12);
+      doc.text(termSheetFields.facilityType, 105, 36, { align: "center" });
+      
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text(`${termSheetFields.currency} ${numFmt(termSheetFields.raiseAmount / 1000000)}M`, 105, 45, { align: "center" });
+      
+      doc.setFontSize(7);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(220, 220, 220);
       const disclaimer = "This Indicative Term Sheet is for discussion purposes only and does not constitute an offer. Terms subject to final approval and documentation.";
       const disclaimerLines = doc.splitTextToSize(disclaimer, 180);
-      doc.text(disclaimerLines, 105, 52, { align: "center" });
+      doc.text(disclaimerLines, 105, 54, { align: "center" });
 
       doc.setTextColor(0, 0, 0);
-      yPos = 65;
+      yPos = 68;
 
-      // Basic Information
+      // Transaction Details
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("TRANSACTION DETAILS", 20, yPos);
       yPos += 8;
 
@@ -495,7 +1405,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       yPos += 5;
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("TERMS", 20, yPos);
       yPos += 8;
 
@@ -529,7 +1439,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       yPos += 5;
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("SECURITY PACKAGE", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -543,7 +1453,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(30);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("FINANCIAL COVENANTS", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -557,7 +1467,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(30);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("POSITIVE COVENANTS", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -571,7 +1481,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(30);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("NEGATIVE COVENANTS", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -585,7 +1495,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(30);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("CONDITIONS PRECEDENT", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -599,7 +1509,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(30);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("REPORTING REQUIREMENTS", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -613,7 +1523,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(30);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("EVENTS OF DEFAULT", 20, yPos);
       yPos += 8;
       doc.setFont(undefined, 'normal');
@@ -627,7 +1537,7 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
       checkNewPage(40);
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(59, 130, 246);
+      doc.setTextColor(...primaryRGB);
       doc.text("FEES AND EXPENSES", 20, yPos);
       yPos += 8;
       doc.setTextColor(0, 0, 0);
@@ -663,141 +1573,10 @@ Secondary: ${params.secondaryRepaymentSource || "Not specified"}
     }
   };
 
-  // Generate comprehensive PDF Report
-  const generatePDF = () => {
-    setIsExporting(true);
-    
-    try {
-      const doc = new jsPDF();
-      let yPos = 20;
-
-      const checkNewPage = (requiredSpace = 20) => {
-        if (yPos + requiredSpace > 280) {
-          doc.addPage();
-          yPos = 20;
-          return true;
-        }
-        return false;
-      };
-
-      const addSection = (title, content, isHeader = false) => {
-        checkNewPage(30);
-        if (isHeader) {
-          doc.setFillColor(59, 130, 246);
-          doc.rect(0, yPos - 10, 210, 12, "F");
-          doc.setTextColor(255, 255, 255);
-          doc.setFontSize(16);
-          doc.text(title, 105, yPos - 2, { align: "center" });
-          doc.setTextColor(0, 0, 0);
-          yPos += 15;
-        } else {
-          doc.setFontSize(14);
-          doc.setFont(undefined, 'bold');
-          doc.setTextColor(59, 130, 246);
-          doc.text(title.toUpperCase(), 20, yPos);
-          doc.setTextColor(0, 0, 0);
-          yPos += 8;
-        }
-        
-        if (content) {
-          doc.setFontSize(10);
-          doc.setFont(undefined, 'normal');
-          const lines = doc.splitTextToSize(content, 170);
-          doc.text(lines, 20, yPos);
-          yPos += lines.length * 5 + 10;
-        }
-      };
-
-      // Cover Page
-      doc.setFillColor(59, 130, 246);
-      doc.rect(0, 0, 210, 297, "F");
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(28);
-      doc.text("CREDIT COMMITTEE", 105, 100, { align: "center" });
-      doc.text("REPORT", 105, 115, { align: "center" });
-      doc.setFontSize(20);
-      doc.text(params.companyLegalName || "Confidential Borrower", 105, 140, { align: "center" });
-      doc.setFontSize(14);
-      doc.text(`${currencyFmtMM(params.requestedLoanAmount, ccy)} ${params.dealStructure || 'Term Loan'}`, 105, 155, { align: "center" });
-      doc.setFontSize(12);
-      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 105, 175, { align: "center" });
-      doc.setFontSize(10);
-      doc.text("CONFIDENTIAL - FOR INTERNAL USE ONLY", 105, 280, { align: "center" });
-      
-      doc.addPage();
-      yPos = 20;
-
-      // Executive Summary
-      if (selectedSections.executiveSummary) {
-        addSection("EXECUTIVE SUMMARY", generateExecutiveSummary(), true);
-      }
-
-      // Company Profile
-      if (selectedSections.companyProfile) {
-        addSection("COMPANY PROFILE", `
-Legal Name: ${params.companyLegalName || "N/A"}
-Operating Name: ${params.companyOperatingName || "N/A"}
-Industry: ${params.industry}
-Business Age: ${params.businessAge} years
-Credit History: ${params.creditHistory}
-Management Experience: ${params.managementExperience}
-Total Assets: ${currencyFmtMM(params.totalAssets, ccy)}
-Collateral Value: ${currencyFmtMM(params.collateralValue, ccy)}
-`);
-      }
-
-      // Business Analysis
-      if (selectedSections.businessAnalysis) {
-        addSection("BUSINESS ANALYSIS", generateBusinessAnalysis());
-      }
-
-      // Credit Analysis
-      if (selectedSections.creditAnalysis) {
-        addSection("CREDIT ANALYSIS", generateCreditAnalysis());
-      }
-
-      // Financial Projections Summary
-      if (selectedSections.financialProjections && projections?.base) {
-        const base = projections.base;
-        addSection("FINANCIAL PROJECTIONS", `
-Enterprise Value: ${currencyFmtMM(base.enterpriseValue || 0, ccy)}
-Equity Value: ${currencyFmtMM(base.equityValue || 0, ccy)}
-Equity MOIC: ${numFmt(base.moic || 0)}x
-Equity IRR: ${pctFmt(base.irr || 0)}
-
-Min DSCR: ${numFmt(base.creditStats?.minDSCR || 0)}
-Max Leverage: ${numFmt(base.creditStats?.maxLeverage || 0)}x
-Min ICR: ${numFmt(base.creditStats?.minICR || 0)}
-
-Covenant Breaches: ${(base.breaches?.dscrBreaches || 0) + (base.breaches?.icrBreaches || 0) + (base.breaches?.ndBreaches || 0)}
-`);
-      }
-
-      // Recommendation
-      if (selectedSections.recommendation) {
-        const rec = determineRecommendation(projections?.base || {}, params);
-        addSection("RECOMMENDATION", `
-DECISION: ${rec.decision}
-
-SUMMARY: ${rec.summary}
-
-RATIONALE: ${rec.rationale}
-
-${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedContent.recommendation}` : ''}
-`);
-      }
-
-      doc.save(`Credit_Report_${params.companyLegalName?.replace(/\s+/g, '_') || 'Company'}_${new Date().toISOString().split("T")[0]}.pdf`);
-    } catch (error) {
-      console.error("PDF Generation Error:", error);
-      alert("Error generating PDF. Please check console for details.");
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   // Generate Excel with comprehensive data
   const generateExcel = () => {
+    if (!validateReportData()) return;
+    
     setIsExporting(true);
     
     try {
@@ -841,13 +1620,7 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
         ];
 
         const ws = XLSX.utils.aoa_to_sheet(summaryData);
-        
-        // Set column widths
-        ws['!cols'] = [
-          { wch: 25 },
-          { wch: 25 }
-        ];
-        
+        ws['!cols'] = [{ wch: 25 }, { wch: 25 }];
         XLSX.utils.book_append_sheet(wb, ws, "Executive Summary");
       }
 
@@ -900,7 +1673,7 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
 
       // AI Analysis (if available)
       if (Object.keys(aiGeneratedContent).length > 0) {
-        const aiData = [["AI-GENERATEDANALYSIS"], []];
+        const aiData = [["AI-GENERATED ANALYSIS"], []];
         
         Object.entries(aiGeneratedContent).forEach(([section, content]) => {
           aiData.push([section.toUpperCase()]);
@@ -963,7 +1736,7 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
         return {
           decision: "CONDITIONAL APPROVAL",
           summary: "Weak DSCR offset by strong qualitative factors - approve with enhanced monitoring",
-          rationale: `DSCR of ${numFmt(minDSCR)} is below covenant but strong collateral (${params.collateralValue >= params.requestedLoanAmount * 1.5 ? 'LTV <67%' : ''}) and ${params.businessAge}+ years of operations provide comfort.`,
+          rationale: `DSCR of ${numFmt(minDSCR)} is below covenant but strong collateral coverage and ${params.businessAge}+ years of operations provide comfort.`,
           color: [245, 158, 11]
         };
       }
@@ -1007,18 +1780,195 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
 
   return (
     <div className="space-y-6">
-      {/* AI Analysis Assistant */}
+      {/* Branding Section */}
       <Card className="border-l-4 border-l-purple-600 shadow-md hover:shadow-lg transition-all duration-200">
-        <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b">
+        <CardHeader 
+  className="bg-gradient-to-r from-purple-50 to-pink-50 border-b"
+>
+  <CardTitle 
+    className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+    onClick={() => toggleSection('branding')}  // 👈 MOVED HERE!
+  >
+    <Palette className="w-6 h-6 text-purple-600" />
+    Report Branding & Customization
+    {/* Arrow */}
+    <span className="ml-auto">
+      {sectionStates.branding ? (
+        <ChevronUp className="w-5 h-5 text-purple-600" />
+      ) : (
+        <ChevronDown className="w-5 h-5 text-purple-600" />
+      )}
+    </span>
+  </CardTitle>
+          <p className="text-sm text-slate-600 mt-2">
+            Upload your company logo and select brand colors to customize all exported reports
+          </p>
+        </CardHeader>
+  {sectionStates.branding && (
+    <CardContent className="pt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Logo Upload */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-slate-800">Company Logo</Label>
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 hover:border-purple-400 transition-colors">
+                {branding.logoDataUrl ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-center">
+                      <img 
+                        src={branding.logoDataUrl} 
+                        alt="Company Logo" 
+                        className="max-h-20 max-w-full object-contain"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => logoInputRef.current?.click()}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Change Logo
+                      </Button>
+                      <Button
+                        onClick={removeLogo}
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    className="text-center cursor-pointer py-6"
+                    onClick={() => logoInputRef.current?.click()}
+                  >
+                    <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                    <p className="text-sm text-slate-600 font-medium">Click to upload logo</p>
+                    <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 2MB</p>
+                  </div>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg"
+                  onChange={handleLogoUpload}
+                  className="hidden"
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                Your logo will appear on all PDF reports and term sheets
+              </p>
+            </div>
+
+            {/* Color Picker */}
+            <div className="space-y-4">
+              <Label className="text-sm font-semibold text-slate-800">Brand Colors</Label>
+              
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="primaryColor" className="text-xs text-slate-600 mb-1 block">
+                    Primary Color (Headers & Accents)
+                  </Label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      id="primaryColor"
+                      type="color"
+                      value={branding.primaryColor}
+                      onChange={(e) => setBranding(prev => ({ ...prev, primaryColor: e.target.value }))}
+                      className="w-16 h-10 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <Input
+                      value={branding.primaryColor}
+                      onChange={(e) => setBranding(prev => ({ ...prev, primaryColor: e.target.value }))}
+                      className="flex-1 font-mono text-sm"
+                      placeholder="#3B82F6"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="secondaryColor" className="text-xs text-slate-600 mb-1 block">
+                    Secondary Color (Highlights)
+                  </Label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      id="secondaryColor"
+                      type="color"
+                      value={branding.secondaryColor}
+                      onChange={(e) => setBranding(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                      className="w-16 h-10 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <Input
+                      value={branding.secondaryColor}
+                      onChange={(e) => setBranding(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                      className="flex-1 font-mono text-sm"
+                      placeholder="#10B981"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="accentColor" className="text-xs text-slate-600 mb-1 block">
+                    Accent Color (Charts & Emphasis)
+                  </Label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      id="accentColor"
+                      type="color"
+                      value={branding.accentColor}
+                      onChange={(e) => setBranding(prev => ({ ...prev, accentColor: e.target.value }))}
+                      className="w-16 h-10 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <Input
+                      value={branding.accentColor}
+                      onChange={(e) => setBranding(prev => ({ ...prev, accentColor: e.target.value }))}
+                      className="flex-1 font-mono text-sm"
+                      placeholder="#F59E0B"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs font-semibold text-slate-700 mb-2">Preview</p>
+                <div className="flex gap-2">
+                  <div 
+                    className="w-12 h-12 rounded shadow-sm border border-slate-200"
+                    style={{ backgroundColor: branding.primaryColor }}
+                  />
+                  <div 
+                    className="w-12 h-12 rounded shadow-sm border border-slate-200"
+                    style={{ backgroundColor: branding.secondaryColor }}
+                  />
+                  <div 
+                    className="w-12 h-12 rounded shadow-sm border border-slate-200"
+                    style={{ backgroundColor: branding.accentColor }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      )}   
+      {/* 👆 See? Closing ) and then } */}
+    </Card>
+      {/* AI Analysis Assistant */}
+      <Card className="border-l-4 border-l-indigo-600 shadow-md hover:shadow-lg transition-all duration-200">
+        <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b">
           <CardTitle className="flex items-center gap-2">
-            <Bot className="w-6 h-6 text-purple-600" />
+            <Bot className="w-6 h-6 text-indigo-600" />
             AI Credit Analysis Assistant
-            <span className="ml-auto text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-semibold border border-purple-200">
-              Powered by DeepSeek
+            <span className="ml-auto text-xs bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full font-semibold border border-indigo-200">
+              Powered by FinAssist
             </span>
           </CardTitle>
           <p className="text-sm text-slate-600 mt-2">
-            Generate intelligent credit analysis using AI - all content is editable and exportable
+            Generate intelligent credit analysis using AI - maintains professional Credit Committee tone
           </p>
         </CardHeader>
         <CardContent className="pt-6">
@@ -1033,59 +1983,68 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
           )}
 
           {/* AI Generation Buttons */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-6">
             <Button 
               onClick={() => generateAIAnalysis('executiveSummary')}
               disabled={isGeneratingAI || !apiKey}
-              className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-xs"
+              className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs"
             >
               {isGeneratingAI ? <Loader className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
               Executive
             </Button>
             
             <Button 
-              onClick={() => generateAIAnalysis('creditAnalysis')}
+              onClick={() => generateAIAnalysis('historicalPerformance')}
               disabled={isGeneratingAI || !apiKey}
               className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs"
+            >
+              <Bot className="w-3 h-3 mr-1" />
+              Historical
+            </Button>
+            
+            <Button 
+              onClick={() => generateAIAnalysis('creditAnalysis')}
+              disabled={isGeneratingAI || !apiKey}
+              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs"
             >
               <Bot className="w-3 h-3 mr-1" />
               Credit
             </Button>
             
             <Button 
-              onClick={() => generateAIAnalysis('businessAnalysis')}
+              onClick={() => generateAIAnalysis('collateralAnalysis')}
               disabled={isGeneratingAI || !apiKey}
-              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs"
+              className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-xs"
             >
               <Bot className="w-3 h-3 mr-1" />
-              Business
-            </Button>
-            
-            <Button 
-              onClick={() => generateAIAnalysis('recommendation')}
-              disabled={isGeneratingAI || !apiKey}
-              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs"
-            >
-              <Bot className="w-3 h-3 mr-1" />
-              Recommendation
+              Collateral
             </Button>
 
             <Button 
-              onClick={() => generateAIAnalysis('riskAssessment')}
+              onClick={() => generateAIAnalysis('sensitivityAnalysis')}
+              disabled={isGeneratingAI || !apiKey}
+              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs"
+            >
+              <AlertCircle className="w-3 h-3 mr-1" />
+              Sensitivity
+            </Button>
+
+            <Button 
+              onClick={() => generateAIAnalysis('recommendation')}
               disabled={isGeneratingAI || !apiKey}
               className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs"
             >
-              <AlertCircle className="w-3 h-3 mr-1" />
-              Risks
+              <Check className="w-3 h-3 mr-1" />
+              Recommendation
             </Button>
 
             <Button 
               onClick={generateAllAIContent}
               disabled={isGeneratingAI || !apiKey}
-              className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs font-semibold"
+              className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white text-xs font-semibold"
             >
               <Sparkles className="w-3 h-3 mr-1" />
-              All Sections
+              Generate All
             </Button>
           </div>
 
@@ -1144,9 +2103,10 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
                           Copy
                         </Button>
                       </div>
-                      <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                        {content}
-                      </div>
+                      <ReactMarkdown className="text-xs text-slate-700 prose prose-sm max-w-none">
+  {content}
+</ReactMarkdown>
+
                     </div>
                   ))}
                 </div>
@@ -1155,7 +2115,7 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
                 <div className="text-xs text-emerald-700">
                   <Check className="w-4 h-4 inline mr-1" />
-                  AI content will be automatically included in exported reports. You can copy and edit individual sections above.
+                  AI content will be automatically included in exported reports. All content uses professional Credit Committee tone.
                 </div>
               </div>
             </div>
@@ -1452,7 +2412,7 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
           <div className="mt-6 p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
             <h4 className="font-semibold text-sm mb-3 text-slate-800 flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-600" />
-              Included Features
+              Report Features
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-slate-700">
               <div className="flex items-center gap-2">
@@ -1461,23 +2421,47 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-3 h-3 text-emerald-600" />
-                Financial Projections & Metrics
+                Historical Performance Analysis
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-3 h-3 text-emerald-600" />
-                Covenant Compliance Analysis
+                Industry Benchmarking
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-3 h-3 text-emerald-600" />
-                Stress Test Results
+                Detailed Credit Metrics
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-3 h-3 text-emerald-600" />
-                Collateral & Security Details
+                Covenant Compliance Charts
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-emerald-600" />
+                Collateral & Security Analysis
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-emerald-600" />
+                Sensitivity & Stress Testing
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-emerald-600" />
+                Refinancing Risk Assessment
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-3 h-3 text-purple-600" />
                 AI-Generated Insights
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-purple-600" />
+                Custom Branding & Colors
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-emerald-600" />
+                ESG & Regulatory Assessment
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-emerald-600" />
+                Professional PDF Layout
               </div>
             </div>
             
@@ -1486,6 +2470,15 @@ ${aiGeneratedContent.recommendation ? `\nDETAILED ANALYSIS:\n${aiGeneratedConten
                 <div className="flex items-center gap-2 text-xs text-purple-700 font-semibold">
                   <Sparkles className="w-3 h-3" />
                   {Object.keys(aiGeneratedContent).length} AI-generated section(s) will be included in exports
+                </div>
+              </div>
+            )}
+
+            {branding.logoDataUrl && (
+              <div className="mt-2 pt-2 border-t border-slate-300">
+                <div className="flex items-center gap-2 text-xs text-purple-700 font-semibold">
+                  <Palette className="w-3 h-3" />
+                  Custom branding applied (logo + brand colors)
                 </div>
               </div>
             )}

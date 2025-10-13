@@ -706,8 +706,11 @@ export function ValuationTab({ projections, params, ccy }) {
               <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Price per Share</div>
               <div className="text-3xl font-bold mb-1">
                 {valuationResults.impliedMultiples.pricePerShare 
-                  ? currencyFmtMM(valuationResults.impliedMultiples.pricePerShare, ccy)
-                  : '—'}
+  ? `${ccy} ${valuationResults.impliedMultiples.pricePerShare.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`
+  : '—'}
               </div>
               <div className="text-xs opacity-80">
                 {numFmt(valuationResults.impliedMultiples.sharesOutstanding)} shares

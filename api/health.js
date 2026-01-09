@@ -1,10 +1,10 @@
 // Vercel Serverless Function: Health Check
 // Route: /api/health
 
-import { createClient } from '@supabase/supabase-js';
-import { handleCors } from './_cors.js';
+const { createClient } = require('@supabase/supabase-js');
+const { handleCors } = require('./_cors.js');
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Handle CORS preflight
   if (handleCors(req, res)) return;
 
@@ -41,4 +41,4 @@ export default async function handler(req, res) {
     timestamp: new Date().toISOString(),
     environment: process.env.VERCEL_ENV || 'development'
   });
-}
+};

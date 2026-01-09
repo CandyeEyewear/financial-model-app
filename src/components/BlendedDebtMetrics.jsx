@@ -45,7 +45,7 @@ export function BlendedDebtMetrics({ tranches, ccy, startYear, projectionYears }
           icon={<Percent />}
         />
         <Metric
-          label="Est. Annual Debt Service"
+          label="Est. Debt Service (Year 1)"
           value={currencyFmtMM(totalDebtService, ccy)}
           icon={<DollarSign />}
         />

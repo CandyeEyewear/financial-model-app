@@ -69,8 +69,17 @@ export function calculateHistoricalAssumptions(historicalData) {
   const estimatedOpEx = 0.20;
   const cogsPct = Math.max(0, Math.min(0.95, 1 - avgEbitdaMargin - estimatedOpEx));
 
- return {
-    baseRevenue: sorted[0].revenue, 
+  // Get most recent year (last in sorted array which is oldest->newest)
+  const mostRecentYear = sorted[sorted.length - 1];
+  
+  // Calculate average revenue across all years
+  const avgRevenue = sorted.reduce((sum, d) => sum + d.revenue, 0) / sorted.length;
+
+  return {
+    // Use most recent year's revenue as the base (more representative for projections)
+    baseRevenue: mostRecentYear.revenue,
+    // Also provide average revenue for reference
+    avgRevenue: avgRevenue,
     growth: avgGrowth,
     cogsPct,
     opexPct: estimatedOpEx,

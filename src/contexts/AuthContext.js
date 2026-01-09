@@ -1,9 +1,17 @@
-// AuthContext - Supabase Auth Provider
+/**
+ * AuthContext - Supabase Authentication Provider
+ * Handles user authentication, session management, and usage tracking
+ */
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, auth, db } from '../lib/supabase';
+import { createLogger } from '../utils/logger';
 
+const log = createLogger('AuthContext');
 const AuthContext = createContext({});
 
+/**
+ * useAuth hook - Access authentication context
+ */
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -12,6 +20,9 @@ export const useAuth = () => {
   return context;
 };
 
+/**
+ * AuthProvider - Wraps app with authentication state
+ */
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -19,7 +30,7 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Plan limits
+  // Plan limits for AI queries
   const PLAN_LIMITS = {
     free: 10,
     professional: 100,
@@ -27,7 +38,9 @@ export const AuthProvider = ({ children }) => {
     enterprise: Infinity
   };
 
-  // Fetch or create user profile
+  /**
+   * Fetch or create user profile in database
+   */
   const fetchOrCreateProfile = async (user) => {
     if (!user) return null;
 
@@ -52,31 +65,36 @@ export const AuthProvider = ({ children }) => {
         const { data: createdProfile, error: createError } = await db.upsertUserProfile(newProfile);
         
         if (createError) {
-          console.error('Error creating profile:', createError);
+          log.error('Error creating profile', createError);
           return null;
         }
         
         profile = createdProfile;
+        log.info('Created new user profile');
       } else if (error) {
-        console.error('Error fetching profile:', error);
+        log.error('Error fetching profile', error);
         return null;
       }
 
       return profile;
     } catch (err) {
-      console.error('Profile fetch/create error:', err);
+      log.error('Profile fetch/create error', err);
       return null;
     }
   };
 
-  // Check if user can make AI query
+  /**
+   * Check if user can make AI query based on plan limits
+   */
   const canMakeAIQuery = () => {
     if (!userProfile) return false;
     const limit = PLAN_LIMITS[userProfile.tier] || PLAN_LIMITS.free;
     return userProfile.ai_queries_this_month < limit;
   };
 
-  // Get usage info
+  /**
+   * Get current usage info
+   */
   const getUsageInfo = () => {
     if (!userProfile) return null;
     const limit = PLAN_LIMITS[userProfile.tier] || PLAN_LIMITS.free;
@@ -88,7 +106,9 @@ export const AuthProvider = ({ children }) => {
     };
   };
 
-  // Sign up
+  /**
+   * Sign up with email and password
+   */
   const signUp = async (email, password, metadata = {}) => {
     setError(null);
     const { data, error } = await auth.signUp(email, password, metadata);
@@ -99,7 +119,9 @@ export const AuthProvider = ({ children }) => {
     return { data, error: null };
   };
 
-  // Sign in with email/password
+  /**
+   * Sign in with email and password
+   */
   const signIn = async (email, password) => {
     setError(null);
     const { data, error } = await auth.signIn(email, password);
@@ -110,7 +132,9 @@ export const AuthProvider = ({ children }) => {
     return { data, error: null };
   };
 
-  // Sign in with OAuth provider
+  /**
+   * Sign in with OAuth provider (Google, GitHub, etc.)
+   */
   const signInWithProvider = async (provider) => {
     setError(null);
     const { data, error } = await auth.signInWithProvider(provider);
@@ -121,7 +145,9 @@ export const AuthProvider = ({ children }) => {
     return { data, error: null };
   };
 
-  // Sign out
+  /**
+   * Sign out current user
+   */
   const signOut = async () => {
     setError(null);
     const { error } = await auth.signOut();
@@ -135,7 +161,9 @@ export const AuthProvider = ({ children }) => {
     return { error: null };
   };
 
-  // Reset password
+  /**
+   * Reset password via email
+   */
   const resetPassword = async (email) => {
     setError(null);
     const { data, error } = await auth.resetPassword(email);
@@ -146,7 +174,7 @@ export const AuthProvider = ({ children }) => {
     return { data, error: null };
   };
 
-  // Initialize auth state
+  // Initialize auth state on mount
   useEffect(() => {
     let mounted = true;
 
@@ -156,7 +184,7 @@ export const AuthProvider = ({ children }) => {
         const { session: currentSession, error } = await auth.getSession();
         
         if (error) {
-          console.error('Session error:', error);
+          log.warn('Session retrieval error', error);
           if (mounted) {
             setIsLoading(false);
           }
@@ -174,7 +202,7 @@ export const AuthProvider = ({ children }) => {
           setIsLoading(false);
         }
       } catch (err) {
-        console.error('Auth initialization error:', err);
+        log.error('Auth initialization error', err);
         if (mounted) {
           setIsLoading(false);
         }
@@ -185,7 +213,7 @@ export const AuthProvider = ({ children }) => {
 
     // Listen for auth state changes
     const { data: { subscription } } = auth.onAuthStateChange(async (event, currentSession) => {
-      console.log('Auth state changed:', event);
+      log.debug(`Auth state changed: ${event}`);
       
       if (mounted) {
         setSession(currentSession);

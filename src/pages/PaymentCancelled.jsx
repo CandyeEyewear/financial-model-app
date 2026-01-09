@@ -1,43 +1,58 @@
+/**
+ * PaymentCancelled Page
+ * Displayed when user cancels EzeePay payment
+ */
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { Card, CardContent } from "../components/Card";
+import { Button } from "../components/Button";
 import { XCircle, ArrowLeft, CreditCard } from "lucide-react";
 
 export function PaymentCancelled() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8 text-center">
-        <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
-          <XCircle className="w-12 h-12 text-white" />
-        </div>
-        
-        <h1 className="text-3xl font-bold text-slate-800 mb-3">
-          Payment Cancelled
-        </h1>
-        
-        <p className="text-lg text-slate-600 mb-6">
-          Your payment was cancelled. No charges were made to your account.
-        </p>
+    <div className="min-h-screen bg-gradient-to-br from-danger-50 via-warning-50 to-neutral-50 dark:from-danger-950 dark:via-warning-950 dark:to-neutral-900 flex items-center justify-center p-4 sm:p-6">
+      <Card variant="elevated" className="max-w-md w-full text-center">
+        <CardContent padding="lg">
+          {/* Cancel Icon */}
+          <div className="w-20 h-20 bg-gradient-to-br from-warning-400 to-danger-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+            <XCircle className="w-12 h-12 text-white" />
+          </div>
 
-        <div className="space-y-3">
-          <button
-            onClick={() => navigate('/pricing')}
-            className="w-full py-3 px-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg flex items-center justify-center gap-2"
-          >
-            <CreditCard className="w-5 h-5" />
-            Try Again
-          </button>
+          {/* Title */}
+          <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 dark:text-neutral-100 mb-3">
+            Payment Cancelled
+          </h1>
 
-          <button
-            onClick={() => navigate('/')}
-            className="w-full py-3 px-6 bg-white border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
+          {/* Description */}
+          <p className="text-lg text-neutral-600 dark:text-neutral-400 mb-8">
+            Your payment was cancelled. No charges were made to your account.
+          </p>
+
+          {/* Action Buttons */}
+          <div className="space-y-3">
+            <Button
+              onClick={() => navigate("/pricing")}
+              fullWidth
+              size="lg"
+              leftIcon={CreditCard}
+            >
+              Try Again
+            </Button>
+
+            <Button
+              onClick={() => navigate("/")}
+              variant="secondary"
+              fullWidth
+              size="lg"
+              leftIcon={ArrowLeft}
+            >
+              Back to Dashboard
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

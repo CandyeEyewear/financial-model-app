@@ -550,7 +550,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-indigo-900">
-                  📊 What This Dashboard Shows
+                  What This Dashboard Shows
                 </h3>
                 <span className="text-indigo-600 text-xs font-semibold">
                   {expandedSection === 'dashboardInfo' ? '▲ Hide' : '▼ Learn More'}
@@ -567,7 +567,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
           {expandedSection === 'dashboardInfo' && (
             <div className="mt-4 pl-8 space-y-4 text-xs text-slate-700 border-l-2 border-indigo-300">
               <div>
-                <h4 className="font-bold text-indigo-900 mb-1.5">📋 Purpose</h4>
+                <h4 className="font-bold text-indigo-900 mb-1.5">Purpose</h4>
                 <p>
                   Comprehensive credit risk assessment for the proposed lending facility. 
                   {hasExistingDebt ? (
@@ -580,7 +580,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               </div>
 
               <div>
-                <h4 className="font-bold text-indigo-900 mb-1.5">📊 Key Metrics Explained</h4>
+                <h4 className="font-bold text-indigo-900 mb-1.5">Key Metrics Explained</h4>
                 <div className="space-y-2 bg-white p-3 rounded border border-indigo-100">
                   <div>
                     <strong className="text-blue-700">DSCR (Debt Service Coverage Ratio):</strong> 
@@ -601,7 +601,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               </div>
 
               <div>
-                <h4 className="font-bold text-indigo-900 mb-1.5">🎯 How to Interpret Results</h4>
+                <h4 className="font-bold text-indigo-900 mb-1.5">How to Interpret Results</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div className="bg-emerald-50 border border-emerald-200 p-2 rounded">
                     <div className="flex items-center gap-1 mb-1">

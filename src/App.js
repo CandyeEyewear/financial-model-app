@@ -101,7 +101,7 @@ function ProtectedRoute() {
       if (!summary) {
         window.dispatchEvent(
           new CustomEvent("ai-summary-ready", {
-            detail: "⚠️ No loan metrics data available.",
+            detail: "No loan metrics data available.",
           })
         );
         return;
@@ -110,7 +110,7 @@ function ProtectedRoute() {
       // Show loading message
       window.dispatchEvent(
         new CustomEvent("ai-summary-ready", {
-          detail: "🧠 FinAssist is analyzing your loan metrics...",
+          detail: "FinAssist is analyzing your loan metrics...",
         })
       );
 

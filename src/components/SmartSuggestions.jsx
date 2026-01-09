@@ -6,7 +6,7 @@ export function SmartSuggestion({ type, current, suggested, impact }) {
     <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
       <Sparkles className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
       <div className="flex-1">
-        <p className="text-sm font-semibold text-blue-900 mb-1">💡 Smart Suggestion</p>
+        <p className="text-sm font-semibold text-blue-900 mb-1">Smart Suggestion</p>
         <p className="text-xs text-blue-800 mb-2">
           {type === 'equity' && (
             <>Your equity of <strong>{current}</strong> represents a small portion of total capital. 
@@ -34,7 +34,7 @@ export function OpeningDebtWarning({ maturityDate, newFacilityEndDate, onCalcula
       <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-300 rounded-lg">
         <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-900 mb-1">⚠️ Refinancing Required</p>
+          <p className="text-sm font-semibold text-amber-900 mb-1">Refinancing Required</p>
           <p className="text-xs text-amber-800 mb-2">
             Opening debt matures <strong>{new Date(maturityDate).toLocaleDateString()}</strong> but 
             new facility runs until <strong>{new Date(newFacilityEndDate).toLocaleDateString()}</strong>.

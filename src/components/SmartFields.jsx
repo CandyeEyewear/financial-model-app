@@ -1,6 +1,6 @@
 // src/components/SmartFields.jsx
 import React, { useState, useEffect } from "react";
-import { AlertTriangle, Info, BarChart3 } from "lucide-react";
+import { AlertTriangle, Info, BarChart3, Pencil, RefreshCw } from "lucide-react";
 import { Label } from "./Label";
 import { Input } from "./Input";
 
@@ -11,13 +11,13 @@ export function AutoPopBadge({ isEdited }) {
   if (isEdited) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-800 rounded-full">
-        <span>✏️</span> Edited
+        <Pencil className="w-3 h-3" /> Edited
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-cyan-100 text-cyan-800 rounded-full">
-      <span>📊</span> Auto
+      <RefreshCw className="w-3 h-3" /> Auto
     </span>
   );
 }

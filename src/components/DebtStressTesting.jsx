@@ -685,7 +685,7 @@ const triggerAIAnalysis = async () => {
             <div className="flex items-start gap-4">
               <Database className="w-12 h-12 text-yellow-600 flex-shrink-0" />
               <div className="flex-1">
-                <h3 className="text-xl font-bold text-yellow-900 mb-3">📊 No Financial Data for Stress Testing</h3>
+                <h3 className="text-xl font-bold text-yellow-900 mb-3">No Financial Data for Stress Testing</h3>
                 <p className="text-yellow-800 mb-4">
                   Stress testing requires baseline financial projections. Please enter your company's financial assumptions first.
                 </p>
@@ -734,15 +734,15 @@ const triggerAIAnalysis = async () => {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <h4 className="font-bold text-blue-900 mb-2">🎯 Risk Assessment</h4>
+                <h4 className="font-bold text-blue-900 mb-2">Risk Assessment</h4>
                 <p className="text-sm text-blue-800">Identify breaking points before they happen</p>
               </div>
               <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-                <h4 className="font-bold text-emerald-900 mb-2">📊 Covenant Compliance</h4>
+                <h4 className="font-bold text-emerald-900 mb-2">Covenant Compliance</h4>
                 <p className="text-sm text-emerald-800">Test DSCR, leverage, and ICR under stress</p>
               </div>
               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                <h4 className="font-bold text-purple-900 mb-2">🤖 AI Insights</h4>
+                <h4 className="font-bold text-purple-900 mb-2">AI Insights</h4>
                 <p className="text-sm text-purple-800">Get actionable recommendations in plain English</p>
               </div>
             </div>
@@ -760,14 +760,14 @@ const triggerAIAnalysis = async () => {
             <div className="flex items-start gap-4">
               <FileText className="w-12 h-12 text-orange-600 flex-shrink-0" />
               <div className="flex-1">
-                <h3 className="text-xl font-bold text-orange-900 mb-3">💰 No Debt to Stress Test</h3>
+                <h3 className="text-xl font-bold text-orange-900 mb-3">No Debt to Stress Test</h3>
                 <p className="text-orange-800 mb-4">
                   Stress testing requires debt obligations. Configure either existing debt or a new facility to begin analysis.
                 </p>
                 <div className="space-y-3 mb-6">
                   <div className="flex items-start gap-2 text-sm text-orange-800">
                     <CheckCircle className="w-4 h-4 mt-0.5 text-emerald-600 flex-shrink-0" />
-                    <span className="font-semibold">✅ Financial Data: {currencyFmtMM(params.baseRevenue, ccy)} base revenue</span>
+                    <span className="font-semibold">Financial Data: {currencyFmtMM(params.baseRevenue, ccy)} base revenue</span>
                   </div>
                   <div className="flex items-start gap-2 text-sm text-orange-800">
                     <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -888,7 +888,7 @@ const triggerAIAnalysis = async () => {
             <div className="flex items-start gap-3">
               <Shield className="w-6 h-6 text-blue-600 mt-0.5" />
               <div>
-                <div className="font-bold text-blue-900 text-lg mb-2">📊 Existing Debt Stress Test</div>
+                <div className="font-bold text-blue-900 text-lg mb-2">Existing Debt Stress Test</div>
                 <div className="text-sm text-blue-800">
                   Analyzing resilience of <strong>existing debt of {currencyFmtMM(params.openingDebt, ccy)}</strong> under adverse scenarios.
                 </div>
@@ -922,12 +922,12 @@ const triggerAIAnalysis = async () => {
               <History className="w-5 h-5 text-amber-600 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
-                  ✅ Enhanced with Historical Data
+                  Enhanced with Historical Data
                 </div>
                 <div className="text-sm text-amber-800">
                   Analysis enhanced with <strong>{historicalMetrics.yearsOfData} years</strong> of historical data. 
                   Avg growth: <strong>{pctFmt(historicalMetrics.avgGrowth)}</strong>. 
-                  Cash flow: <strong>{historicalMetrics.isPositiveCashFlow ? "Positive ✅" : "Negative (burn mode) ⚠️"}</strong>
+                  Cash flow: <strong>{historicalMetrics.isPositiveCashFlow ? "Positive" : "Negative (burn mode)"}</strong>
                   {" | "}Trajectory: <strong>{historicalMetrics.revenueTrajectory}</strong>
                 </div>
               </div>

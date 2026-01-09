@@ -4,12 +4,53 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>FinSight</title>
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="description" content="FinSight - Professional Financial Modeling Platform for Banking and Investment Banking Professionals" />
+    <meta name="keywords" content="financial modeling, stress testing, credit analysis, investment banking, DCF valuation, LBO, debt analysis" />
+    
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="FinSight - Financial Modeling Platform" />
+    <meta property="og:description" content="Professional-grade financial modeling and analysis for banking professionals" />
+    <meta property="og:site_name" content="FinSight" />
+    <meta property="og:url" content="https://finsight.salesmasterjm.com" />
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FinSight - Financial Modeling Platform" />
+    <meta name="twitter:description" content="Professional-grade financial modeling and analysis for banking professionals" />
+    
+    <title>FinSight - Financial Modeling Platform</title>
+    
+    <!-- Inter font for professional typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    
+    <!-- PDF.js for document parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+    
+    <!-- Dark mode flash prevention -->
+    <script>
+      // Prevent flash of wrong theme on initial load
+      (function() {
+        try {
+          var theme = localStorage.getItem('finsight-theme');
+          if (theme === 'dark' || (theme === 'system' || !theme) && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+  <body class="antialiased">
+    <noscript>
+      <div style="padding: 20px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <h1>JavaScript Required</h1>
+        <p>You need to enable JavaScript to run FinSight.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
   </body>
 </html>

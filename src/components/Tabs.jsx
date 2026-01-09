@@ -1,8 +1,19 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
-export function Tabs({ defaultValue, children, className = "", onValueChange }) {
-  const [activeTab, setActiveTab] = useState(defaultValue);
+export function Tabs({ defaultValue, value, children, className = "", onValueChange }) {
+  // Support both controlled (value prop) and uncontrolled (defaultValue) modes
+  const [internalTab, setInternalTab] = useState(defaultValue);
   const tabListRef = useRef(null);
+  
+  // Use controlled value if provided, otherwise use internal state
+  const activeTab = value !== undefined ? value : internalTab;
+  
+  // Sync internal state when controlled value changes
+  useEffect(() => {
+    if (value !== undefined) {
+      setInternalTab(value);
+    }
+  }, [value]);
   
   const tabValues = React.Children.toArray(children)
     .filter((child) => child.type === TabsList)
@@ -11,7 +22,11 @@ export function Tabs({ defaultValue, children, className = "", onValueChange }) 
     );
 
   const handleTabChange = (newValue) => {
-    setActiveTab(newValue);
+    // Update internal state for uncontrolled mode
+    if (value === undefined) {
+      setInternalTab(newValue);
+    }
+    // Always call onValueChange callback
     if (onValueChange) {
       onValueChange(newValue);
     }

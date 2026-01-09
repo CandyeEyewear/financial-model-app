@@ -39,11 +39,11 @@ const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'xls', 'txt'];
 // User-friendly error messages
 const ERROR_MESSAGES = {
   'pdf.js': 'PDF processing is temporarily unavailable. Please try uploading an Excel or Word document instead.',
-  'api error': 'AI service unavailable, and smart parser couldn\'t extract data. Try an Excel file with clear headers.',
-  'parse': 'Could not find financial data. Please ensure the document has labeled rows (Revenue, COGS, etc.) and year columns.',
+  'api error': 'Our AI service is temporarily unavailable. Please try again in a few minutes.',
+  'parse': 'Could not understand the document format. Please ensure it contains clear financial tables with labeled columns.',
   'timeout': 'Processing took too long. Try uploading a smaller document or specific pages only.',
-  'token': 'Please sign in to use AI extraction, or try an Excel file which can be parsed without AI.',
-  'limit': 'You\'ve reached your monthly AI usage limit. Try uploading an Excel file (no AI needed).',
+  'token': 'Your session has expired. Please refresh the page and try again.',
+  'limit': 'You\'ve reached your monthly AI usage limit. Please upgrade your plan to continue.',
   'network': 'Network error. Please check your internet connection and try again.',
   'empty': 'The document appears to be empty or unreadable. Please try a different file.',
 };
@@ -269,136 +269,6 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
     return result.value;
   };
 
-  // Smart text parser - extracts financial data without AI
-  const parseFinancialText = (text) => {
-    // Normalize text - replace multiple spaces/tabs with single space
-    const normalizedText = text.replace(/[\t\r]+/g, ' ').replace(/  +/g, ' ');
-    
-    // Find all 4-digit years in the text (between 2000-2030)
-    const yearMatches = normalizedText.match(/\b(20[0-3]\d)\b/g);
-    const uniqueYears = [...new Set(yearMatches || [])].map(Number).sort((a, b) => b - a).slice(0, 5);
-    
-    if (uniqueYears.length === 0) {
-      throw new Error('parse: No years found in document');
-    }
-
-    // Extract ALL large numbers from the text (likely financial figures)
-    const allNumbers = [];
-    const numberRegex = /\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\b/g;
-    let match;
-    while ((match = numberRegex.exec(normalizedText)) !== null) {
-      const num = parseFloat(match[1].replace(/,/g, ''));
-      // Only include numbers > 1000 (filter out years and small numbers)
-      if (num > 10000) {
-        allNumbers.push({ value: num, index: match.index });
-      }
-    }
-
-    // Financial keywords and their patterns
-    const keywords = {
-      revenue: /\b(revenue|sales|turnover|total\s*income)\b/i,
-      cogs: /\b(cost\s*of\s*(goods\s*)?sold|cogs|direct\s*cost|cost\s*of\s*sales)\b/i,
-      grossProfit: /\b(gross\s*profit|gross\s*margin)\b/i,
-      opex: /\b(operating\s*expense|opex|administrative|admin|sg&?a)\b/i,
-      interestExpense: /\b(interest\s*expense|finance\s*cost)\b/i,
-      taxExpense: /\b(tax(ation)?)\b/i,
-      netIncome: /\b(net\s*(profit|income|loss)|profit\s*after\s*tax)\b/i,
-      profitBeforeTax: /\b(profit\s*before\s*tax(ation)?|pbt)\b/i,
-    };
-
-    // Find positions of keywords in text
-    const findKeywordPosition = (pattern) => {
-      const match = pattern.exec(normalizedText);
-      return match ? match.index : -1;
-    };
-
-    // For each keyword, find the numbers that appear after it
-    const extractValuesForKeyword = (pattern) => {
-      const keywordPos = findKeywordPosition(pattern);
-      if (keywordPos === -1) return [];
-      
-      // Find numbers that appear within 200 characters after the keyword
-      const nearbyNumbers = allNumbers
-        .filter(n => n.index > keywordPos && n.index < keywordPos + 200)
-        .map(n => n.value)
-        .slice(0, uniqueYears.length); // Only take as many as we have years
-      
-      return nearbyNumbers;
-    };
-
-    // Try to detect if numbers are in thousands/millions
-    const detectScale = (text) => {
-      if (/in\s*millions|in\s*\$?m\b|\(.*millions.*\)/i.test(text)) return 1000000;
-      if (/in\s*thousands|in\s*\$?k\b|\(.*thousands.*\)/i.test(text)) return 1000;
-      return 1;
-    };
-    const scale = detectScale(normalizedText);
-
-    // Build year data - try to match numbers with years
-    const yearsData = uniqueYears.map((year, yearIndex) => {
-      const yearData = {
-        year,
-        revenue: 0,
-        cogs: 0,
-        opex: 0,
-        depreciation: 0,
-        interestExpense: 0,
-        taxExpense: 0,
-        cash: 0,
-        receivables: 0,
-        inventory: 0,
-        otherCurrentAssets: 0,
-        ppe: 0,
-        accountsPayable: 0,
-        accruedExp: 0,
-        shortTermDebt: 0,
-        longTermDebt: 0,
-        opCashFlow: 0,
-        capex: 0,
-      };
-      
-      // Temporary storage for derived calculations
-      let grossProfit = 0;
-
-      // Extract values for each financial line item
-      for (const [field, pattern] of Object.entries(keywords)) {
-        const values = extractValuesForKeyword(pattern);
-        if (values.length > yearIndex) {
-          if (field === 'grossProfit') {
-            grossProfit = values[yearIndex] * scale;
-          } else if (field in yearData) {
-            yearData[field] = values[yearIndex] * scale;
-          }
-        }
-      }
-
-      // If we found grossProfit but not revenue, try to find revenue separately
-      if (yearData.revenue === 0) {
-        // Look for the largest numbers near "Revenue" or at the start
-        const revenueValues = extractValuesForKeyword(/\brevenue\b/i);
-        if (revenueValues.length > yearIndex) {
-          yearData.revenue = revenueValues[yearIndex] * scale;
-        }
-      }
-
-      // Calculate COGS from gross profit if we have revenue but not COGS
-      if (yearData.revenue > 0 && yearData.cogs === 0 && grossProfit > 0) {
-        yearData.cogs = yearData.revenue - grossProfit;
-      }
-
-      return yearData;
-    });
-
-    // Filter out years with no meaningful data
-    const validYears = yearsData.filter(y => y.revenue > 0 || y.cogs > 0 || y.opex > 0);
-    
-    if (validYears.length === 0) {
-      throw new Error('parse: Could not extract financial data from document');
-    }
-
-    return validYears;
-  };
-
   // Data quality checks
   const detectDataQualityIssues = (years) => {
     const warnings = [];
@@ -424,22 +294,7 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
       throw new Error('token');
     }
 
-    const prompt = `You are a financial data extraction expert. Extract financial statement data from the following text and return ONLY valid JSON.
-
-FIELD DEFINITIONS:
-- revenue: Total Revenue, Sales, or Turnover
-- cogs: Cost of Goods Sold, Direct Cost, or Cost of Sales (NOT the same as revenue!)
-- opex: Operating Expenses, Administrative Expenses, or SG&A
-- depreciation: Depreciation and Amortization
-- interestExpense: Interest Expense or Finance Cost
-- taxExpense: Tax Expense or Taxation
-- cash: Cash and Cash Equivalents
-- receivables: Accounts Receivable or Trade Receivables
-- inventory: Inventory or Stock
-- ppe: Property Plant & Equipment or Fixed Assets
-- accountsPayable: Accounts Payable or Trade Payables
-- shortTermDebt: Short-term Debt or Current Portion of Debt
-- longTermDebt: Long-term Debt or Non-current Borrowings
+    const prompt = `You are a financial data extraction expert. Extract financial statement data from the following text and return ONLY valid JSON with no additional text or markdown.
 
 Extract these fields for each year found:
 {
@@ -467,12 +322,15 @@ Extract these fields for each year found:
   ]
 }
 
-RULES:
-1. Extract ALL years found (up to 5 most recent)
-2. Use 0 for missing values - do NOT guess
-3. Convert amounts to numeric values (remove commas, currency symbols)
-4. Revenue and COGS should be DIFFERENT values - COGS is typically 40-80% of revenue
-5. Return ONLY JSON, no explanation or markdown
+Rules:
+1. Extract ALL years found in the document (up to 5 most recent years)
+2. Use 0 for missing values - do not guess or estimate
+3. Convert all amounts to numeric values (no commas, currency symbols)
+4. If amounts are in thousands/millions, convert to actual amounts
+5. Return ONLY the JSON object, no explanation
+6. Ensure year is a 4-digit number (e.g., 2023, not '23)
+
+CRITICAL: Your response must be ONLY valid JSON. Do not include any text before or after the JSON. Do not use markdown code blocks.
 
 Financial Statement Text:
 ${text.substring(0, MAX_TEXT_LENGTH)}`;
@@ -513,34 +371,7 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
         throw new Error('parse: No financial data found');
       }
 
-      // Log what AI returned for debugging
-      console.log('AI extracted data:', JSON.stringify(parsedData.years, null, 2));
-
-      // Ensure all required fields have default values
-      const normalizedYears = parsedData.years.map(year => ({
-        year: year.year || 0,
-        revenue: Number(year.revenue) || 0,
-        cogs: Number(year.cogs) || 0,
-        opex: Number(year.opex) || 0,
-        depreciation: Number(year.depreciation) || 0,
-        interestExpense: Number(year.interestExpense) || 0,
-        taxExpense: Number(year.taxExpense) || 0,
-        cash: Number(year.cash) || 0,
-        receivables: Number(year.receivables) || 0,
-        inventory: Number(year.inventory) || 0,
-        otherCurrentAssets: Number(year.otherCurrentAssets) || 0,
-        ppe: Number(year.ppe) || 0,
-        accountsPayable: Number(year.accountsPayable) || 0,
-        accruedExp: Number(year.accruedExp) || 0,
-        shortTermDebt: Number(year.shortTermDebt) || 0,
-        longTermDebt: Number(year.longTermDebt) || 0,
-        opCashFlow: Number(year.opCashFlow) || 0,
-        capex: Number(year.capex) || 0,
-      }));
-
-      console.log('Normalized data:', JSON.stringify(normalizedYears, null, 2));
-
-      return normalizedYears;
+      return parsedData.years;
 
     } catch (error) {
       console.error('AI processing error:', error);
@@ -586,44 +417,13 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
 
       setExtractedText(text);
 
-      // Step 4: Extract financial data using AI
-      // Note: Smart parser is disabled for PDFs as it doesn't work reliably with unstructured text
+      // Step 4: AI Analysis
       updateStep('analyze');
-      let extractedYears = null;
-      let parseWarnings = [];
-
-      // Helper to validate extraction results
-      const isValidExtraction = (years) => {
-        if (!years || years.length === 0) return false;
-        // At least one year should have revenue > 0 and revenue should not equal cogs
-        return years.some(y => {
-          const revenue = Number(y.revenue) || 0;
-          const cogs = Number(y.cogs) || 0;
-          return revenue > 0 && (cogs === 0 || revenue !== cogs);
-        });
-      };
-
-      // Use AI for extraction (works reliably for all file types)
-      if (!accessToken) {
-        throw new Error('token: Please sign in to extract financial data.');
-      }
-
-      try {
-        console.log('Extracting financial data using AI...');
-        extractedYears = await processWithAI(text);
-        
-        if (!isValidExtraction(extractedYears)) {
-          parseWarnings.push('Warning: Please verify the extracted data is correct');
-        }
-        console.log('AI extraction completed successfully');
-      } catch (aiError) {
-        console.error('AI extraction failed:', aiError);
-        throw new Error('parse: Could not extract data. Please try again.');
-      }
+      const extractedYears = await processWithAI(text);
 
       // Step 5: Parse and validate results
       updateStep('parse');
-      const warnings = [...parseWarnings, ...detectDataQualityIssues(extractedYears)];
+      const warnings = detectDataQualityIssues(extractedYears);
 
       // Step 6: Complete - show for review
       updateStep('complete');
@@ -948,35 +748,31 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
                 </tr>
               </thead>
               <tbody>
-                {extractionResult.data.map((year, idx) => {
-                  const revenue = Number(year.revenue) || 0;
-                  const cogs = Number(year.cogs) || 0;
-                  const opex = Number(year.opex) || 0;
-                  const totalDebt = (Number(year.shortTermDebt) || 0) + (Number(year.longTermDebt) || 0);
-                  
-                  return (
-                    <tr 
-                      key={year.year || idx} 
-                      className="border-b border-warning-100 dark:border-warning-800/50 last:border-0"
-                    >
-                      <td className="py-2 px-2 font-medium text-neutral-900 dark:text-neutral-100">
-                        {year.year}
-                      </td>
-                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                        {revenue > 0 ? currencyFmt(revenue) : '—'}
-                      </td>
-                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                        {cogs > 0 ? currencyFmt(cogs) : '—'}
-                      </td>
-                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                        {opex > 0 ? currencyFmt(opex) : '—'}
-                      </td>
-                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                        {totalDebt > 0 ? currencyFmt(totalDebt) : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {extractionResult.data.map((year, idx) => (
+                  <tr 
+                    key={year.year || idx} 
+                    className="border-b border-warning-100 dark:border-warning-800/50 last:border-0"
+                  >
+                    <td className="py-2 px-2 font-medium text-neutral-900 dark:text-neutral-100">
+                      {year.year}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {year.revenue > 0 ? currencyFmt(year.revenue) : '—'}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {year.cogs > 0 ? currencyFmt(year.cogs) : '—'}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {year.opex > 0 ? currencyFmt(year.opex) : '—'}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {(year.shortTermDebt + year.longTermDebt) > 0 
+                        ? currencyFmt(year.shortTermDebt + year.longTermDebt) 
+                        : '—'
+                      }
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

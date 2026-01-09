@@ -1001,6 +1001,16 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
             openingDebt: prev.openingDebt === 0 ? totalHistoricalDebt : prev.openingDebt,
             interestRate: prev.interestRate === 0 && historicalRate ? historicalRate : prev.interestRate,
             
+            // Auto-populate Total Assets from historical financials
+            totalAssets: prev.totalAssets === 0 && mostRecent?.totalAssets > 0 
+              ? mostRecent.totalAssets 
+              : prev.totalAssets,
+            
+            // Auto-populate Collateral Value from total assets if not set (conservative estimate at 50%)
+            collateralValue: prev.collateralValue === 0 && mostRecent?.totalAssets > 0
+              ? mostRecent.totalAssets * 0.5
+              : prev.collateralValue,
+            
             // NEW: Store historical values for variance display
             _historicalValues: historicalValues
           };
@@ -1012,19 +1022,34 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   const applyHistoricalAssumptions = () => {
     try {
       const assumptions = calculateHistoricalAssumptions(historicalData);
+      
+      // Get most recent year with data for total assets
+      const validYears = [...historicalData]
+        .filter(d => d.revenue > 0)
+        .sort((a, b) => a.year - b.year);
+      const mostRecentYear = validYears.length > 0 ? validYears[validYears.length - 1] : null;
+      
       if (assumptions) {
         setDraftParams(prev => ({
           ...prev,
           baseRevenue: prev.baseRevenue === 0
-  ? (mostRecent.revenue || assumptions.baseRevenue)
-  : prev.baseRevenue,
-
-          growth:     prev.growth     === 0.08 ? assumptions.growth     : prev.growth,
-  cogsPct:    prev.cogsPct    === 0.40 ? assumptions.cogsPct    : prev.cogsPct,
-  opexPct:    prev.opexPct    === 0.25 ? assumptions.opexPct    : prev.opexPct,
-  wcPctOfRev: prev.wcPctOfRev === 0.15 ? assumptions.wcPctOfRev : prev.wcPctOfRev,
-  capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
-
+            ? (mostRecentYear?.revenue || assumptions.baseRevenue)
+            : prev.baseRevenue,
+          growth: prev.growth === 0.08 ? assumptions.growth : prev.growth,
+          cogsPct: prev.cogsPct === 0.40 ? assumptions.cogsPct : prev.cogsPct,
+          opexPct: prev.opexPct === 0.25 ? assumptions.opexPct : prev.opexPct,
+          wcPctOfRev: prev.wcPctOfRev === 0.15 ? assumptions.wcPctOfRev : prev.wcPctOfRev,
+          capexPct: prev.capexPct === 0.05 ? assumptions.capexPct : prev.capexPct,
+          
+          // Apply total assets from historical data
+          totalAssets: prev.totalAssets === 0 && mostRecentYear?.totalAssets > 0 
+            ? mostRecentYear.totalAssets 
+            : prev.totalAssets,
+          
+          // Apply collateral value estimate if not set
+          collateralValue: prev.collateralValue === 0 && mostRecentYear?.totalAssets > 0
+            ? mostRecentYear.totalAssets * 0.5
+            : prev.collateralValue,
         }));
         setShowInputs(true);
         setSuccessMessage("Historical assumptions applied successfully!");

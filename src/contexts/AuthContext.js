@@ -40,43 +40,54 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * Fetch or create user profile in database
+   * Includes timeout to prevent hanging on slow/failed database connections
    */
   const fetchOrCreateProfile = async (user) => {
     if (!user) return null;
 
+    // Timeout wrapper to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Profile fetch timeout')), 10000);
+    });
+
     try {
-      // Try to get existing profile
-      let { data: profile, error } = await db.getUserProfile(user.id);
+      const fetchProfile = async () => {
+        // Try to get existing profile
+        let { data: profile, error } = await db.getUserProfile(user.id);
 
-      // If no profile exists, create one
-      if (error && error.code === 'PGRST116') {
-        const newProfile = {
-          id: user.id,
-          email: user.email,
-          name: user.user_metadata?.full_name || user.email?.split('@')[0],
-          tier: 'free',
-          ai_queries_this_month: 0,
-          reports_this_month: 0,
-          last_reset_date: new Date().toISOString(),
-          subscription_status: 'trialing',
-          created_at: new Date().toISOString()
-        };
+        // If no profile exists, create one
+        if (error && error.code === 'PGRST116') {
+          const newProfile = {
+            id: user.id,
+            email: user.email,
+            name: user.user_metadata?.full_name || user.email?.split('@')[0],
+            tier: 'free',
+            ai_queries_this_month: 0,
+            reports_this_month: 0,
+            last_reset_date: new Date().toISOString(),
+            subscription_status: 'trialing',
+            created_at: new Date().toISOString()
+          };
 
-        const { data: createdProfile, error: createError } = await db.upsertUserProfile(newProfile);
-        
-        if (createError) {
-          log.error('Error creating profile', createError);
+          const { data: createdProfile, error: createError } = await db.upsertUserProfile(newProfile);
+          
+          if (createError) {
+            log.error('Error creating profile', createError);
+            return null;
+          }
+          
+          profile = createdProfile;
+          log.info('Created new user profile');
+        } else if (error) {
+          log.error('Error fetching profile', error);
           return null;
         }
-        
-        profile = createdProfile;
-        log.info('Created new user profile');
-      } else if (error) {
-        log.error('Error fetching profile', error);
-        return null;
-      }
 
-      return profile;
+        return profile;
+      };
+
+      // Race between fetch and timeout
+      return await Promise.race([fetchProfile(), timeoutPromise]);
     } catch (err) {
       log.error('Profile fetch/create error', err);
       return null;
@@ -194,11 +205,17 @@ export const AuthProvider = ({ children }) => {
         if (currentSession?.user && mounted) {
           setSession(currentSession);
           setUser(currentSession.user);
-          const profile = await fetchOrCreateProfile(currentSession.user);
-          setUserProfile(profile);
-        }
-
-        if (mounted) {
+          // Set loading to false first, then fetch profile in background
+          setIsLoading(false);
+          // Fetch profile without blocking the loading state
+          fetchOrCreateProfile(currentSession.user).then(profile => {
+            if (mounted) {
+              setUserProfile(profile);
+            }
+          }).catch(err => {
+            log.error('Profile fetch error during init', err);
+          });
+        } else if (mounted) {
           setIsLoading(false);
         }
       } catch (err) {
@@ -215,18 +232,24 @@ export const AuthProvider = ({ children }) => {
     const { data: { subscription } } = auth.onAuthStateChange(async (event, currentSession) => {
       log.debug(`Auth state changed: ${event}`);
       
-      if (mounted) {
-        setSession(currentSession);
-        setUser(currentSession?.user || null);
+      if (!mounted) return;
+      
+      setSession(currentSession);
+      setUser(currentSession?.user || null);
+      // Always set loading to false first to prevent infinite loading
+      setIsLoading(false);
 
-        if (currentSession?.user) {
-          const profile = await fetchOrCreateProfile(currentSession.user);
-          setUserProfile(profile);
-        } else {
-          setUserProfile(null);
-        }
-
-        setIsLoading(false);
+      if (currentSession?.user) {
+        // Fetch profile in background without blocking
+        fetchOrCreateProfile(currentSession.user).then(profile => {
+          if (mounted) {
+            setUserProfile(profile);
+          }
+        }).catch(err => {
+          log.error('Profile fetch error during auth change', err);
+        });
+      } else {
+        setUserProfile(null);
       }
     });
 

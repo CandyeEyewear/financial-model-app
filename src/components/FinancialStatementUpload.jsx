@@ -424,7 +424,22 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
       throw new Error('token');
     }
 
-    const prompt = `You are a financial data extraction expert. Extract financial statement data from the following text and return ONLY valid JSON with no additional text or markdown.
+    const prompt = `You are a financial data extraction expert. Extract financial statement data from the following text and return ONLY valid JSON.
+
+FIELD DEFINITIONS:
+- revenue: Total Revenue, Sales, or Turnover
+- cogs: Cost of Goods Sold, Direct Cost, or Cost of Sales (NOT the same as revenue!)
+- opex: Operating Expenses, Administrative Expenses, or SG&A
+- depreciation: Depreciation and Amortization
+- interestExpense: Interest Expense or Finance Cost
+- taxExpense: Tax Expense or Taxation
+- cash: Cash and Cash Equivalents
+- receivables: Accounts Receivable or Trade Receivables
+- inventory: Inventory or Stock
+- ppe: Property Plant & Equipment or Fixed Assets
+- accountsPayable: Accounts Payable or Trade Payables
+- shortTermDebt: Short-term Debt or Current Portion of Debt
+- longTermDebt: Long-term Debt or Non-current Borrowings
 
 Extract these fields for each year found:
 {
@@ -452,15 +467,12 @@ Extract these fields for each year found:
   ]
 }
 
-Rules:
-1. Extract ALL years found in the document (up to 5 most recent years)
-2. Use 0 for missing values - do not guess or estimate
-3. Convert all amounts to numeric values (no commas, currency symbols)
-4. If amounts are in thousands/millions, convert to actual amounts
-5. Return ONLY the JSON object, no explanation
-6. Ensure year is a 4-digit number (e.g., 2023, not '23)
-
-CRITICAL: Your response must be ONLY valid JSON. Do not include any text before or after the JSON. Do not use markdown code blocks.
+RULES:
+1. Extract ALL years found (up to 5 most recent)
+2. Use 0 for missing values - do NOT guess
+3. Convert amounts to numeric values (remove commas, currency symbols)
+4. Revenue and COGS should be DIFFERENT values - COGS is typically 40-80% of revenue
+5. Return ONLY JSON, no explanation or markdown
 
 Financial Statement Text:
 ${text.substring(0, MAX_TEXT_LENGTH)}`;
@@ -583,46 +595,59 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
       // Helper to check if extraction result is useful
       const isValidExtraction = (years) => {
         if (!years || years.length === 0) return false;
-        // At least one year should have revenue > 0
-        return years.some(y => y.revenue > 0);
+        // Check that at least one year has revenue > 0 AND revenue != cogs (common parsing error)
+        return years.some(y => {
+          const revenue = Number(y.revenue) || 0;
+          const cogs = Number(y.cogs) || 0;
+          return revenue > 0 && revenue !== cogs;
+        });
       };
 
-      // Try smart parser first for structured data (Excel)
-      const fileType = selectedFile.name.split('.').pop().toLowerCase();
-      const isExcel = ['xlsx', 'xls'].includes(fileType);
+      // Determine file type
+      const fileExt = selectedFile.name.split('.').pop().toLowerCase();
+      const isExcel = ['xlsx', 'xls'].includes(fileExt);
       
+      // ONLY use smart parser for Excel files (structured data)
+      // PDFs and other formats should ALWAYS use AI
       if (isExcel) {
-        // For Excel files, try smart parser first
         try {
+          console.log('Trying smart parser for Excel file...');
           extractedYears = parseFinancialText(text);
+          
           if (isValidExtraction(extractedYears)) {
             parseWarnings.push('Extracted using smart parser (no AI required)');
+            console.log('Smart parser succeeded with valid data');
           } else {
-            console.log('Smart parser gave incomplete results, trying AI');
+            console.log('Smart parser result invalid (revenue=0 or revenue=cogs), falling back to AI');
             extractedYears = null;
           }
         } catch (parseError) {
           console.log('Smart parser failed:', parseError.message);
+          extractedYears = null;
         }
+      } else {
+        console.log(`File type "${fileExt}" - skipping smart parser, using AI directly`);
       }
 
-      // If smart parser didn't work or gave bad results, use AI
+      // Use AI if smart parser didn't work or wasn't applicable
       if (!extractedYears) {
         if (accessToken) {
           try {
+            console.log('Using AI for extraction...');
             extractedYears = await processWithAI(text);
             usedAI = true;
             
             // Validate AI results too
             if (!isValidExtraction(extractedYears)) {
-              parseWarnings.push('Warning: AI could not identify revenue - please verify data');
+              parseWarnings.push('Warning: Please verify the extracted data is correct');
             }
+            console.log('AI extraction completed');
           } catch (aiError) {
             console.error('AI extraction failed:', aiError);
-            throw new Error('parse: Could not extract data. Try uploading an Excel file with clear column headers.');
+            throw new Error('parse: Could not extract data. Please try again or use an Excel file.');
           }
         } else {
-          throw new Error('parse: Please sign in to use AI extraction for this document format.');
+          throw new Error('token: Please sign in to extract data from PDF files.');
         }
       }
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useAuth } from "./contexts/AuthContext";
 import { generateModelDataSummary } from "./utils/ModelDataSummary";
 import { 
   Send, Bot, User, AlertCircle, RefreshCw, Trash2, 
@@ -47,7 +48,7 @@ function ChatAssistant({ modelData }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  const apiKey = process.env.REACT_APP_DEEPSEEK_API_KEY;
+  const { session, getUsageInfo, canMakeAIQuery } = useAuth();
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -72,9 +73,16 @@ function ChatAssistant({ modelData }) {
     const messageText = customPrompt || input.trim();
     if (!messageText) return;
 
-    // Check for API key
-    if (!apiKey) {
-      setError("DeepSeek API key not configured. Please add REACT_APP_DEEPSEEK_API_KEY to your .env file.");
+    // Check authentication
+    if (!session?.access_token) {
+      setError("You must be logged in to use the AI assistant.");
+      return;
+    }
+
+    // Check usage limits
+    if (!canMakeAIQuery()) {
+      const usageInfo = getUsageInfo();
+      setError(`Monthly AI query limit reached (${usageInfo?.used}/${usageInfo?.limit}). Upgrade your plan to continue.`);
       return;
     }
 
@@ -85,9 +93,7 @@ function ChatAssistant({ modelData }) {
     setError(null);
 
     try {
-      const systemMessage = {
-        role: "system",
-        content: `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague, so keep your tone warm, conversational, and natural.
+      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague, so keep your tone warm, conversational, and natural.
 
 FINANCIAL MODEL DATA:
 ${modelSummary}
@@ -110,46 +116,37 @@ WHAT TO FOCUS ON:
 - Make recommendations that are practical and easy to understand
 - If data is missing, mention it naturally: "I don't see any revenue projections yet, so once you add those..."
 
-EXAMPLES OF GOOD RESPONSES:
-"Looking at your numbers, the DSCR of 1.8x is pretty solid - that gives you decent breathing room. But I'm a bit concerned about the leverage ratio hitting 4.2x in year 3. That's getting close to typical covenant levels."
+Remember: You're a trusted advisor having a conversation, not a bot generating a report. Keep it natural, helpful, and human.`;
 
-"Here's what stands out to me: your base case looks good with an IRR around 22%, but in the downside scenario, things get tight pretty quickly. The DSCR drops to 1.1x, which doesn't leave much cushion if something unexpected happens."
-
-BAD EXAMPLES (Don't do this):
-"## Key Findings:
-- **DSCR**: 1.8x
-- **Leverage**: 4.2x
-#risk #analysis"
-
-Remember: You're a trusted advisor having a conversation, not a bot generating a report. Keep it natural, helpful, and human.`
-      };
-
-      const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      const response = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          "Authorization": `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [systemMessage, ...messages.slice(-6), userMessage], // Keep last 6 messages for context
-          max_tokens: 1500,
-          temperature: 0.8, // Increased for more natural, varied responses
+          prompt: messageText,
+          systemMessage,
+          messages: messages.slice(-6).map(m => ({
+            role: m.role,
+            content: m.content
+          }))
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API error: ${response.status}`);
+        throw new Error(data.error || data.message || `API error: ${response.status}`);
       }
 
-      const data = await response.json();
       const aiMessage = data.choices?.[0]?.message?.content || "No response from AI service.";
       
       setMessages(prev => [...prev, { 
         role: "assistant", 
         content: aiMessage,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        usage: data.userUsage
       }]);
     } catch (error) {
       console.error("Chat API Error:", error);
@@ -213,6 +210,9 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
     URL.revokeObjectURL(url);
   };
 
+  // Get usage display
+  const usageInfo = getUsageInfo();
+
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Header */}
@@ -230,6 +230,12 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Usage indicator */}
+            {usageInfo && (
+              <div className="text-xs text-slate-500 mr-2">
+                {usageInfo.used}/{usageInfo.limit === 999999 ? '∞' : usageInfo.limit} queries
+              </div>
+            )}
             {messages.length > 0 && (
               <>
                 <button

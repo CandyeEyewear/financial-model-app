@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { useAuth0 } from '@auth0/auth0-react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext';
 import FinancialModelAndStressTester from './FinancialModelAndStressTester';
 import ChatAssistant from './ChatAssistant';
+import AuthPage from './components/AuthPage';
 import Callback from './components/Callback';
-import { generateModelDataSummary } from './utils/ModelDataSummary';
-
-
+import { supabase } from './lib/supabase';
 
 // Simple icons as SVG
 const MessageCircleIcon = () => (
@@ -23,7 +22,7 @@ const XIcon = () => (
 );
 
 function App() {
-  const { isLoading, error } = useAuth0();
+  const { isLoading, error, isAuthenticated } = useAuth();
 
   if (isLoading) {
     return (
@@ -52,9 +51,9 @@ function App() {
         flexDirection: 'column',
         gap: '20px'
       }}>
-        <div>Oops... {error.message}</div>
+        <div>Oops... {error}</div>
         <button 
-          onClick={() => window.location.href = 'https://salesmasterjm.com/finsight'}
+          onClick={() => window.location.reload()}
           style={{
             padding: '12px 24px',
             backgroundColor: '#1e40af',
@@ -65,7 +64,7 @@ function App() {
             fontSize: '1rem'
           }}
         >
-          Return to Homepage
+          Try Again
         </button>
       </div>
     );
@@ -75,46 +74,47 @@ function App() {
     <Router>
       <Routes>
         <Route path="/callback" element={<Callback />} />
-        <Route path="/" element={<ProtectedRoute />} />
+        <Route path="/auth" element={
+          isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
+        } />
+        <Route path="/reset-password" element={<AuthPage mode="reset" />} />
+        <Route path="/" element={
+          isAuthenticated ? <ProtectedRoute /> : <Navigate to="/auth" replace />
+        } />
       </Routes>
     </Router>
   );
 }
 
 function ProtectedRoute() {
-  const { isAuthenticated, loginWithRedirect, user, logout } = useAuth0();
+  const { user, userProfile, signOut, session } = useAuth();
   const [showAssistant, setShowAssistant] = useState(false);
-   const [projectionData, setProjectionData] = useState(null);
+  const [projectionData, setProjectionData] = useState(null);
 
-  if (!isAuthenticated) {
-    loginWithRedirect();
-    return null;
-  }
-    // 🧠 Global DeepSeek AI listener (Option 2)
-  // In App.js, update the useEffect:
-useEffect(() => {
-  const handleTrigger = (event) => {
-    console.log("🚀 Global listener: AI analysis requested");
+  // Global DeepSeek AI listener
+  useEffect(() => {
+    const handleTrigger = async (event) => {
+      console.log("🚀 Global listener: AI analysis requested");
 
-    const { summary } = event.detail || {};
-    
-    if (!summary) {
+      const { summary } = event.detail || {};
+      
+      if (!summary) {
+        window.dispatchEvent(
+          new CustomEvent("ai-summary-ready", {
+            detail: "⚠️ No loan metrics data available.",
+          })
+        );
+        return;
+      }
+
+      // Show loading message
       window.dispatchEvent(
         new CustomEvent("ai-summary-ready", {
-          detail: "⚠️ No loan metrics data available.",
+          detail: "🧠 FinAssist is analyzing your loan metrics...",
         })
       );
-      return;
-    }
 
-    // Show loading message
-    window.dispatchEvent(
-      new CustomEvent("ai-summary-ready", {
-        detail: "🧠 FinAssist is analyzing your loan metrics...",
-      })
-    );
-
-    const prompt = `
+      const prompt = `
 You are FinAssist AI, a senior credit analyst. Analyze the following loan metrics from a lender's perspective.
 
 Focus on:
@@ -133,44 +133,56 @@ ${summary}
 Provide your analysis:
 `;
 
-    fetch("https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.REACT_APP_DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-        max_tokens: 800,
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        const result =
-          data?.choices?.[0]?.message?.content ||
-          "No response received from DeepSeek.";
-        console.log("✅ DeepSeek AI summary generated");
+      try {
+        // Get access token from session
+        const accessToken = session?.access_token;
+        
+        if (!accessToken) {
+          throw new Error('No access token available');
+        }
+
+        const response = await fetch("/api/ai/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            systemMessage: "You are FinAssist AI, a senior credit analyst providing conversational, practical analysis."
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'API request failed');
+        }
+
+        const result = data?.choices?.[0]?.message?.content || "No response received.";
+        console.log("✅ AI summary generated");
         window.dispatchEvent(
           new CustomEvent("ai-summary-ready", { detail: result })
         );
-      })
-      .catch((err) => {
-        console.error("❌ DeepSeek fetch error:", err);
+      } catch (err) {
+        console.error("❌ AI fetch error:", err);
         window.dispatchEvent(
           new CustomEvent("ai-summary-ready", {
-            detail: "Error: Unable to generate AI summary. Please check your API key and try again.",
+            detail: "Error: Unable to generate AI summary. Please try again.",
           })
         );
-      });
+      }
+    };
+
+    window.addEventListener("trigger-ai-analysis", handleTrigger);
+    console.log("🧠 Global AI listener mounted in App.js");
+
+    return () => window.removeEventListener("trigger-ai-analysis", handleTrigger);
+  }, [session]);
+
+  const handleLogout = async () => {
+    await signOut();
   };
-
-  window.addEventListener("trigger-ai-analysis", handleTrigger);
-  console.log("🧠 Global AI listener mounted in App.js");
-
-  return () => window.removeEventListener("trigger-ai-analysis", handleTrigger);
-}, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -188,10 +200,23 @@ Provide your analysis:
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
       }}>
         <div style={{ fontSize: '0.9rem', color: '#475569', fontWeight: 500 }}>
-          Welcome, {user?.name || user?.email}
+          Welcome, {userProfile?.name || user?.email}
+          {userProfile?.tier && userProfile.tier !== 'free' && (
+            <span style={{ 
+              marginLeft: '8px', 
+              padding: '2px 8px', 
+              backgroundColor: '#dbeafe', 
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              color: '#1e40af',
+              fontWeight: 600
+            }}>
+              {userProfile.tier.charAt(0).toUpperCase() + userProfile.tier.slice(1)}
+            </span>
+          )}
         </div>
         <button 
-          onClick={() => logout({ logoutParams: { returnTo: 'https://salesmasterjm.com/finsight' } })}
+          onClick={handleLogout}
           style={{
             padding: '8px 20px',
             backgroundColor: '#1e40af',
@@ -209,7 +234,7 @@ Provide your analysis:
 
       {/* Main App */}
       <div style={{ flex: 1 }}>
-       <FinancialModelAndStressTester onDataUpdate={setProjectionData} />
+        <FinancialModelAndStressTester onDataUpdate={setProjectionData} />
       </div>
 
       {/* Floating Chat Button */}
@@ -281,7 +306,7 @@ Provide your analysis:
             </button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <ChatAssistant modelData={projectionData} />} />
+            <ChatAssistant modelData={projectionData} />
           </div>
         </div>
       )}

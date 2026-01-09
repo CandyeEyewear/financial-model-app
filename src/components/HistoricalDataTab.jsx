@@ -76,6 +76,7 @@ export function HistoricalDataTab({
   onChange: setHistoricalData,
   onApplyAssumptions,
   ccy,
+  accessToken, // Supabase access token for AI features
 }) {
   const [editIdx, setEditIdx] = useState(null);
   const [form, setForm] = useState(initialForm);
@@ -318,7 +319,7 @@ export function HistoricalDataTab({
         <CardContent className="pt-6">
           <FinancialStatementUpload 
             onDataExtracted={handleExtractedData}
-            apiKey={process.env.REACT_APP_DEEPSEEK_API_KEY}
+            accessToken={accessToken}
           />
         </CardContent>
       </Card>

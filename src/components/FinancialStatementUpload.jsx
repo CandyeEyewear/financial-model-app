@@ -1,11 +1,12 @@
 // components/FinancialStatementUpload.jsx
+// Uses /api/ai/analyze serverless function for AI processing
 import React, { useState } from 'react';
 import { Button } from './Button';
 import { Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 
-export function FinancialStatementUpload({ onDataExtracted, apiKey, onChange }) {
+export function FinancialStatementUpload({ onDataExtracted, accessToken, onChange }) {
   // Support both onDataExtracted and onChange props for flexibility
   const handleDataExtracted = (data) => {
     if (onDataExtracted) {
@@ -108,8 +109,8 @@ export function FinancialStatementUpload({ onDataExtracted, apiKey, onChange }) 
   };
 
   const processWithAI = async (text) => {
-    if (!apiKey) {
-      throw new Error('AI API key not configured. Please add REACT_APP_DEEPSEEK_API_KEY to your .env file');
+    if (!accessToken) {
+      throw new Error('Please log in to use AI-powered extraction');
     }
 
     const prompt = `You are a financial data extraction expert. Extract financial statement data from the following text and return ONLY valid JSON with no additional text or markdown.
@@ -152,27 +153,24 @@ CRITICAL: Your response must be ONLY valid JSON. Do not include any text before 
 Financial Statement Text:
 ${text.substring(0, 15000)}`;
 
+    const systemMessage = "You are a financial data extraction expert. You ONLY respond with valid JSON, nothing else.";
+
     try {
-      const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      const response = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: "You are a financial data extraction expert. You ONLY respond with valid JSON, nothing else." },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 3000,
-          temperature: 0.1,
+          prompt,
+          systemMessage
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(`AI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+        throw new Error(`AI API error: ${response.status} - ${errorData.error || 'Unknown error'}`);
       }
 
       const data = await response.json();
@@ -193,7 +191,7 @@ ${text.substring(0, 15000)}`;
       });
 
       // Pass extracted data back to parent
-      onDataExtracted(parsedData.years);
+      handleDataExtracted(parsedData.years);
 
     } catch (error) {
       console.error('AI processing error:', error);

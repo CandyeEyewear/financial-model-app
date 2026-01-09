@@ -106,31 +106,15 @@ const DEBT_STRESS_SCENARIOS = {
   }
 };
 
-// ✅ FIXED: AI Integration with proper API key handling and detailed context
-const generateStressTestNarrative = async (context) => {
-  // Get API key from environment
-  const apiKey = process.env.REACT_APP_DEEPSEEK_API_KEY;
-  
-  if (!apiKey) {
-    console.error("DeepSeek API key not found");
-    return "AI analysis unavailable: API key not configured. Please add REACT_APP_DEEPSEEK_API_KEY to your .env file.";
+// ✅ AI Integration using serverless function /api/ai/analyze
+const generateStressTestNarrative = async (context, accessToken) => {
+  // Check for access token
+  if (!accessToken) {
+    console.error("No access token for AI analysis");
+    return "AI analysis unavailable: Please log in to access AI features.";
   }
 
-  try {
-    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        max_tokens: 2500,
-        temperature: 0.7,
-        messages: [
-          {
-            role: "user",
-            content: `You are a senior credit risk analyst providing stress test insights. Analyze these results and provide SPECIFIC, ACTIONABLE recommendations based on the ACTUAL numbers below.
+  const prompt = `You are a senior credit risk analyst providing stress test insights. Analyze these results and provide SPECIFIC, ACTIONABLE recommendations based on the ACTUAL numbers below.
 
 **FACILITY OVERVIEW:**
 - Total Debt Exposure: ${currencyFmtMM(context.totalDebt, context.ccy)}
@@ -200,19 +184,29 @@ Write a conversational, plain-English analysis (300-350 words) that includes:
 
 5. **Risk Rating**: Based on the data, assign overall risk: LOW / MODERATE / ELEVATED / HIGH and justify with 1-2 sentences.
 
-Write in first person ("I recommend", "Based on your numbers"), be direct and honest, cite specific metrics, and make it actionable. Focus on what the user can DO about the risks identified.`
-          }
-        ]
+Write in first person ("I recommend", "Based on your numbers"), be direct and honest, cite specific metrics, and make it actionable. Focus on what the user can DO about the risks identified.`;
+
+  const systemMessage = "You are a senior credit risk analyst providing stress test insights. Be specific, actionable, and data-driven.";
+
+  try {
+    const response = await fetch("/api/ai/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        prompt,
+        systemMessage
       })
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `API error: ${response.status}`);
+      throw new Error(errorData.error || `API error: ${response.status}`);
     }
 
     const data = await response.json();
-    // ✅ FIXED: Correct path for DeepSeek API response
     return data.choices?.[0]?.message?.content || "No response from AI service.";
   } catch (error) {
     console.error("AI narrative error:", error);
@@ -439,7 +433,8 @@ export default function DebtStressTesting({
   params,
   ccy = "USD", 
   historicalData = [],
-  onNavigateToTab
+  onNavigateToTab,
+  accessToken // Supabase access token for AI features
 }) {
 
 
@@ -668,7 +663,7 @@ const triggerAIAnalysis = async () => {
       rateCeiling: breakingPoints.rateCeiling,
       failureReasons,
       ccy
-    });
+    }, accessToken);
     
     setAiNarrative(narrative);
   } catch (error) {

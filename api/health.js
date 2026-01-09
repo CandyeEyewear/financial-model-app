@@ -2,8 +2,12 @@
 // Route: /api/health
 
 import { createClient } from '@supabase/supabase-js';
+import { handleCors } from './_cors.js';
 
 export default async function handler(req, res) {
+  // Handle CORS preflight
+  if (handleCors(req, res)) return;
+
   // Allow GET and HEAD
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return res.status(405).json({ error: 'Method not allowed' });

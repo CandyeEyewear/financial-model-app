@@ -34,7 +34,7 @@ const hexToRgb = (hex) => {
   ] : [59, 130, 246]; // Default blue
 };
 
-export function ReportGenerator({ projections, params, ccy, historicalData }) {
+export function ReportGenerator({ projections, params, ccy, historicalData, accessToken }) {
   
 const [sectionStates, setSectionStates] = useState({
     branding: false,        // true = OPEN, false = CLOSED
@@ -171,8 +171,8 @@ const [selectedSections, setSelectedSections] = useState({
     legalCostEstimatePercent: 0.1,
   });
 
-  // REAL AI Integration using DeepSeek API
-  const apiKey = process.env.REACT_APP_DEEPSEEK_API_KEY;
+  // AI Integration using serverless function /api/ai/analyze
+  // No longer needs frontend API key - uses accessToken for auth
 
   // Logo Upload Handler
   const handleLogoUpload = (e) => {
@@ -279,8 +279,8 @@ EBITDA trend: ${historicalData.map(y => `${y.year}: ${currencyFmtMM(y.ebitda || 
 
   // Enhanced AI Analysis with Credit Committee Focus
   const generateAIAnalysis = async (section) => {
-    if (!apiKey) {
-      setAiError("DeepSeek API key not configured. Add REACT_APP_DEEPSEEK_API_KEY to your .env file.");
+    if (!accessToken) {
+      setAiError("Please log in to use AI analysis features.");
       return;
     }
 
@@ -724,32 +724,21 @@ ${modelSummary}
 
 CRITICAL INSTRUCTION: Do NOT use any markdown formatting in your response. No asterisks for bold (**text**), no hashtags for headers (## Header), no backticks for code (\`code\`). Write in plain text only with proper paragraph breaks and bullet points using dashes or numbers.`;
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-      const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      const response = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompts[section] || prompts.executiveSummary }
-          ],
-          max_tokens: 2000,
-          temperature: 0.7,
-        }),
-        signal: controller.signal
+          prompt: prompts[section] || prompts.executiveSummary,
+          systemMessage: systemPrompt
+        })
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API error: ${response.status}`);
+        throw new Error(errorData.error || `API error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -1977,7 +1966,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-amber-800">
-                <strong>API Key Required:</strong> Add REACT_APP_DEEPSEEK_API_KEY to your .env file to enable AI analysis.
+                <strong>Login Required:</strong> Please log in to enable AI analysis features.
               </div>
             </div>
           )}

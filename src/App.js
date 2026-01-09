@@ -234,7 +234,10 @@ Provide your analysis:
 
       {/* Main App */}
       <div style={{ flex: 1 }}>
-        <FinancialModelAndStressTester onDataUpdate={setProjectionData} />
+        <FinancialModelAndStressTester 
+          onDataUpdate={setProjectionData} 
+          accessToken={session?.access_token}
+        />
       </div>
 
       {/* Floating Chat Button */}

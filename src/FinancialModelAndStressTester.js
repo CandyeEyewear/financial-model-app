@@ -568,7 +568,7 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
   );
 }
 
-export default function FinancialModelAndStressTester({ onDataUpdate }) {
+export default function FinancialModelAndStressTester({ onDataUpdate, accessToken }) {
   const [ccy, setCcy] = useState("JMD");
   
   // Main params state - UPDATED STRUCTURE
@@ -2033,6 +2033,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate }) {
                   onChange={setHistoricalData}
                   onApplyAssumptions={applyHistoricalAssumptions}
                   hasValidData={hasValidHistoricalData}
+                  ccy={ccy}
+                  accessToken={accessToken}
                 />
               </CardContent>
             </Card>
@@ -2691,6 +2693,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate }) {
                 balloonPercentage: params.balloonPercentage,
                 dayCountConvention: params.dayCountConvention
               }}
+              accessToken={accessToken}
             />
           ) : (
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded flex items-center gap-3">
@@ -2727,6 +2730,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate }) {
             params={params}
             historicalData={historicalData}
             ccy={ccy}
+            accessToken={accessToken}
           />
         </TabsContent>
       </Tabs>

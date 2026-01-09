@@ -1,9 +1,46 @@
 // utils/aiCreditAnalysis.js
-import { analyzeWithDeepSeek } from './deepseekIntegration';
+// Uses /api/ai/analyze serverless function for AI-powered credit analysis
+
+import { supabase } from '../lib/supabase';
+
+/**
+ * Call the serverless AI analysis API
+ * @param {string} prompt - The analysis prompt
+ * @param {string} systemMessage - Optional system message for context
+ * @returns {Promise<string>} - AI response text
+ */
+async function callAIAnalysisAPI(prompt, systemMessage) {
+  // Get the current session for authentication
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session?.access_token) {
+    throw new Error('User must be authenticated to use AI analysis');
+  }
+
+  const response = await fetch('/api/ai/analyze', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify({
+      prompt,
+      systemMessage
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
 
 /**
  * AI-Powered Credit Analysis Engine
- * Uses DeepSeek to provide contextual interpretations
+ * Uses /api/ai/analyze serverless function for DeepSeek integration
  */
 export async function generateCreditInsights(projection, params) {
   // Prepare structured data for AI
@@ -37,9 +74,10 @@ export async function generateCreditInsights(projection, params) {
     baseRevenue: params.baseRevenue
   };
 
+  const systemMessage = 'You are a senior credit analyst at a top-tier investment bank. Provide expert financial analysis with precise metrics and actionable insights.';
+
   // Construct AI prompt with specific analysis requests
-  const prompt = `
-You are a senior credit analyst at a top-tier investment bank. Analyze this credit profile and provide expert insights.
+  const prompt = `Analyze this credit profile and provide expert insights.
 
 ## Credit Profile:
 ${JSON.stringify(analysisContext, null, 2)}
@@ -72,15 +110,10 @@ ${JSON.stringify(analysisContext, null, 2)}
    - Financial restructuring needs (if any)
    - Optimal capital structure adjustments
 
-**Format**: Provide concise, actionable insights. Use banker terminology. Be direct and specific with numbers.
-`;
+**Format**: Provide concise, actionable insights. Use banker terminology. Be direct and specific with numbers.`;
 
   try {
-    const aiResponse = await analyzeWithDeepSeek(prompt, {
-      temperature: 0.3, // Lower temperature for analytical precision
-      maxTokens: 2000
-    });
-
+    const aiResponse = await callAIAnalysisAPI(prompt, systemMessage);
     return parseAIInsights(aiResponse);
   } catch (error) {
     console.error('AI Credit Analysis failed:', error);

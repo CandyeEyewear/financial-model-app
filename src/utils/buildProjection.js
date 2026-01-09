@@ -8,6 +8,8 @@
 // - IAS 12: Income Taxes
 // ============================================================================
 
+import { calculateIRR, calculateMOIC, safeDivide } from './financialCalculations';
+
 /**
  * Helper function to determine payments per year based on frequency
  */
@@ -592,10 +594,8 @@ if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
   const terminalYear = rows[rows.length - 1];
   const terminalFCF = terminalYear.unleveredFCF * (1 + params.terminalGrowth);
   
-  // Validate WACC > terminal growth
-  if (params.wacc <= params.terminalGrowth) {
-    console.error(`❌ Invalid DCF inputs: WACC (${(params.wacc*100).toFixed(2)}%) ≤ Terminal Growth (${(params.terminalGrowth*100).toFixed(2)}%)`);
-  }
+  // Validate WACC > terminal growth (silent - validation should happen in UI)
+  const isWACCValid = params.wacc > params.terminalGrowth;
   
   const validWACC = params.wacc > params.terminalGrowth ? params.wacc : params.terminalGrowth + 0.02;
   
@@ -621,16 +621,35 @@ if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
   const equityValue = enterpriseValue - finalDebt + finalCash;
   
   // ============================================================================
-  // INVESTMENT RETURNS
+  // INVESTMENT RETURNS (Using proper IRR calculation)
   // ============================================================================
   
   const totalInvested = params.equityContribution > 0 ? params.equityContribution : 1;
-  const moic = equityValue / totalInvested;
-  const irr = moic > 0 && params.years > 0 ? Math.pow(moic, 1 / params.years) - 1 : 0;
+  
+  // MOIC: Exit Value / Entry Investment
+  const moic = calculateMOIC(equityValue, totalInvested);
+  
+  // Build cash flow series for IRR calculation
+  // Initial investment (negative), followed by interim distributions (if any), then exit value
+  const cashFlowsForIRR = [-totalInvested];
+  
+  // Add any dividend payments as interim cash flows
+  rows.forEach((row) => {
+    // Assume dividends are distributed to equity holders
+    cashFlowsForIRR.push(row.dividends || 0);
+  });
+  
+  // Add exit value to the final year
+  if (cashFlowsForIRR.length > 1) {
+    cashFlowsForIRR[cashFlowsForIRR.length - 1] += Math.max(0, equityValue);
+  }
+  
+  // Calculate IRR using Newton-Raphson method
+  const irr = calculateIRR(cashFlowsForIRR) || 0;
   
   const entryEV = params.entryMultiple * rows[0].ebitda;
   const exitEV = enterpriseValue;
-  const exitMultiple = terminalYear.ebitda > 0 ? exitEV / terminalYear.ebitda : 0;
+  const exitMultiple = safeDivide(exitEV, terminalYear.ebitda, 0);
   
   // ============================================================================
   // MULTI-TRANCHE SUMMARY (if applicable)

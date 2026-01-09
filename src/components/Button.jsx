@@ -1,42 +1,245 @@
-import React from "react";
+/**
+ * Accessible Button Component
+ * WCAG 2.1 AA Compliant
+ */
+import React, { forwardRef } from 'react';
+import { Loader2 } from 'lucide-react';
 
-export function Button({
+/**
+ * Button component with full accessibility support
+ * 
+ * @component
+ * @example
+ * <Button variant="primary" size="default" onClick={handleClick}>
+ *   Click me
+ * </Button>
+ */
+export const Button = forwardRef(({
   children,
-  onClick,
-  variant = "primary",
-  size = "default",
-  className = "",
+  
+  // Variants
+  variant = 'primary', // 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'ghost' | 'link'
+  size = 'default', // 'sm' | 'default' | 'lg' | 'icon'
+  
+  // State
   disabled = false,
-  type = "button",
+  loading = false,
+  
+  // Icons
+  leftIcon: LeftIcon,
+  rightIcon: RightIcon,
+  
+  // Styling
+  className = '',
+  fullWidth = false,
+  
+  // Accessibility
+  'aria-label': ariaLabel,
+  
+  // HTML attributes
+  type = 'button',
   ...props
-}) {
-  const baseClasses =
-    "inline-flex items-center justify-center rounded-md font-semibold transition-all duration-200 focus:outline-none focus:ring-2 disabled:pointer-events-none disabled:opacity-50";
+}, ref) => {
+  // Base classes
+  const baseClasses = `
+    inline-flex items-center justify-center
+    font-semibold
+    transition-all duration-normal
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+    disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
+  `;
   
-  const variants = {
-    primary: "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white shadow-md transform hover:scale-105 focus:ring-blue-200",
-    secondary: "bg-white border-2 border-slate-300 hover:border-blue-500 text-slate-700 hover:text-blue-600 focus:ring-blue-200",
-    success: "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-700 hover:to-emerald-700 text-white shadow-md transform hover:scale-105 focus:ring-emerald-200",
-    warning: "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-700 hover:to-amber-700 text-white shadow-md transform hover:scale-105 focus:ring-amber-200",
-    danger: "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-700 hover:to-red-700 text-white shadow-md transform hover:scale-105 focus:ring-red-200",
-    ghost: "hover:bg-slate-100 text-slate-700 hover:text-slate-900 focus:ring-slate-200"
+  // Size classes
+  const sizeClasses = {
+    sm: 'h-8 px-3 text-sm gap-1.5 rounded-button',
+    default: 'h-10 px-4 text-sm gap-2 rounded-button',
+    lg: 'h-12 px-6 text-base gap-2.5 rounded-button-lg',
+    icon: 'h-10 w-10 p-0 rounded-button',
   };
   
-  const sizes = {
-    default: "h-10 px-4 py-2 text-sm",
-    sm: "h-9 px-3 py-2 text-sm",
-    lg: "h-12 px-8 py-3 text-base"
+  // Variant classes
+  const variantClasses = {
+    primary: `
+      bg-primary-600 text-white
+      hover:bg-primary-700 active:bg-primary-800
+      focus-visible:ring-primary-500
+      shadow-button hover:shadow-button-hover
+    `,
+    secondary: `
+      bg-white dark:bg-neutral-800
+      text-neutral-700 dark:text-neutral-200
+      border-2 border-neutral-300 dark:border-neutral-600
+      hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400
+      focus-visible:ring-primary-500
+    `,
+    success: `
+      bg-success-600 text-white
+      hover:bg-success-700 active:bg-success-800
+      focus-visible:ring-success-500
+      shadow-button hover:shadow-button-hover
+    `,
+    warning: `
+      bg-warning-600 text-white
+      hover:bg-warning-700 active:bg-warning-800
+      focus-visible:ring-warning-500
+      shadow-button hover:shadow-button-hover
+    `,
+    danger: `
+      bg-danger-600 text-white
+      hover:bg-danger-700 active:bg-danger-800
+      focus-visible:ring-danger-500
+      shadow-button hover:shadow-button-hover
+    `,
+    ghost: `
+      bg-transparent
+      text-neutral-700 dark:text-neutral-300
+      hover:bg-neutral-100 dark:hover:bg-neutral-700
+      focus-visible:ring-neutral-500
+    `,
+    link: `
+      bg-transparent
+      text-primary-600 dark:text-primary-400
+      hover:text-primary-700 dark:hover:text-primary-300
+      hover:underline
+      focus-visible:ring-primary-500
+      p-0 h-auto
+    `,
   };
+  
+  // Build final classes
+  const buttonClasses = [
+    baseClasses,
+    sizeClasses[size],
+    variantClasses[variant],
+    fullWidth && 'w-full',
+    className,
+  ].filter(Boolean).join(' ');
+  
+  // Determine if button is interactive
+  const isDisabled = disabled || loading;
+  
+  // Icon size based on button size
+  const iconSizeClass = size === 'sm' ? 'h-4 w-4' : size === 'lg' ? 'h-5 w-5' : 'h-4 w-4';
   
   return (
     <button
+      ref={ref}
       type={type}
-      className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
-      onClick={onClick}
-      disabled={disabled}
+      disabled={isDisabled}
+      aria-disabled={isDisabled ? 'true' : undefined}
+      aria-busy={loading ? 'true' : undefined}
+      aria-label={ariaLabel}
+      className={buttonClasses}
       {...props}
     >
-      {children}
+      {/* Loading spinner */}
+      {loading && (
+        <Loader2 
+          className={`${iconSizeClass} animate-spin`}
+          aria-hidden="true"
+        />
+      )}
+      
+      {/* Left icon (hidden when loading) */}
+      {!loading && LeftIcon && (
+        <LeftIcon 
+          className={iconSizeClass}
+          aria-hidden="true"
+        />
+      )}
+      
+      {/* Button content */}
+      {size !== 'icon' && (
+        <span className={loading ? 'opacity-70' : ''}>
+          {children}
+        </span>
+      )}
+      
+      {/* Icon-only button content */}
+      {size === 'icon' && !loading && children}
+      
+      {/* Right icon */}
+      {!loading && RightIcon && (
+        <RightIcon 
+          className={iconSizeClass}
+          aria-hidden="true"
+        />
+      )}
     </button>
   );
-}
+});
+
+Button.displayName = 'Button';
+
+/**
+ * IconButton - Square button for icons only
+ */
+export const IconButton = forwardRef(({
+  icon: Icon,
+  'aria-label': ariaLabel,
+  variant = 'ghost',
+  size = 'default',
+  ...props
+}, ref) => {
+  // Development-only warning for accessibility
+  if (!ariaLabel && process.env.NODE_ENV === 'development') {
+    // eslint-disable-next-line no-console
+    console.warn('IconButton requires aria-label for accessibility');
+  }
+  
+  const sizeMap = {
+    sm: 'h-8 w-8',
+    default: 'h-10 w-10',
+    lg: 'h-12 w-12',
+  };
+  
+  const iconSizeMap = {
+    sm: 'h-4 w-4',
+    default: 'h-5 w-5',
+    lg: 'h-6 w-6',
+  };
+  
+  return (
+    <Button
+      ref={ref}
+      variant={variant}
+      aria-label={ariaLabel}
+      className={`p-0 ${sizeMap[size]}`}
+      {...props}
+    >
+      <Icon className={iconSizeMap[size]} aria-hidden="true" />
+    </Button>
+  );
+});
+
+IconButton.displayName = 'IconButton';
+
+/**
+ * ButtonGroup - Group buttons together
+ */
+export const ButtonGroup = ({ children, className = '' }) => {
+  return (
+    <div 
+      className={`inline-flex rounded-button overflow-hidden ${className}`}
+      role="group"
+    >
+      {React.Children.map(children, (child, index) => {
+        if (!React.isValidElement(child)) return child;
+        
+        return React.cloneElement(child, {
+          className: `
+            ${child.props.className || ''}
+            ${index > 0 ? '-ml-px' : ''}
+            rounded-none
+            first:rounded-l-button last:rounded-r-button
+            focus:z-10
+          `,
+        });
+      })}
+    </div>
+  );
+};
+
+ButtonGroup.displayName = 'ButtonGroup';
+
+export default Button;

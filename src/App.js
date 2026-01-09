@@ -1,71 +1,58 @@
-import React, { useState, useEffect } from "react";
+/**
+ * FinSight - Financial Modeling Platform
+ * Main Application Component
+ */
+import React, { useState, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import FinancialModelAndStressTester from './FinancialModelAndStressTester';
 import ChatAssistant from './ChatAssistant';
 import AuthPage from './components/AuthPage';
 import Callback from './components/Callback';
-import { supabase } from './lib/supabase';
+import { Button } from './components/Button';
+import { MessageCircle, X, LogOut, User, Loader2, RefreshCw, Layers } from 'lucide-react';
 
-// Simple icons as SVG
-const MessageCircleIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-  </svg>
-);
-
-const XIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"/>
-    <line x1="6" y1="6" x2="18" y2="18"/>
-  </svg>
-);
-
+/**
+ * Main App Component - Handles routing and auth state
+ */
 function App() {
   const { isLoading, error, isAuthenticated } = useAuth();
 
+  // Loading state
   if (isLoading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        fontSize: '1.5rem',
-        color: '#1e40af'
-      }}>
-        Loading FinSight...
+      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-primary-600 animate-spin mx-auto mb-4" />
+          <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300">
+            Loading FinSight...
+          </p>
+        </div>
       </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        fontSize: '1.2rem',
-        color: '#dc2626',
-        flexDirection: 'column',
-        gap: '20px'
-      }}>
-        <div>Oops... {error}</div>
-        <button 
-          onClick={() => window.location.reload()}
-          style={{
-            padding: '12px 24px',
-            backgroundColor: '#1e40af',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '1rem'
-          }}
-        >
-          Try Again
-        </button>
+      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 px-4">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-danger-100 dark:bg-danger-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-danger-600 dark:text-danger-400" />
+          </div>
+          <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100 mb-2">
+            Something went wrong
+          </h1>
+          <p className="text-neutral-600 dark:text-neutral-400 mb-6">
+            {error}
+          </p>
+          <Button
+            onClick={() => window.location.reload()}
+            leftIcon={RefreshCw}
+          >
+            Try Again
+          </Button>
+        </div>
       </div>
     );
   }
@@ -86,35 +73,36 @@ function App() {
   );
 }
 
+/**
+ * Protected Route - Main application after authentication
+ */
 function ProtectedRoute() {
   const { user, userProfile, signOut, session } = useAuth();
   const [showAssistant, setShowAssistant] = useState(false);
   const [projectionData, setProjectionData] = useState(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Global DeepSeek AI listener
-  useEffect(() => {
-    const handleTrigger = async (event) => {
-      console.log("🚀 Global listener: AI analysis requested");
-
-      const { summary } = event.detail || {};
-      
-      if (!summary) {
-        window.dispatchEvent(
-          new CustomEvent("ai-summary-ready", {
-            detail: "⚠️ No loan metrics data available.",
-          })
-        );
-        return;
-      }
-
-      // Show loading message
+  // AI Analysis handler
+  const handleAIAnalysis = useCallback(async (event) => {
+    const { summary } = event.detail || {};
+    
+    if (!summary) {
       window.dispatchEvent(
         new CustomEvent("ai-summary-ready", {
-          detail: "🧠 FinAssist is analyzing your loan metrics...",
+          detail: "⚠️ No loan metrics data available.",
         })
       );
+      return;
+    }
 
-      const prompt = `
+    // Show loading message
+    window.dispatchEvent(
+      new CustomEvent("ai-summary-ready", {
+        detail: "🧠 FinAssist is analyzing your loan metrics...",
+      })
+    );
+
+    const prompt = `
 You are FinAssist AI, a senior credit analyst. Analyze the following loan metrics from a lender's perspective.
 
 Focus on:
@@ -133,185 +121,237 @@ ${summary}
 Provide your analysis:
 `;
 
-      try {
-        // Get access token from session
-        const accessToken = session?.access_token;
-        
-        if (!accessToken) {
-          throw new Error('No access token available');
-        }
-
-        const response = await fetch("/api/ai/analyze", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            prompt,
-            systemMessage: "You are FinAssist AI, a senior credit analyst providing conversational, practical analysis."
-          }),
-        });
-
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.error || 'API request failed');
-        }
-
-        const result = data?.choices?.[0]?.message?.content || "No response received.";
-        console.log("✅ AI summary generated");
-        window.dispatchEvent(
-          new CustomEvent("ai-summary-ready", { detail: result })
-        );
-      } catch (err) {
-        console.error("❌ AI fetch error:", err);
-        window.dispatchEvent(
-          new CustomEvent("ai-summary-ready", {
-            detail: "Error: Unable to generate AI summary. Please try again.",
-          })
-        );
+    try {
+      const accessToken = session?.access_token;
+      
+      if (!accessToken) {
+        throw new Error('No access token available');
       }
-    };
 
-    window.addEventListener("trigger-ai-analysis", handleTrigger);
-    console.log("🧠 Global AI listener mounted in App.js");
+      const response = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          prompt,
+          systemMessage: "You are FinAssist AI, a senior credit analyst providing conversational, practical analysis."
+        }),
+      });
 
-    return () => window.removeEventListener("trigger-ai-analysis", handleTrigger);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'API request failed');
+      }
+
+      const result = data?.choices?.[0]?.message?.content || "No response received.";
+      window.dispatchEvent(
+        new CustomEvent("ai-summary-ready", { detail: result })
+      );
+    } catch (err) {
+      window.dispatchEvent(
+        new CustomEvent("ai-summary-ready", {
+          detail: "Error: Unable to generate AI summary. Please try again.",
+        })
+      );
+    }
   }, [session]);
 
+  // Set up AI listener
+  useEffect(() => {
+    window.addEventListener("trigger-ai-analysis", handleAIAnalysis);
+    return () => window.removeEventListener("trigger-ai-analysis", handleAIAnalysis);
+  }, [handleAIAnalysis]);
+
+  // Logout handler
   const handleLogout = async () => {
-    await signOut();
+    setIsLoggingOut(true);
+    try {
+      await signOut();
+    } catch (err) {
+      // Error is handled by auth context
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  // Get tier badge color
+  const getTierBadgeClass = (tier) => {
+    switch (tier) {
+      case 'enterprise': return 'bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-400';
+      case 'business': return 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400';
+      case 'professional': return 'bg-info-100 text-info-800 dark:bg-info-900/30 dark:text-info-400';
+      default: return 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300';
+    }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      {/* Top Bar with Logout */}
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        backgroundColor: 'white',
-        borderBottom: '1px solid #e2e8f0',
-        padding: '12px 24px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        zIndex: 40,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ fontSize: '0.9rem', color: '#475569', fontWeight: 500 }}>
-          Welcome, {userProfile?.name || user?.email}
-          {userProfile?.tier && userProfile.tier !== 'free' && (
-            <span style={{ 
-              marginLeft: '8px', 
-              padding: '2px 8px', 
-              backgroundColor: '#dbeafe', 
-              borderRadius: '9999px',
-              fontSize: '0.75rem',
-              color: '#1e40af',
-              fontWeight: 600
-            }}>
-              {userProfile.tier.charAt(0).toUpperCase() + userProfile.tier.slice(1)}
-            </span>
-          )}
+    <div className="flex flex-col min-h-screen bg-neutral-50 dark:bg-neutral-900">
+      {/* Top Navigation Bar */}
+      <header className="sticky top-0 z-sticky bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 shadow-sm">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+            {/* Logo and Brand */}
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center shadow-sm">
+                <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-white" aria-hidden="true" />
+              </div>
+              <div className="hidden sm:block">
+                <h1 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
+                  FinSight
+                </h1>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 -mt-0.5">
+                  Financial Modeling Platform
+                </p>
+              </div>
+            </div>
+            
+            {/* User Info and Actions */}
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* User profile */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="hidden sm:block text-right">
+                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate max-w-[150px]">
+                    {userProfile?.name || user?.email?.split('@')[0]}
+                  </p>
+                  {userProfile?.tier && userProfile.tier !== 'free' && (
+                    <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-badge ${getTierBadgeClass(userProfile.tier)}`}>
+                      {userProfile.tier.charAt(0).toUpperCase() + userProfile.tier.slice(1)}
+                    </span>
+                  )}
+                </div>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 sm:w-5 sm:h-5 text-primary-600 dark:text-primary-400" aria-hidden="true" />
+                </div>
+              </div>
+              
+              {/* Logout button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                loading={isLoggingOut}
+                aria-label="Sign out"
+                className="hidden sm:flex"
+              >
+                <LogOut className="w-4 h-4 mr-1.5" aria-hidden="true" />
+                <span className="hidden md:inline">Sign Out</span>
+              </Button>
+              
+              {/* Mobile logout */}
+              <button
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="sm:hidden p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                aria-label="Sign out"
+              >
+                {isLoggingOut ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <LogOut className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+          </div>
         </div>
-        <button 
-          onClick={handleLogout}
-          style={{
-            padding: '8px 20px',
-            backgroundColor: '#1e40af',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-            fontWeight: 600
-          }}
-        >
-          Logout
-        </button>
-      </div>
+      </header>
 
-      {/* Main App */}
-      <div style={{ flex: 1 }}>
+      {/* Main Content */}
+      <main className="flex-1">
         <FinancialModelAndStressTester 
           onDataUpdate={setProjectionData} 
           accessToken={session?.access_token}
         />
-      </div>
+      </main>
 
-      {/* Floating Chat Button */}
+      {/* Floating Chat Button - Responsive */}
       {!showAssistant && (
         <button
           onClick={() => setShowAssistant(true)}
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            backgroundColor: '#1e40af',
-            color: 'white',
-            border: 'none',
-            boxShadow: '0 4px 12px rgba(30, 64, 175, 0.4)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000
-          }}
+          className="
+            fixed z-modal
+            bottom-4 right-4 sm:bottom-6 sm:right-6
+            w-14 h-14 sm:w-16 sm:h-16
+            rounded-full
+            bg-gradient-to-br from-primary-500 to-primary-700
+            text-white
+            shadow-lg hover:shadow-xl
+            transition-all duration-normal
+            hover:scale-105 active:scale-95
+            focus:outline-none focus-visible:ring-4 focus-visible:ring-primary-300
+            flex items-center justify-center
+          "
+          aria-label="Open FinAssist AI chat"
         >
-          <MessageCircleIcon />
+          <MessageCircle className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
         </button>
       )}
 
-      {/* Floating Chat Panel */}
+      {/* Floating Chat Panel - Responsive */}
       {showAssistant && (
-        <div style={{
-          position: 'fixed',
-          bottom: '24px',
-          right: '24px',
-          width: '400px',
-          height: '600px',
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
-          zIndex: 1000,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          border: '1px solid #e2e8f0'
-        }}>
-          <div style={{
-            padding: '16px',
-            backgroundColor: '#1e40af',
-            color: 'white',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <MessageCircleIcon />
-              <span style={{ fontWeight: 600 }}>FinAssist</span>
+        <>
+          {/* Mobile Overlay */}
+          <div 
+            className="fixed inset-0 bg-black/50 z-modal-backdrop lg:hidden"
+            onClick={() => setShowAssistant(false)}
+            aria-hidden="true"
+          />
+          
+          {/* Chat Panel */}
+          <aside
+            className="
+              fixed z-modal
+              
+              /* Mobile: Full screen with margin */
+              inset-x-2 bottom-2 top-16
+              sm:inset-x-4 sm:bottom-4 sm:top-20
+              
+              /* Large screens: Fixed size in corner */
+              lg:inset-auto lg:bottom-6 lg:right-6
+              lg:w-[420px] lg:h-[600px]
+              
+              bg-white dark:bg-neutral-800
+              rounded-card-lg
+              shadow-modal
+              
+              flex flex-col
+              overflow-hidden
+              border border-neutral-200 dark:border-neutral-700
+              
+              animate-slide-in-up lg:animate-scale-in
+            "
+            role="complementary"
+            aria-label="FinAssist AI Chat"
+          >
+            {/* Chat Header */}
+            <header className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                  <MessageCircle className="w-4 h-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="font-semibold">FinAssist</h2>
+                  <p className="text-xs text-primary-100">AI Financial Analyst</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAssistant(false)}
+                className="p-2 rounded-lg hover:bg-white/20 transition-colors"
+                aria-label="Close chat"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
+              </button>
+            </header>
+            
+            {/* Chat Content */}
+            <div className="flex-1 overflow-hidden">
+              <ChatAssistant modelData={projectionData} />
             </div>
-            <button
-              onClick={() => setShowAssistant(false)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'white',
-                cursor: 'pointer',
-                padding: '4px'
-              }}
-            >
-              <XIcon />
-            </button>
-          </div>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <ChatAssistant modelData={projectionData} />
-          </div>
-        </div>
+          </aside>
+        </>
       )}
     </div>
   );

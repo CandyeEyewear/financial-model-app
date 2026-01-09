@@ -40,6 +40,38 @@ import { useDebounce } from "./hooks/debounce.js";
 import { SmartPctField } from "./components/SmartFields";
 import { SmartSuggestion, OpeningDebtWarning } from "./components/SmartSuggestions";
 
+// Helper function to safely check if a field has been edited
+// Handles cases where _editedFields might be a Set, array, object, or undefined
+const isFieldEdited = (editedFields, fieldName) => {
+  if (!editedFields) return false;
+  if (editedFields instanceof Set) return editedFields.has(fieldName);
+  if (Array.isArray(editedFields)) return editedFields.includes(fieldName);
+  // Handle case where it was serialized as an object (from JSON)
+  return false;
+};
+
+// Helper function to safely add a field to editedFields, always returning a Set
+const addEditedField = (editedFields, fieldName) => {
+  const existingFields = editedFields instanceof Set 
+    ? [...editedFields] 
+    : Array.isArray(editedFields) 
+      ? editedFields 
+      : [];
+  return new Set([...existingFields, fieldName]);
+};
+
+// Helper to ensure _editedFields is always a Set
+const ensureEditedFieldsSet = (params) => {
+  if (!params) return params;
+  if (params._editedFields && !(params._editedFields instanceof Set)) {
+    return {
+      ...params,
+      _editedFields: new Set(Array.isArray(params._editedFields) ? params._editedFields : [])
+    };
+  }
+  return params;
+};
+
 // Color palette for consistency
 const COLORS = {
   primary: { from: 'blue-500', to: 'blue-600', hover: 'blue-700' },
@@ -998,11 +1030,11 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                 : prev.baseRevenue,
 
             // Only update if not manually edited
-            cogsPct: !prev._editedFields?.has('cogsPct') ? assumptions.cogsPct : prev.cogsPct,
-            opexPct: !prev._editedFields?.has('opexPct') ? assumptions.opexPct : prev.opexPct,
-            capexPct: !prev._editedFields?.has('capexPct') ? assumptions.capexPct : prev.capexPct,
-            wcPctOfRev: !prev._editedFields?.has('wcPctOfRev') ? assumptions.wcPctOfRev : prev.wcPctOfRev,
-            growth: !prev._editedFields?.has('growth') ? assumptions.growth : prev.growth,
+            cogsPct: !isFieldEdited(prev._editedFields, 'cogsPct') ? assumptions.cogsPct : prev.cogsPct,
+            opexPct: !isFieldEdited(prev._editedFields, 'opexPct') ? assumptions.opexPct : prev.opexPct,
+            capexPct: !isFieldEdited(prev._editedFields, 'capexPct') ? assumptions.capexPct : prev.capexPct,
+            wcPctOfRev: !isFieldEdited(prev._editedFields, 'wcPctOfRev') ? assumptions.wcPctOfRev : prev.wcPctOfRev,
+            growth: !isFieldEdited(prev._editedFields, 'growth') ? assumptions.growth : prev.growth,
 
             // Optional auto-updates
             openingDebt: prev.openingDebt === 0 ? totalHistoricalDebt : prev.openingDebt,
@@ -1226,9 +1258,10 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       return;
     }
     
-    // Load params into state
-    setParams(scenario.params);
-    setDraftParams(scenario.params);
+    // Load params into state, ensuring _editedFields is a Set
+    const loadedParams = ensureEditedFieldsSet(scenario.params);
+    setParams(loadedParams);
+    setDraftParams(loadedParams);
     
     setCurrentScenarioId(scenario.id);
     setCurrentScenarioName(scenario.name);
@@ -1332,9 +1365,9 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       setDraftParams(prev => ({
         ...prev,
         // Only update if not manually edited
-        minDSCR: !prev._editedFields?.has('minDSCR') ? benchmarks.minDSCR : prev.minDSCR,
-        targetICR: !prev._editedFields?.has('targetICR') ? benchmarks.targetICR : prev.targetICR,
-        maxNDToEBITDA: !prev._editedFields?.has('maxNDToEBITDA') ? benchmarks.maxNDToEBITDA : prev.maxNDToEBITDA,
+        minDSCR: !isFieldEdited(prev._editedFields, 'minDSCR') ? benchmarks.minDSCR : prev.minDSCR,
+        targetICR: !isFieldEdited(prev._editedFields, 'targetICR') ? benchmarks.targetICR : prev.targetICR,
+        maxNDToEBITDA: !isFieldEdited(prev._editedFields, 'maxNDToEBITDA') ? benchmarks.maxNDToEBITDA : prev.maxNDToEBITDA,
         
         // Store benchmarks for variance display
         _industryBenchmarks: benchmarks
@@ -1344,7 +1377,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
 
   // Auto-populate debt tenor from new facility
   useEffect(() => {
-    if (draftParams.proposedTenor && !draftParams._editedFields?.has('debtTenorYears')) {
+    if (draftParams.proposedTenor && !isFieldEdited(draftParams._editedFields, 'debtTenorYears')) {
       setDraftParams(prev => ({
         ...prev,
         debtTenorYears: prev.proposedTenor
@@ -1505,7 +1538,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                     setDraftParams({
                       ...draftParams, 
                       growth: v,
-                      _editedFields: new Set([...(draftParams._editedFields || []), 'growth'])
+                      _editedFields: addEditedField(draftParams._editedFields, 'growth')
                     });
                   }}
                   isAutoPop={true}
@@ -1524,7 +1557,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       ...draftParams, 
                       cogsPct: totalOpCosts * 0.60,
                       opexPct: totalOpCosts * 0.40,
-                      _editedFields: new Set([...(draftParams._editedFields || []), 'ebitdaMargin'])
+                      _editedFields: addEditedField(draftParams._editedFields, 'ebitdaMargin')
                     });
                   }}
                   helper="EBITDA as % of revenue (auto-calculates cost structure)"
@@ -1541,9 +1574,9 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         industry: newIndustry,
-                        minDSCR: !draftParams._editedFields?.has('minDSCR') ? benchmarks.minDSCR : draftParams.minDSCR,
-                        targetICR: !draftParams._editedFields?.has('targetICR') ? benchmarks.targetICR : draftParams.targetICR,
-                        maxNDToEBITDA: !draftParams._editedFields?.has('maxNDToEBITDA') ? benchmarks.maxNDToEBITDA : draftParams.maxNDToEBITDA,
+                        minDSCR: !isFieldEdited(draftParams._editedFields, 'minDSCR') ? benchmarks.minDSCR : draftParams.minDSCR,
+                        targetICR: !isFieldEdited(draftParams._editedFields, 'targetICR') ? benchmarks.targetICR : draftParams.targetICR,
+                        maxNDToEBITDA: !isFieldEdited(draftParams._editedFields, 'maxNDToEBITDA') ? benchmarks.maxNDToEBITDA : draftParams.maxNDToEBITDA,
                         _industryBenchmarks: benchmarks
                       });
                     }}
@@ -2090,7 +2123,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         cogsPct: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'cogsPct'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'cogsPct')
                       });
                     }}
                     isAutoPop={true}
@@ -2104,7 +2137,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         opexPct: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'opexPct'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'opexPct')
                       });
                     }}
                     isAutoPop={true}
@@ -2118,7 +2151,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         capexPct: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'capexPct'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'capexPct')
                       });
                     }}
                     isAutoPop={true}
@@ -2133,7 +2166,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         wcPctOfRev: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'wcPctOfRev'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'wcPctOfRev')
                       });
                     }}
                     isAutoPop={true}
@@ -2183,7 +2216,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         minDSCR: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'minDSCR'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'minDSCR')
                       });
                     }}
                     isAutoPop={true}
@@ -2200,7 +2233,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         targetICR: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'targetICR'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'targetICR')
                       });
                     }}
                     isAutoPop={true}
@@ -2217,7 +2250,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                       setDraftParams({
                         ...draftParams, 
                         maxNDToEBITDA: v,
-                        _editedFields: new Set([...(draftParams._editedFields || []), 'maxNDToEBITDA'])
+                        _editedFields: addEditedField(draftParams._editedFields, 'maxNDToEBITDA')
                       });
                     }}
                     isAutoPop={true}

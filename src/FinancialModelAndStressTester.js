@@ -1362,15 +1362,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       {/* Sticky Header - Clean Design */}
       <div className="sticky top-0 z-40 flex justify-between items-center bg-white px-4 py-3 border-b border-slate-200">
         <div className="flex items-center gap-3">
-          <img 
-            src={`${process.env.PUBLIC_URL}/favicon.ico`} 
-            alt="FinSight Logo" 
-            className="h-8 w-8"
-          />
-          <div>
-            <h1 className="text-lg font-semibold text-slate-800">FinSight</h1>
-          </div>
-          {/* Current Scenario Badge - inline with title */}
+          {/* Current Scenario Badge */}
           {currentScenarioName && (
             <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded text-xs">
               <FileText className="w-3 h-3 text-slate-500" />

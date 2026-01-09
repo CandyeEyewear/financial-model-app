@@ -243,6 +243,13 @@ Provide your analysis:
                 </div>
               </Link>
               
+              {/* FinSight Logo */}
+              <img 
+                src={`${process.env.PUBLIC_URL}/favicon.ico`} 
+                alt="FinSight Logo" 
+                className="h-8 w-8 sm:h-10 sm:w-10"
+              />
+              
               {/* Logout button */}
               <Button
                 variant="ghost"

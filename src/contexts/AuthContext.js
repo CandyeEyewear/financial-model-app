@@ -1,6 +1,6 @@
 // AuthContext - Supabase Auth Provider
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase, auth, db } from '../lib/supabase';
+import { supabase, auth, db, isSupabaseConfigured } from '../lib/supabase';
 
 const AuthContext = createContext({});
 
@@ -151,6 +151,16 @@ export const AuthProvider = ({ children }) => {
     let mounted = true;
 
     const initializeAuth = async () => {
+      // Check if Supabase is properly configured
+      if (!isSupabaseConfigured) {
+        console.error('Supabase is not configured. Check environment variables.');
+        if (mounted) {
+          setError('Configuration Error: Missing Supabase credentials. Please check environment variables in Vercel Dashboard.');
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
         // Get initial session
         const { session: currentSession, error } = await auth.getSession();
@@ -176,12 +186,16 @@ export const AuthProvider = ({ children }) => {
       } catch (err) {
         console.error('Auth initialization error:', err);
         if (mounted) {
+          setError(`Auth Error: ${err.message}`);
           setIsLoading(false);
         }
       }
     };
 
     initializeAuth();
+
+    // Only set up auth listener if Supabase is configured
+    if (!isSupabaseConfigured) return;
 
     // Listen for auth state changes
     const { data: { subscription } } = auth.onAuthStateChange(async (event, currentSession) => {

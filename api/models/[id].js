@@ -1,15 +1,15 @@
 // Vercel Serverless Function: Get/Delete Single Model
 // Route: /api/models/[id]
 
-import { createClient } from '@supabase/supabase-js';
-import { handleCors } from '../_cors.js';
+const { createClient } = require('@supabase/supabase-js');
+const { handleCors } = require('../_cors.js');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Handle CORS preflight
   if (handleCors(req, res)) return;
 
@@ -86,4 +86,4 @@ export default async function handler(req, res) {
       message: error.message
     });
   }
-}
+};

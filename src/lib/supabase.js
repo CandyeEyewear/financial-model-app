@@ -4,13 +4,21 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials not found. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY');
+// Check for missing environment variables
+const missingEnvVars = [];
+if (!supabaseUrl) missingEnvVars.push('REACT_APP_SUPABASE_URL');
+if (!supabaseAnonKey) missingEnvVars.push('REACT_APP_SUPABASE_ANON_KEY');
+
+if (missingEnvVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  console.error('Please set these in your Vercel Dashboard > Project Settings > Environment Variables');
+  console.error('Note: REACT_APP_* variables must be set BEFORE the build runs.');
 }
 
+// Create Supabase client (will fail gracefully if credentials missing)
 export const supabase = createClient(
-  supabaseUrl || '',
-  supabaseAnonKey || '',
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key',
   {
     auth: {
       autoRefreshToken: true,
@@ -19,6 +27,9 @@ export const supabase = createClient(
     }
   }
 );
+
+// Export a flag indicating if Supabase is properly configured
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
 // Auth helper functions
 export const auth = {

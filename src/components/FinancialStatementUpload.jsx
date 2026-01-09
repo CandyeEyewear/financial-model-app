@@ -586,69 +586,39 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
 
       setExtractedText(text);
 
-      // Step 4: Extract financial data
+      // Step 4: Extract financial data using AI
+      // Note: Smart parser is disabled for PDFs as it doesn't work reliably with unstructured text
       updateStep('analyze');
       let extractedYears = null;
-      let usedAI = false;
       let parseWarnings = [];
 
-      // Helper to check if extraction result is useful
+      // Helper to validate extraction results
       const isValidExtraction = (years) => {
         if (!years || years.length === 0) return false;
-        // Check that at least one year has revenue > 0 AND revenue != cogs (common parsing error)
+        // At least one year should have revenue > 0 and revenue should not equal cogs
         return years.some(y => {
           const revenue = Number(y.revenue) || 0;
           const cogs = Number(y.cogs) || 0;
-          return revenue > 0 && revenue !== cogs;
+          return revenue > 0 && (cogs === 0 || revenue !== cogs);
         });
       };
 
-      // Determine file type
-      const fileExt = selectedFile.name.split('.').pop().toLowerCase();
-      const isExcel = ['xlsx', 'xls'].includes(fileExt);
-      
-      // ONLY use smart parser for Excel files (structured data)
-      // PDFs and other formats should ALWAYS use AI
-      if (isExcel) {
-        try {
-          console.log('Trying smart parser for Excel file...');
-          extractedYears = parseFinancialText(text);
-          
-          if (isValidExtraction(extractedYears)) {
-            parseWarnings.push('Extracted using smart parser (no AI required)');
-            console.log('Smart parser succeeded with valid data');
-          } else {
-            console.log('Smart parser result invalid (revenue=0 or revenue=cogs), falling back to AI');
-            extractedYears = null;
-          }
-        } catch (parseError) {
-          console.log('Smart parser failed:', parseError.message);
-          extractedYears = null;
-        }
-      } else {
-        console.log(`File type "${fileExt}" - skipping smart parser, using AI directly`);
+      // Use AI for extraction (works reliably for all file types)
+      if (!accessToken) {
+        throw new Error('token: Please sign in to extract financial data.');
       }
 
-      // Use AI if smart parser didn't work or wasn't applicable
-      if (!extractedYears) {
-        if (accessToken) {
-          try {
-            console.log('Using AI for extraction...');
-            extractedYears = await processWithAI(text);
-            usedAI = true;
-            
-            // Validate AI results too
-            if (!isValidExtraction(extractedYears)) {
-              parseWarnings.push('Warning: Please verify the extracted data is correct');
-            }
-            console.log('AI extraction completed');
-          } catch (aiError) {
-            console.error('AI extraction failed:', aiError);
-            throw new Error('parse: Could not extract data. Please try again or use an Excel file.');
-          }
-        } else {
-          throw new Error('token: Please sign in to extract data from PDF files.');
+      try {
+        console.log('Extracting financial data using AI...');
+        extractedYears = await processWithAI(text);
+        
+        if (!isValidExtraction(extractedYears)) {
+          parseWarnings.push('Warning: Please verify the extracted data is correct');
         }
+        console.log('AI extraction completed successfully');
+      } catch (aiError) {
+        console.error('AI extraction failed:', aiError);
+        throw new Error('parse: Could not extract data. Please try again.');
       }
 
       // Step 5: Parse and validate results
@@ -663,10 +633,9 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
         needsReview: true
       });
 
-      const methodUsed = usedAI ? 'using AI' : 'using smart parser';
       setUploadStatus({ 
         type: 'success', 
-        message: `Found ${extractedYears.length} year(s) of financial data ${methodUsed}. Please review before applying.` 
+        message: `Found ${extractedYears.length} year(s) of financial data. Please review before applying.` 
       });
       announceStatus(`Successfully extracted ${extractedYears.length} years of data. Please review the results.`);
 

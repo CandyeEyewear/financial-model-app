@@ -104,6 +104,13 @@ export const Button = forwardRef(({
       focus-visible:ring-primary-500
       p-0 h-auto
     `,
+    outline: `
+      bg-transparent
+      text-neutral-700 dark:text-neutral-300
+      border border-neutral-300 dark:border-neutral-600
+      hover:bg-neutral-50 dark:hover:bg-neutral-800
+      focus-visible:ring-neutral-500
+    `,
   };
   
   // Build final classes

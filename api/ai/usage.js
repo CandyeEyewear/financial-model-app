@@ -2,6 +2,7 @@
 // Route: /api/ai/usage
 
 import { createClient } from '@supabase/supabase-js';
+import { handleCors } from '../_cors.js';
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -18,6 +19,9 @@ const PLAN_LIMITS = {
 };
 
 export default async function handler(req, res) {
+  // Handle CORS preflight
+  if (handleCors(req, res)) return;
+
   // Only allow GET
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });

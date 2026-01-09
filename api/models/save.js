@@ -2,6 +2,7 @@
 // Route: /api/models/save
 
 import { createClient } from '@supabase/supabase-js';
+import { handleCors } from '../_cors.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -9,6 +10,9 @@ const supabase = createClient(
 );
 
 export default async function handler(req, res) {
+  // Handle CORS preflight
+  if (handleCors(req, res)) return;
+
   // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

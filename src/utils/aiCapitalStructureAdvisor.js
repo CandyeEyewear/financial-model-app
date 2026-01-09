@@ -1,19 +1,22 @@
 // src/utils/aiCapitalStructureAdvisor.js
 // AI-powered capital structure recommendations for lenders
+// Uses /api/ai/analyze serverless function instead of direct DeepSeek calls
 
 import { calculateDebtCapacity, generateAlternativeStructures } from './debtCapacityAnalyzer';
 
 /**
  * Generate AI-powered capital structure recommendations
+ * @param {Object} projection - Financial projection data
+ * @param {Object} params - Model parameters
+ * @param {string} ccy - Currency code
+ * @param {string} accessToken - Supabase access token for authentication
  */
-export async function generateAICapitalStructureRecommendations(projection, params, ccy) {
-  // Get API key
-  const apiKey = process.env.REACT_APP_DEEPSEEK_API_KEY;
-  
-  if (!apiKey) {
-    console.error("DeepSeek API key not found");
+export async function generateAICapitalStructureRecommendations(projection, params, ccy, accessToken) {
+  // Check for access token
+  if (!accessToken) {
+    console.error("No access token provided for AI recommendations");
     return {
-      summary: "AI analysis unavailable: API key not configured.",
+      summary: "AI analysis unavailable: Please log in to access AI features.",
       recommendation: "MANUAL_REVIEW_REQUIRED",
       keyFindings: [],
       structuralImprovements: [],
@@ -69,20 +72,8 @@ export async function generateAICapitalStructureRecommendations(projection, para
         (capacity.currentDebtRequest / params.collateralValue) * 100 : 0
     };
 
-    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        max_tokens: 2000,
-        temperature: 0.7,
-        messages: [
-          {
-            role: "user",
-            content: `You are a senior credit officer at a commercial bank evaluating a lending request. Provide a concise, actionable capital structure recommendation.
+    // Build the prompt
+    const prompt = `You are a senior credit officer at a commercial bank evaluating a lending request. Provide a concise, actionable capital structure recommendation.
 
 **DEAL OVERVIEW:**
 - Requested Debt: ${ccy} ${context.currentDebt.toFixed(1)}M
@@ -124,14 +115,26 @@ Provide a 250-word analysis with:
 4. **REQUIRED MITIGANTS** (3-4 specific conditions if approval recommended)
 5. **RISK ASSESSMENT** (LOW / MEDIUM / HIGH / CRITICAL)
 
-Be direct, use specific numbers from above, and write from a lender's risk perspective.`
-          }
-        ]
+Be direct, use specific numbers from above, and write from a lender's risk perspective.`;
+
+    const systemMessage = "You are a senior credit officer providing capital structure recommendations. Be direct, quantitative, and risk-focused.";
+
+    // Call the API endpoint instead of DeepSeek directly
+    const response = await fetch("/api/ai/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        prompt,
+        systemMessage
       })
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `API error: ${response.status}`);
     }
 
     const data = await response.json();
@@ -147,7 +150,8 @@ Be direct, use specific numbers from above, and write from a lender's risk persp
       keyFindings: lines.filter(line => line.includes('•') || line.includes('-')).slice(0, 4),
       riskAssessment: capacity.riskLevel,
       alternatives: alternatives,
-      capacity: capacity
+      capacity: capacity,
+      userUsage: data.userUsage // Include usage info from API response
     };
     
   } catch (error) {

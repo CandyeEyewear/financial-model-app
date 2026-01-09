@@ -2,17 +2,18 @@
   "name": "finsight",
   "version": "2.0.0",
   "private": true,
-  "description": "FinSight - Financial Model & Stress Testing Platform",
+  "description": "FinSight - Financial Model & Stress Testing Platform with Vercel Serverless Functions",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "vercel-build": "npm run build"
+    "vercel-build": "npm run build",
+    "dev": "vercel dev",
+    "dev:frontend": "react-scripts start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "react-is": "^18.2.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",
@@ -22,7 +23,7 @@
     "pdfjs-dist": "^5.4.149",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-is": "^19.2.3",
+    "react-is": "^18.2.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.9.3",
     "react-scripts": "5.0.1",
@@ -32,7 +33,8 @@
   "devDependencies": {
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.0"
+    "tailwindcss": "^3.4.0",
+    "vercel": "^37.0.0"
   },
   "browserslist": {
     "production": [

@@ -12,6 +12,7 @@ import Callback from './components/Callback';
 import UserProfile from './components/UserProfile';
 import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentCancelled from './pages/PaymentCancelled';
+import PricingPage from './components/PricingPage';
 import { Button } from './components/Button';
 import { MessageCircle, X, LogOut, User, Loader2, RefreshCw, Layers } from 'lucide-react';
 
@@ -77,6 +78,7 @@ function App() {
         <Route path="/payment-cancelled" element={
           isAuthenticated ? <PaymentCancelled /> : <Navigate to="/auth" replace />
         } />
+        <Route path="/pricing" element={<PricingPage />} />
         <Route path="/" element={
           isAuthenticated ? <ProtectedRoute /> : <Navigate to="/auth" replace />
         } />

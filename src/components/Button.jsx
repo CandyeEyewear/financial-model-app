@@ -68,8 +68,8 @@ export const Button = forwardRef(({
     secondary: `
       bg-white dark:bg-neutral-800
       text-neutral-700 dark:text-neutral-200
-      border-2 border-neutral-300 dark:border-neutral-600
-      hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400
+      border border-neutral-300 dark:border-neutral-600
+      hover:bg-neutral-50 dark:hover:bg-neutral-700 hover:border-neutral-400
       focus-visible:ring-primary-500
     `,
     success: `

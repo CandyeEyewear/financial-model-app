@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Input } from './Input';
 import { Button } from './Button';
-import { AlertCircle, CheckCircle, Mail, Lock, User, Layers } from 'lucide-react';
+import { AlertCircle, CheckCircle, Mail, Lock, User } from 'lucide-react';
 
 /**
  * AuthPage - Handles Sign In, Sign Up, and Password Reset
@@ -99,9 +99,11 @@ const AuthPage = ({ mode: initialMode }) => {
         <div className="bg-white dark:bg-neutral-800 rounded-card-lg shadow-card-lg p-8 sm:p-10">
           {/* Logo and Title */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <Layers className="w-8 h-8 text-white" aria-hidden="true" />
-            </div>
+            <img 
+              src={`${process.env.PUBLIC_URL}/favicon.ico`} 
+              alt="FinSight Logo" 
+              className="w-16 h-16 mx-auto mb-4"
+            />
             <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 mb-2">
               FinSight
             </h1>

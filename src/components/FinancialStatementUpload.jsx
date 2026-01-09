@@ -1,72 +1,207 @@
-// components/FinancialStatementUpload.jsx
-// Uses /api/ai/analyze serverless function for AI processing
-import React, { useState } from 'react';
+/**
+ * Financial Statement Upload Component
+ * AI-powered extraction with drag-and-drop, validation, and review step
+ * WCAG 2.1 AA Compliant
+ */
+import React, { useState, useRef, useCallback } from 'react';
 import { Button } from './Button';
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { 
+  Upload, 
+  FileText, 
+  Loader2, 
+  CheckCircle, 
+  AlertCircle, 
+  X, 
+  AlertTriangle,
+  FileSpreadsheet,
+  File,
+  Check,
+  RotateCcw
+} from 'lucide-react';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
+import { currencyFmt } from '../utils/formatters';
+
+// Constants
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_TEXT_LENGTH = 20000; // Characters to send to AI
+
+const ALLOWED_TYPES = {
+  'application/pdf': { ext: 'pdf', icon: FileText, label: 'PDF Document' },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { ext: 'docx', icon: FileText, label: 'Word Document' },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { ext: 'xlsx', icon: FileSpreadsheet, label: 'Excel Spreadsheet' },
+  'application/vnd.ms-excel': { ext: 'xls', icon: FileSpreadsheet, label: 'Excel Spreadsheet' },
+  'text/plain': { ext: 'txt', icon: File, label: 'Text File' },
+};
+
+const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'xls', 'txt'];
+
+// User-friendly error messages
+const ERROR_MESSAGES = {
+  'pdf.js': 'PDF processing is temporarily unavailable. Please try uploading an Excel or Word document instead.',
+  'api error': 'Our AI service is temporarily unavailable. Please try again in a few minutes.',
+  'parse': 'Could not understand the document format. Please ensure it contains clear financial tables with labeled columns.',
+  'timeout': 'Processing took too long. Try uploading a smaller document or specific pages only.',
+  'token': 'Your session has expired. Please refresh the page and try again.',
+  'limit': 'You\'ve reached your monthly AI usage limit. Please upgrade your plan to continue.',
+  'network': 'Network error. Please check your internet connection and try again.',
+  'empty': 'The document appears to be empty or unreadable. Please try a different file.',
+};
+
+const getHumanReadableError = (error) => {
+  const errorMsg = error.message?.toLowerCase() || '';
+  for (const [key, message] of Object.entries(ERROR_MESSAGES)) {
+    if (errorMsg.includes(key.toLowerCase())) {
+      return message;
+    }
+  }
+  return 'Something went wrong processing your file. Please try a different format or contact support.';
+};
+
+// Processing steps for progress indication
+const PROCESSING_STEPS = [
+  { id: 'validate', label: 'Validating file', progress: 10 },
+  { id: 'read', label: 'Reading document', progress: 30 },
+  { id: 'extract', label: 'Extracting text', progress: 50 },
+  { id: 'analyze', label: 'AI analyzing data', progress: 70 },
+  { id: 'parse', label: 'Parsing results', progress: 90 },
+  { id: 'complete', label: 'Complete', progress: 100 },
+];
 
 export function FinancialStatementUpload({ onDataExtracted, accessToken, onChange }) {
-  // Support both onDataExtracted and onChange props for flexibility
-  const handleDataExtracted = (data) => {
-    if (onDataExtracted) {
-      onDataExtracted(data);
-    }
-    if (onChange) {
-      onChange(data);
-    }
-  };
+  // Support both callback props
+  const handleDataExtracted = useCallback((data) => {
+    if (onDataExtracted) onDataExtracted(data);
+    if (onChange) onChange(data);
+  }, [onDataExtracted, onChange]);
+
+  // State
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentStep, setCurrentStep] = useState(null);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [extractedText, setExtractedText] = useState('');
+  const [extractionResult, setExtractionResult] = useState(null);
+  const [validationErrors, setValidationErrors] = useState([]);
 
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  // Refs
+  const fileInputRef = useRef(null);
+  const statusAnnouncerRef = useRef(null);
 
-    setIsProcessing(true);
-    setUploadStatus({ type: 'info', message: 'Reading file...' });
-
-    try {
-      let text = '';
-      const fileType = file.name.split('.').pop().toLowerCase();
-
-      if (fileType === 'pdf') {
-        text = await extractTextFromPDF(file);
-      } else if (fileType === 'docx') {
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        text = result.value;
-      } else if (['xlsx', 'xls'].includes(fileType)) {
-        text = await extractTextFromExcel(file);
-      } else if (fileType === 'txt') {
-        text = await file.text();
-      } else {
-        throw new Error('Unsupported file type. Please upload PDF, DOCX, XLSX, or TXT');
-      }
-
-      setExtractedText(text);
-      setUploadStatus({ type: 'success', message: 'File extracted. Processing with AI...' });
-
-      // Send to AI for extraction
-      await processWithAI(text);
-
-    } catch (error) {
-      console.error('File processing error:', error);
-      setUploadStatus({ type: 'error', message: error.message });
-    } finally {
-      setIsProcessing(false);
+  // Announce status changes for screen readers
+  const announceStatus = (message) => {
+    if (statusAnnouncerRef.current) {
+      statusAnnouncerRef.current.textContent = message;
     }
   };
 
+  // File validation
+  const validateFile = (file) => {
+    const errors = [];
+    
+    if (!file) {
+      errors.push('No file selected.');
+      return errors;
+    }
+
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      errors.push(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`);
+    }
+
+    // Check file type
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(extension)) {
+      errors.push(`Unsupported file type (.${extension}). Please upload PDF, Excel, Word, or text files.`);
+    }
+
+    // Check if file is empty
+    if (file.size === 0) {
+      errors.push('The file appears to be empty.');
+    }
+
+    return errors;
+  };
+
+  // Handle file selection (from input or drop)
+  const handleFileSelect = (file) => {
+    const errors = validateFile(file);
+    setValidationErrors(errors);
+    
+    if (errors.length === 0) {
+      setSelectedFile(file);
+      setUploadStatus(null);
+      setExtractionResult(null);
+      setExtractedText('');
+      announceStatus(`File selected: ${file.name}`);
+    } else {
+      setSelectedFile(null);
+      announceStatus(`File validation failed: ${errors.join('. ')}`);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  };
+
+  const clearFile = () => {
+    setSelectedFile(null);
+    setValidationErrors([]);
+    setUploadStatus(null);
+    setExtractionResult(null);
+    setExtractedText('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    announceStatus('File removed');
+  };
+
+  // Update processing step
+  const updateStep = (stepId) => {
+    const step = PROCESSING_STEPS.find(s => s.id === stepId);
+    if (step) {
+      setCurrentStep(step);
+      setUploadStatus({ type: 'info', message: step.label + '...' });
+      announceStatus(step.label);
+    }
+  };
+
+  // Text extraction functions
   const extractTextFromPDF = async (file) => {
-    // Using pdf-parse library
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdfjsLib = window['pdfjs-dist/build/pdf'];
       
       if (!pdfjsLib) {
-        throw new Error('PDF.js library not loaded. Add <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script> to your HTML');
+        throw new Error('PDF.js library not loaded');
       }
 
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -75,18 +210,23 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
       const pdf = await loadingTask.promise;
       
       let fullText = '';
+      const maxPages = Math.min(pdf.numPages, 20); // Limit pages for performance
       
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map(item => item.str).join(' ');
         fullText += pageText + '\n\n';
       }
       
+      if (fullText.trim().length === 0) {
+        throw new Error('empty');
+      }
+      
       return fullText;
     } catch (error) {
       console.error('PDF extraction error:', error);
-      throw new Error('PDF extraction failed. Make sure PDF.js is loaded or try a different file format.');
+      throw new Error('PDF.js: ' + error.message);
     }
   };
 
@@ -95,22 +235,63 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
     
     let allText = '';
-    workbook.SheetNames.forEach(sheetName => {
+    
+    // Only process first 3 sheets for performance
+    const sheetsToProcess = workbook.SheetNames.slice(0, 3);
+    
+    sheetsToProcess.forEach(sheetName => {
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
       
-      allText += `\n\n=== Sheet: ${sheetName} ===\n`;
+      allText += `\n=== ${sheetName} ===\n`;
       jsonData.forEach(row => {
-        allText += row.join('\t') + '\n';
+        if (row.some(cell => cell !== null && cell !== undefined && cell !== '')) {
+          allText += row.join('\t') + '\n';
+        }
       });
     });
+    
+    if (allText.trim().length === 0) {
+      throw new Error('empty');
+    }
     
     return allText;
   };
 
+  const extractTextFromDocx = async (file) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    
+    if (result.value.trim().length === 0) {
+      throw new Error('empty');
+    }
+    
+    return result.value;
+  };
+
+  // Data quality checks
+  const detectDataQualityIssues = (years) => {
+    const warnings = [];
+    
+    years.forEach(year => {
+      if (year.revenue === 0) {
+        warnings.push(`Year ${year.year}: Revenue is zero - please verify`);
+      }
+      if (year.cogs > year.revenue && year.revenue > 0) {
+        warnings.push(`Year ${year.year}: COGS exceeds revenue - check for data errors`);
+      }
+      if (year.year < 1900 || year.year > 2100) {
+        warnings.push(`Year ${year.year}: Invalid year - please correct`);
+      }
+    });
+    
+    return warnings;
+  };
+
+  // AI Processing
   const processWithAI = async (text) => {
     if (!accessToken) {
-      throw new Error('Please log in to use AI-powered extraction');
+      throw new Error('token');
     }
 
     const prompt = `You are a financial data extraction expert. Extract financial statement data from the following text and return ONLY valid JSON with no additional text or markdown.
@@ -142,18 +323,19 @@ Extract these fields for each year found:
 }
 
 Rules:
-1. Extract ALL years found in the document
-2. Use 0 for missing values
+1. Extract ALL years found in the document (up to 5 most recent years)
+2. Use 0 for missing values - do not guess or estimate
 3. Convert all amounts to numeric values (no commas, currency symbols)
 4. If amounts are in thousands/millions, convert to actual amounts
 5. Return ONLY the JSON object, no explanation
+6. Ensure year is a 4-digit number (e.g., 2023, not '23)
 
 CRITICAL: Your response must be ONLY valid JSON. Do not include any text before or after the JSON. Do not use markdown code blocks.
 
 Financial Statement Text:
-${text.substring(0, 15000)}`;
+${text.substring(0, MAX_TEXT_LENGTH)}`;
 
-    const systemMessage = "You are a financial data extraction expert. You ONLY respond with valid JSON, nothing else.";
+    const systemMessage = "You are a financial data extraction expert. You ONLY respond with valid JSON, nothing else. Be conservative - use 0 for any values you cannot clearly identify.";
 
     try {
       const response = await fetch("/api/ai/analyze", {
@@ -164,13 +346,17 @@ ${text.substring(0, 15000)}`;
         },
         body: JSON.stringify({
           prompt,
-          systemMessage
+          systemMessage,
+          extractionMode: true // Signal to use lower temperature
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(`AI API error: ${response.status} - ${errorData.error || 'Unknown error'}`);
+        if (response.status === 429) {
+          throw new Error('limit');
+        }
+        throw new Error(`API error: ${response.status} - ${errorData.error || 'Unknown'}`);
       }
 
       const data = await response.json();
@@ -181,101 +367,446 @@ ${text.substring(0, 15000)}`;
 
       const parsedData = JSON.parse(extractedData);
       
-      if (!parsedData.years || !Array.isArray(parsedData.years)) {
-        throw new Error('AI did not return valid financial data structure');
+      if (!parsedData.years || !Array.isArray(parsedData.years) || parsedData.years.length === 0) {
+        throw new Error('parse: No financial data found');
       }
 
-      setUploadStatus({ 
-        type: 'success', 
-        message: `Successfully extracted ${parsedData.years.length} year(s) of data!` 
-      });
-
-      // Pass extracted data back to parent
-      handleDataExtracted(parsedData.years);
+      return parsedData.years;
 
     } catch (error) {
       console.error('AI processing error:', error);
-      throw new Error(`AI extraction failed: ${error.message}`);
+      throw error;
     }
   };
 
+  // Main processing function
+  const handleProcess = async () => {
+    if (!selectedFile) return;
+
+    setIsProcessing(true);
+    setExtractionResult(null);
+    setExtractedText('');
+
+    try {
+      // Step 1: Validate
+      updateStep('validate');
+      await new Promise(resolve => setTimeout(resolve, 300)); // Brief pause for UX
+
+      // Step 2: Read file
+      updateStep('read');
+      let text = '';
+      const fileType = selectedFile.name.split('.').pop().toLowerCase();
+
+      // Step 3: Extract text
+      updateStep('extract');
+      
+      if (fileType === 'pdf') {
+        text = await extractTextFromPDF(selectedFile);
+      } else if (fileType === 'docx') {
+        text = await extractTextFromDocx(selectedFile);
+      } else if (['xlsx', 'xls'].includes(fileType)) {
+        text = await extractTextFromExcel(selectedFile);
+      } else if (fileType === 'txt') {
+        text = await selectedFile.text();
+        if (text.trim().length === 0) {
+          throw new Error('empty');
+        }
+      } else {
+        throw new Error('Unsupported file type');
+      }
+
+      setExtractedText(text);
+
+      // Step 4: AI Analysis
+      updateStep('analyze');
+      const extractedYears = await processWithAI(text);
+
+      // Step 5: Parse and validate results
+      updateStep('parse');
+      const warnings = detectDataQualityIssues(extractedYears);
+
+      // Step 6: Complete - show for review
+      updateStep('complete');
+      setExtractionResult({
+        data: extractedYears,
+        warnings,
+        needsReview: true
+      });
+
+      setUploadStatus({ 
+        type: 'success', 
+        message: `Found ${extractedYears.length} year(s) of financial data. Please review before applying.` 
+      });
+      announceStatus(`Successfully extracted ${extractedYears.length} years of data. Please review the results.`);
+
+    } catch (error) {
+      console.error('Processing error:', error);
+      const friendlyMessage = getHumanReadableError(error);
+      setUploadStatus({ type: 'error', message: friendlyMessage });
+      announceStatus(`Error: ${friendlyMessage}`);
+      setCurrentStep(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply extracted data
+  const applyExtractedData = () => {
+    if (extractionResult?.data) {
+      handleDataExtracted(extractionResult.data);
+      setUploadStatus({ 
+        type: 'success', 
+        message: `Applied ${extractionResult.data.length} year(s) of data to your model!` 
+      });
+      announceStatus('Data applied successfully');
+      setExtractionResult(null);
+      clearFile();
+    }
+  };
+
+  // Discard results
+  const discardResults = () => {
+    setExtractionResult(null);
+    setUploadStatus(null);
+    setCurrentStep(null);
+    announceStatus('Extracted data discarded');
+  };
+
+  // Get file icon
+  const getFileIcon = () => {
+    if (!selectedFile) return FileText;
+    const type = Object.entries(ALLOWED_TYPES).find(([mime]) => 
+      selectedFile.type === mime
+    );
+    return type ? type[1].icon : FileText;
+  };
+
+  const FileIcon = getFileIcon();
+
   return (
     <div className="space-y-4">
-      <div className="p-6 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
-        <div className="text-center">
-          <Upload className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-          <h3 className="font-semibold text-blue-900 mb-2">Upload Financial Statements</h3>
-          <p className="text-sm text-blue-700 mb-4">
-            AI will automatically extract financial data from PDF, Excel, or Word documents
-          </p>
-          
-          <input
-            type="file"
-            accept=".pdf,.docx,.xlsx,.xls,.txt"
-            onChange={handleFileUpload}
-            disabled={isProcessing}
-            className="hidden"
-            id="financial-upload"
-          />
-          
-          <label 
-            htmlFor="financial-upload"
-            className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-              isProcessing 
-                ? 'bg-blue-400 cursor-not-allowed' 
-                : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
-            } text-white`}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <FileText className="w-4 h-4 mr-2" />
-                Select File
-              </>
-            )}
-          </label>
+      {/* Screen reader announcements */}
+      <div 
+        ref={statusAnnouncerRef}
+        role="status" 
+        aria-live="polite" 
+        aria-atomic="true"
+        className="sr-only"
+      />
 
-          <p className="text-xs text-blue-600 mt-2">
-            Supports: PDF, Excel (.xlsx, .xls), Word (.docx), Text (.txt)
-          </p>
-        </div>
+      {/* Drop zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !isProcessing && !selectedFile && fileInputRef.current?.click()}
+        className={`
+          relative p-6 sm:p-8 border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer
+          ${isDragging 
+            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 scale-[1.01]' 
+            : selectedFile
+              ? 'border-primary-300 bg-primary-50/50 dark:bg-primary-900/10'
+              : 'border-neutral-300 dark:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50 hover:border-primary-400 hover:bg-primary-50/50 dark:hover:bg-primary-900/10'
+          }
+          ${isProcessing ? 'pointer-events-none' : ''}
+        `}
+        role="button"
+        tabIndex={isProcessing ? -1 : 0}
+        aria-label={selectedFile ? `Selected file: ${selectedFile.name}. Press Enter to change file.` : 'Click or drag and drop to upload financial statements'}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (!isProcessing && !selectedFile) {
+              fileInputRef.current?.click();
+            }
+          }
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.xlsx,.xls,.txt"
+          onChange={handleInputChange}
+          disabled={isProcessing}
+          className="sr-only"
+          id="financial-upload"
+          aria-describedby="upload-instructions"
+        />
+
+        {/* File selected state */}
+        {selectedFile ? (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                <FileIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                  {selectedFile.name}
+                </p>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleProcess();
+                }}
+                disabled={isProcessing || validationErrors.length > 0}
+                loading={isProcessing}
+                className="flex-1 sm:flex-none"
+              >
+                {isProcessing ? 'Processing...' : 'Extract Data'}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearFile();
+                }}
+                disabled={isProcessing}
+                aria-label="Remove file"
+                className="px-3"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Empty state */
+          <div className="text-center">
+            <div className={`
+              w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center transition-colors
+              ${isDragging 
+                ? 'bg-primary-200 dark:bg-primary-800' 
+                : 'bg-primary-100 dark:bg-primary-900/30'
+              }
+            `}>
+              <Upload 
+                className={`w-8 h-8 transition-colors ${
+                  isDragging 
+                    ? 'text-primary-700 dark:text-primary-300' 
+                    : 'text-primary-600 dark:text-primary-400'
+                }`} 
+                aria-hidden="true" 
+              />
+            </div>
+            
+            <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+              {isDragging ? 'Drop your file here' : 'Upload Financial Statements'}
+            </h3>
+            
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4" id="upload-instructions">
+              Drag and drop or click to select. AI will extract financial data automatically.
+            </p>
+            
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors">
+              <FileText className="w-4 h-4" aria-hidden="true" />
+              Select File
+            </div>
+            
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-3">
+              Supports: PDF, Excel (.xlsx, .xls), Word (.docx), Text (.txt) — Max 10MB
+            </p>
+          </div>
+        )}
+
+        {/* Drag overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 bg-primary-500/10 dark:bg-primary-400/10 rounded-xl flex items-center justify-center pointer-events-none">
+            <div className="text-primary-700 dark:text-primary-300 font-semibold text-lg">
+              Drop to upload
+            </div>
+          </div>
+        )}
       </div>
 
-      {uploadStatus && (
-        <div className={`p-4 rounded-lg border flex items-start gap-3 ${
-          uploadStatus.type === 'success' ? 'bg-emerald-50 border-emerald-200' :
-          uploadStatus.type === 'error' ? 'bg-red-50 border-red-200' :
-          'bg-blue-50 border-blue-200'
-        }`}>
-          {uploadStatus.type === 'success' ? <CheckCircle className="w-5 h-5 text-emerald-600 mt-0.5" /> :
-           uploadStatus.type === 'error' ? <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" /> :
-           <Loader2 className="w-5 h-5 text-blue-600 mt-0.5 animate-spin" />}
-          <div className="flex-1">
-            <div className={`font-semibold text-sm ${
-              uploadStatus.type === 'success' ? 'text-emerald-800' :
-              uploadStatus.type === 'error' ? 'text-red-800' :
-              'text-blue-800'
-            }`}>
-              {uploadStatus.message}
+      {/* Validation errors */}
+      {validationErrors.length > 0 && (
+        <div 
+          className="p-4 rounded-lg bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800"
+          role="alert"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <h4 className="font-semibold text-danger-800 dark:text-danger-200 text-sm">
+                File validation failed
+              </h4>
+              <ul className="mt-1 text-sm text-danger-700 dark:text-danger-300 list-disc list-inside">
+                {validationErrors.map((error, idx) => (
+                  <li key={idx}>{error}</li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
       )}
 
-      {extractedText && (
-        <details className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-          <summary className="cursor-pointer font-semibold text-sm text-slate-700">
-            View Extracted Text ({extractedText.length} characters)
+      {/* Progress indicator */}
+      {isProcessing && currentStep && (
+        <div className="p-4 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
+          <div className="flex items-center gap-3 mb-3">
+            <Loader2 className="w-5 h-5 text-primary-600 dark:text-primary-400 animate-spin" aria-hidden="true" />
+            <span className="font-medium text-primary-800 dark:text-primary-200 text-sm">
+              {currentStep.label}...
+            </span>
+          </div>
+          <div className="h-2 bg-primary-100 dark:bg-primary-900/50 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-primary-600 dark:bg-primary-500 transition-all duration-500 ease-out"
+              style={{ width: `${currentStep.progress}%` }}
+              role="progressbar"
+              aria-valuenow={currentStep.progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Processing: ${currentStep.progress}% complete`}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-primary-600 dark:text-primary-400 mt-1">
+            <span>Step {PROCESSING_STEPS.findIndex(s => s.id === currentStep.id) + 1} of {PROCESSING_STEPS.length}</span>
+            <span>{currentStep.progress}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Status message (when not processing) */}
+      {uploadStatus && !isProcessing && !extractionResult && (
+        <div 
+          className={`p-4 rounded-lg border flex items-start gap-3 ${
+            uploadStatus.type === 'success' 
+              ? 'bg-success-50 dark:bg-success-900/20 border-success-200 dark:border-success-800' 
+              : uploadStatus.type === 'error' 
+                ? 'bg-danger-50 dark:bg-danger-900/20 border-danger-200 dark:border-danger-800' 
+                : 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800'
+          }`}
+          role="alert"
+        >
+          {uploadStatus.type === 'success' ? (
+            <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+          ) : uploadStatus.type === 'error' ? (
+            <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+          ) : (
+            <Loader2 className="w-5 h-5 text-primary-600 dark:text-primary-400 animate-spin flex-shrink-0 mt-0.5" aria-hidden="true" />
+          )}
+          <p className={`text-sm font-medium ${
+            uploadStatus.type === 'success' 
+              ? 'text-success-800 dark:text-success-200' 
+              : uploadStatus.type === 'error' 
+                ? 'text-danger-800 dark:text-danger-200' 
+                : 'text-primary-800 dark:text-primary-200'
+          }`}>
+            {uploadStatus.message}
+          </p>
+        </div>
+      )}
+
+      {/* Extraction review panel */}
+      {extractionResult && extractionResult.needsReview && (
+        <div className="rounded-xl border-2 border-warning-300 dark:border-warning-700 bg-warning-50 dark:bg-warning-900/20 overflow-hidden">
+          {/* Header */}
+          <div className="px-4 py-3 bg-warning-100 dark:bg-warning-900/30 border-b border-warning-200 dark:border-warning-800">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-warning-600 dark:text-warning-400" aria-hidden="true" />
+              <h4 className="font-semibold text-warning-900 dark:text-warning-100">
+                Review Extracted Data
+              </h4>
+            </div>
+            <p className="text-sm text-warning-700 dark:text-warning-300 mt-1">
+              Please verify the AI extraction is correct before applying to your model.
+            </p>
+          </div>
+
+          {/* Warnings */}
+          {extractionResult.warnings.length > 0 && (
+            <div className="px-4 py-3 bg-warning-100/50 dark:bg-warning-900/20 border-b border-warning-200 dark:border-warning-800">
+              <p className="text-xs font-semibold text-warning-800 dark:text-warning-200 mb-1">
+                Potential issues detected:
+              </p>
+              <ul className="text-xs text-warning-700 dark:text-warning-300 list-disc list-inside space-y-0.5">
+                {extractionResult.warnings.map((warning, idx) => (
+                  <li key={idx}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Data table */}
+          <div className="p-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-warning-200 dark:border-warning-700">
+                  <th className="text-left py-2 px-2 font-semibold text-neutral-700 dark:text-neutral-300">Year</th>
+                  <th className="text-right py-2 px-2 font-semibold text-neutral-700 dark:text-neutral-300">Revenue</th>
+                  <th className="text-right py-2 px-2 font-semibold text-neutral-700 dark:text-neutral-300">COGS</th>
+                  <th className="text-right py-2 px-2 font-semibold text-neutral-700 dark:text-neutral-300">OpEx</th>
+                  <th className="text-right py-2 px-2 font-semibold text-neutral-700 dark:text-neutral-300">Total Debt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {extractionResult.data.map((year, idx) => (
+                  <tr 
+                    key={year.year || idx} 
+                    className="border-b border-warning-100 dark:border-warning-800/50 last:border-0"
+                  >
+                    <td className="py-2 px-2 font-medium text-neutral-900 dark:text-neutral-100">
+                      {year.year}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {year.revenue > 0 ? currencyFmt(year.revenue) : '—'}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {year.cogs > 0 ? currencyFmt(year.cogs) : '—'}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {year.opex > 0 ? currencyFmt(year.opex) : '—'}
+                    </td>
+                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                      {(year.shortTermDebt + year.longTermDebt) > 0 
+                        ? currencyFmt(year.shortTermDebt + year.longTermDebt) 
+                        : '—'
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Actions */}
+          <div className="px-4 py-3 bg-warning-100/50 dark:bg-warning-900/20 border-t border-warning-200 dark:border-warning-800 flex flex-col sm:flex-row gap-2">
+            <Button onClick={applyExtractedData} className="flex-1 sm:flex-none">
+              <Check className="w-4 h-4 mr-1.5" aria-hidden="true" />
+              Apply to Model
+            </Button>
+            <Button variant="secondary" onClick={discardResults} className="flex-1 sm:flex-none">
+              <RotateCcw className="w-4 h-4 mr-1.5" aria-hidden="true" />
+              Discard & Retry
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Extracted text preview (collapsible) */}
+      {extractedText && !isProcessing && (
+        <details className="rounded-lg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
+          <summary className="px-4 py-3 cursor-pointer font-medium text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+            View extracted text ({extractedText.length.toLocaleString()} characters)
           </summary>
-          <pre className="mt-3 text-xs text-slate-600 overflow-auto max-h-60 whitespace-pre-wrap">
-            {extractedText.substring(0, 2000)}...
-          </pre>
+          <div className="px-4 pb-4">
+            <pre className="mt-2 p-3 text-xs text-neutral-600 dark:text-neutral-400 bg-white dark:bg-neutral-900 rounded border border-neutral-200 dark:border-neutral-700 overflow-auto max-h-60 whitespace-pre-wrap font-mono">
+              {extractedText.substring(0, 3000)}
+              {extractedText.length > 3000 && '\n\n... [truncated]'}
+            </pre>
+          </div>
         </details>
       )}
     </div>
   );
 }
+
+export default FinancialStatementUpload;

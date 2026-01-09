@@ -14,7 +14,7 @@ import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentCancelled from './pages/PaymentCancelled';
 import PricingPage from './components/PricingPage';
 import { Button } from './components/Button';
-import { MessageCircle, X, LogOut, User, Loader2, RefreshCw, Layers } from 'lucide-react';
+import { MessageCircle, X, LogOut, User, Loader2, RefreshCw } from 'lucide-react';
 
 /**
  * Main App Component - Handles routing and auth state
@@ -209,9 +209,11 @@ Provide your analysis:
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo and Brand */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center shadow-sm">
-                <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-white" aria-hidden="true" />
-              </div>
+              <img 
+                src={`${process.env.PUBLIC_URL}/favicon.ico`} 
+                alt="FinSight Logo" 
+                className="h-8 w-8 sm:h-10 sm:w-10"
+              />
               <div className="hidden sm:block">
                 <h1 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
                   FinSight

@@ -3,12 +3,15 @@
  * Main Application Component
  */
 import React, { useState, useEffect, useCallback } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import FinancialModelAndStressTester from './FinancialModelAndStressTester';
 import ChatAssistant from './ChatAssistant';
 import AuthPage from './components/AuthPage';
 import Callback from './components/Callback';
+import UserProfile from './components/UserProfile';
+import PaymentSuccess from './pages/PaymentSuccess';
+import PaymentCancelled from './pages/PaymentCancelled';
 import { Button } from './components/Button';
 import { MessageCircle, X, LogOut, User, Loader2, RefreshCw, Layers } from 'lucide-react';
 
@@ -65,6 +68,15 @@ function App() {
           isAuthenticated ? <Navigate to="/" replace /> : <AuthPage />
         } />
         <Route path="/reset-password" element={<AuthPage mode="reset" />} />
+        <Route path="/profile" element={
+          isAuthenticated ? <UserProfile /> : <Navigate to="/auth" replace />
+        } />
+        <Route path="/payment-success" element={
+          isAuthenticated ? <PaymentSuccess /> : <Navigate to="/auth" replace />
+        } />
+        <Route path="/payment-cancelled" element={
+          isAuthenticated ? <PaymentCancelled /> : <Navigate to="/auth" replace />
+        } />
         <Route path="/" element={
           isAuthenticated ? <ProtectedRoute /> : <Navigate to="/auth" replace />
         } />
@@ -210,8 +222,12 @@ Provide your analysis:
             
             {/* User Info and Actions */}
             <div className="flex items-center gap-2 sm:gap-4">
-              {/* User profile */}
-              <div className="flex items-center gap-2 sm:gap-3">
+              {/* User profile - clickable link to profile page */}
+              <Link 
+                to="/profile" 
+                className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity"
+                aria-label="View profile"
+              >
                 <div className="hidden sm:block text-right">
                   <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate max-w-[150px]">
                     {userProfile?.name || user?.email?.split('@')[0]}
@@ -225,7 +241,7 @@ Provide your analysis:
                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
                   <User className="w-4 h-4 sm:w-5 sm:h-5 text-primary-600 dark:text-primary-400" aria-hidden="true" />
                 </div>
-              </div>
+              </Link>
               
               {/* Logout button */}
               <Button

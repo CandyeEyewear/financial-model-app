@@ -86,7 +86,7 @@ export function DashboardGuide() {
             {/* Right Column */}
             <div className="space-y-3">
               <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <h4 className="font-bold text-blue-900 mb-2">📊 Charts & Analysis</h4>
+                <h4 className="font-bold text-blue-900 mb-2">Charts & Analysis</h4>
                 <ul className="text-sm text-slate-700 space-y-2">
                   <li><strong>Radar Chart:</strong> Visual credit strength profile</li>
                   <li><strong>Metrics Over Time:</strong> How ratios trend across projection years</li>
@@ -95,7 +95,7 @@ export function DashboardGuide() {
               </div>
 
               <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <h4 className="font-bold text-blue-900 mb-2">✅ Rationale & Covenants</h4>
+                <h4 className="font-bold text-blue-900 mb-2">Rationale & Covenants</h4>
                 <p className="text-sm text-slate-700">
                   <strong>Underwriting Rationale:</strong> Shows which credit criteria are met<br/>
                   <strong>Recommended Covenants:</strong> Suggested loan terms and protections
@@ -106,7 +106,7 @@ export function DashboardGuide() {
 
           {/* Color Guide */}
           <div className="bg-white rounded-lg p-4 border border-blue-200">
-            <h4 className="font-bold text-blue-900 mb-3">🎨 Understanding the Colors</h4>
+            <h4 className="font-bold text-blue-900 mb-3">Understanding the Colors</h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded bg-emerald-500"></div>
@@ -140,19 +140,19 @@ export function DashboardGuide() {
 
           {/* Quick Tips */}
           <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-300">
-            <h4 className="font-bold text-indigo-900 mb-2">💡 Quick Tips</h4>
+            <h4 className="font-bold text-indigo-900 mb-2">Quick Tips</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-indigo-800">
               <div>
-                <strong>✓ Good Sign:</strong> All cards show green "Compliant" status
+                <strong>Good Sign:</strong> All cards show green "Compliant" status
               </div>
               <div>
-                <strong⚠️ Warning Sign:</strong> Yellow badges or trending downward
+                <strong>Warning Sign:</strong> Yellow badges or trending downward
               </div>
               <div>
-                <strong>🔴 Red Flag:</strong> Multiple breaches or DSCR below 1.0x
+                <strong>Red Flag:</strong> Multiple breaches or DSCR below 1.0x
               </div>
               <div>
-                <strong>📈 Strong Deal:</strong> Improving trends + high collateral coverage
+                <strong>Strong Deal:</strong> Improving trends + high collateral coverage
               </div>
             </div>
           </div>

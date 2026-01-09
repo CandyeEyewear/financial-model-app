@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2, Calendar, Info, Save, FolderOpen, Trash2, Copy, X, AlertTriangle } from "lucide-react";
+import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2, Calendar, Info, Save, FolderOpen, Trash2, Copy, X, AlertTriangle, Zap, Wallet, CreditCard, Clock, Lightbulb, RefreshCw, Layers, ChevronRight } from "lucide-react";
 
 // Component imports
 import { Card, CardHeader, CardTitle, CardContent } from "./components/Card.jsx";
@@ -291,7 +291,7 @@ function ValidationErrors({ params }) {
         <Card className="border-l-4 border-l-red-600 bg-red-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0">{'⚠️'}</div>
+              <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <h3 className="font-bold text-red-900 mb-2">Critical Errors - Calculations Disabled</h3>
                 <ul className="space-y-2">
@@ -311,7 +311,7 @@ function ValidationErrors({ params }) {
         <Card className="border-l-4 border-l-amber-600 bg-amber-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0">{'⚠️'}</div>
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <h3 className="font-bold text-amber-900 mb-2">Warnings</h3>
                 <ul className="space-y-2">
@@ -387,8 +387,9 @@ function SaveDialog({ show, onClose, onSave, currentName }) {
             />
           </div>
           
-          <div className="text-xs text-slate-500 bg-blue-50 p-3 rounded">
-            💡 Tip: Use descriptive names for easy retrieval later
+          <div className="text-xs text-slate-500 bg-blue-50 p-3 rounded flex items-start gap-2">
+            <Lightbulb className="w-3 h-3 mt-0.5 flex-shrink-0" />
+            <span>Use descriptive names for easy retrieval later</span>
           </div>
         </div>
         
@@ -541,9 +542,10 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
             This will reset all input fields to their default values. 
             Any unsaved changes will be lost.
           </p>
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded flex items-start gap-2">
+            <Lightbulb className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-amber-800">
-              💡 <strong>Tip:</strong> Consider saving your work before clearing.
+              <strong>Tip:</strong> Consider saving your work before clearing.
             </p>
           </div>
         </div>
@@ -1175,7 +1177,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
             }
           : s
       ));
-      setSuccessMessage(`✅ Scenario "${name}" updated!`);
+      setSuccessMessage(`Scenario "${name}" updated`);
       setShowSuccessToast(true);
     } else {
       // Create new scenario
@@ -1194,7 +1196,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       setCurrentScenarioName(name);
       localStorage.setItem('finsight_last_scenario', newScenario.id);
       
-      setSuccessMessage(`✅ Scenario "${name}" saved!`);
+      setSuccessMessage(`Scenario "${name}" saved`);
       setShowSuccessToast(true);
     }
     
@@ -1205,7 +1207,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   const loadScenario = (scenarioId) => {
     const scenario = scenarios.find(s => s.id === scenarioId);
     if (!scenario) {
-      setSuccessMessage('❌ Scenario not found');
+      setSuccessMessage('Scenario not found');
       setShowSuccessToast(true);
       return;
     }
@@ -1225,7 +1227,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
         : s
     ));
     
-    setSuccessMessage(`✅ Loaded "${scenario.name}"`);
+    setSuccessMessage(`Loaded "${scenario.name}"`);
     setShowSuccessToast(true);
     setShowLoadDialog(false);
   };
@@ -1245,7 +1247,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       localStorage.removeItem('finsight_last_scenario');
     }
     
-    setSuccessMessage('✅ Scenario deleted');
+    setSuccessMessage('Scenario deleted successfully');
     setShowSuccessToast(true);
   };
 
@@ -1264,7 +1266,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     };
     
     setScenarios(prev => [...prev, duplicate]);
-    setSuccessMessage(`✅ Created copy of "${original.name}"`);
+    setSuccessMessage(`Created copy of "${original.name}"`);
     setShowSuccessToast(true);
   };
 
@@ -1276,7 +1278,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     setCurrentScenarioName('');
     localStorage.removeItem('finsight_last_scenario');
     setShowClearConfirm(false);
-    setSuccessMessage('✅ All fields cleared!');
+    setSuccessMessage('All fields cleared');
     setShowSuccessToast(true);
   };
 
@@ -1357,117 +1359,109 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
         onClose={() => setShowSuccessToast(false)}
       />
 
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-40 flex justify-between items-center bg-white p-4 rounded-lg shadow-md border border-slate-200 backdrop-blur-sm bg-white/95">
-        <div className="flex items-center gap-4">
+      {/* Sticky Header - Clean Design */}
+      <div className="sticky top-0 z-40 flex justify-between items-center bg-white px-4 py-3 border-b border-slate-200">
+        <div className="flex items-center gap-3">
           <img 
             src={`${process.env.PUBLIC_URL}/favicon.ico`} 
             alt="FinSight Logo" 
-            className="h-12 w-12 transition-transform duration-300 hover:rotate-12"
+            className="h-8 w-8"
           />
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">FinSight</h1>
-            <p className="text-sm text-slate-600">Capital Structure & Stress Testing Platform</p>
+            <h1 className="text-lg font-semibold text-slate-800">FinSight</h1>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          {/* Current Scenario Badge */}
+          {/* Current Scenario Badge - inline with title */}
           {currentScenarioName && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
-              <FileText className="w-4 h-4 text-blue-600" />
-              <span className="text-sm text-blue-900 font-medium">{currentScenarioName}</span>
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded text-xs">
+              <FileText className="w-3 h-3 text-slate-500" />
+              <span className="text-slate-700 font-medium max-w-[150px] truncate">{currentScenarioName}</span>
               <button
                 onClick={startNewScenario}
-                className="ml-1 text-blue-600 hover:text-blue-800"
+                className="text-slate-400 hover:text-slate-600"
                 title="New scenario"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3 h-3" />
               </button>
             </div>
           )}
-          
-          {/* Scenario count */}
-          <span className="text-xs text-slate-500 hidden sm:block">
-            {scenarios.length} saved scenario{scenarios.length !== 1 ? 's' : ''}
-          </span>
-          
-         {/* Save Button */}
-<button
-  onClick={() => setShowSaveDialog(true)}
-  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs rounded-md shadow-md font-semibold transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
->
-  <Save className="w-4 h-4" />
-  <span className="hidden sm:inline">{currentScenarioName ? 'Update' : 'Save'}</span>
-</button>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Compact action buttons */}
+          <button
+            onClick={() => setShowSaveDialog(true)}
+            className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded font-medium transition-colors flex items-center gap-1.5"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{currentScenarioName ? 'Update' : 'Save'}</span>
+          </button>
 
-{/* Load Button */}
-<button
-  onClick={() => setShowLoadDialog(true)}
-  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs rounded-md shadow-md font-semibold transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
->
-  <FolderOpen className="w-4 h-4" />
-  <span className="hidden sm:inline">Load</span>
-</button>
+          <button
+            onClick={() => setShowLoadDialog(true)}
+            className="h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded font-medium transition-colors flex items-center gap-1.5"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Load</span>
+          </button>
 
-{/* Clear All Button */}
-<button
-  onClick={() => setShowClearConfirm(true)}
-  className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs rounded-md shadow-md font-semibold transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
->
-  <Trash2 className="w-4 h-4" />
-  <span className="hidden sm:inline">Clear</span>
-</button>
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            className="h-8 px-3 border border-slate-300 hover:bg-slate-50 text-slate-600 text-xs rounded font-medium transition-colors flex items-center gap-1.5"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Clear</span>
+          </button>
 
-{/* Show/Hide Inputs */}
-<button
-  onClick={() => setShowInputs(!showInputs)}
-  className={`px-4 py-2 bg-gradient-to-r from-${COLORS.primary.from} to-${COLORS.primary.to} hover:from-${COLORS.primary.hover} hover:to-${COLORS.primary.hover} text-white text-xs rounded-md shadow-md font-semibold transition-all duration-200 transform hover:scale-105`}
->
-  {showInputs ? "Hide" : "Show"} Inputs
-</button>
+          <div className="w-px h-6 bg-slate-200 mx-1" />
+
+          <button
+            onClick={() => setShowInputs(!showInputs)}
+            className={`h-8 px-3 text-xs rounded font-medium transition-colors flex items-center gap-1.5 ${
+              showInputs 
+                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+            }`}
+          >
+            {showInputs ? "Hide Inputs" : "Show Inputs"}
+          </button>
         </div>
       </div>
 
-      {/* Enhanced KPI Cards with hover effects */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`bg-gradient-to-br from-${COLORS.primary.from} to-${COLORS.primary.to} rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl cursor-pointer`}>
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Enterprise Value</div>
-          <div className="text-3xl font-bold mb-1">{currencyFmtMM(projections.base.enterpriseValue, ccy)}</div>
-          <div className="text-xs opacity-80">Total Business Value</div>
+      {/* Clean KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Enterprise Value</div>
+          <div className="text-2xl font-semibold text-slate-900">{currencyFmtMM(projections.base.enterpriseValue, ccy)}</div>
         </div>
         
-        <div className={`bg-gradient-to-br from-${COLORS.success.from} to-${COLORS.success.to} rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl cursor-pointer`}>
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Equity Value</div>
-          <div className="text-3xl font-bold mb-1">{currencyFmtMM(projections.base.equityValue, ccy)}</div>
-          <div className="text-xs opacity-80">Shareholder Return</div>
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Equity Value</div>
+          <div className="text-2xl font-semibold text-slate-900">{currencyFmtMM(projections.base.equityValue, ccy)}</div>
         </div>
         
-        <div className={`rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl cursor-pointer ${
-          projections.base.moic > 3 ? `bg-gradient-to-br from-${COLORS.purple.from} to-${COLORS.purple.to}` : 
-          projections.base.moic > 2 ? `bg-gradient-to-br from-${COLORS.info.from} to-${COLORS.info.to}` : 
-          'bg-gradient-to-br from-slate-500 to-slate-600'
-        }`}>
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Equity MOIC</div>
-          <div className="text-3xl font-bold mb-1">
-            {Number.isFinite(projections.base.moic) && projections.base.moic < 999
-              ? `${numFmt(projections.base.moic)}x`
-              : '–'}
-          </div>
-          <div className="text-xs opacity-80 flex items-center gap-1">
-            {projections.base.moic > 2 ? '↑ Strong Return' : '↓ Below Target'}
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Equity MOIC</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-semibold text-slate-900">
+              {Number.isFinite(projections.base.moic) && projections.base.moic < 999
+                ? `${numFmt(projections.base.moic)}x`
+                : '–'}
+            </span>
+            {projections.base.moic > 2 && (
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
+            )}
           </div>
         </div>
         
-        <div className={`rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl cursor-pointer ${
-          projections.base.irr > 0.20 ? `bg-gradient-to-br from-${COLORS.warning.from} to-${COLORS.warning.to}` : 
-          projections.base.irr > 0.15 ? 'bg-gradient-to-br from-orange-500 to-orange-600' : 
-          `bg-gradient-to-br from-${COLORS.danger.from} to-${COLORS.danger.to}`
-        }`}>
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Equity IRR</div>
-          <div className="text-3xl font-bold mb-1">{pctFmt(projections.base.irr)}</div>
-          <div className="text-xs opacity-80 flex items-center gap-1">
-            {projections.base.irr > 0.15 ? '↑ Above Hurdle' : '↓ Below Hurdle'}
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Equity IRR</div>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-2xl font-semibold ${projections.base.irr > 0.15 ? 'text-emerald-600' : 'text-slate-900'}`}>
+              {pctFmt(projections.base.irr)}
+            </span>
+            {projections.base.irr > 0.15 && (
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
+            )}
           </div>
         </div>
       </div>
@@ -1478,14 +1472,14 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
           {/* ============================================ */}
           {/* QUICK START - Always Open */}
           {/* ============================================ */}
-          <Card className="border-l-4 border-l-blue-600 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="w-6 h-6 text-blue-600" />
-                ⚡ Quick Start - Core Assumptions
+          <Card className="border-l-2 border-l-blue-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Zap className="w-4 h-4 text-blue-600" />
+                Core Assumptions
               </CardTitle>
-              <p className="text-sm text-slate-600 mt-2">
-                5 essential inputs to generate your first projection (2 minutes)
+              <p className="text-xs text-slate-500 mt-1">
+                Essential inputs for financial projections
               </p>
             </CardHeader>
             <CardContent className="p-6">
@@ -1586,7 +1580,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                   <div className="flex items-start gap-3">
                     <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <h4 className="text-sm font-bold text-blue-900 mb-2">📊 Quick Calculation</h4>
+                      <h4 className="text-sm font-bold text-blue-900 mb-2">Quick Calculation</h4>
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
                           <p className="text-blue-700">Revenue</p>
@@ -1621,21 +1615,21 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
           {/* ============================================ */}
           {/* NEW FACILITY DESIGN - Always Open */}
           {/* ============================================ */}
-          <Card className="border-l-4 border-l-emerald-600 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 border-b">
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="w-6 h-6 text-emerald-600" />
-                💰 New Facility Design
+          <Card className="border-l-2 border-l-emerald-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wallet className="w-4 h-4 text-emerald-600" />
+                New Facility Design
               </CardTitle>
-              <p className="text-sm text-slate-600 mt-2">
-                Configure the debt facility you're structuring for this client
+              <p className="text-xs text-slate-500 mt-1">
+                Configure the debt facility terms
               </p>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               
               {/* Core Terms */}
               <div>
-                <h3 className="text-base font-bold text-slate-800 mb-4 pb-2 border-b-2 border-emerald-200">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3">
                   Core Terms
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1660,10 +1654,11 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                 </div>
               </div>
               
-              {/* ⭐ AMORTIZATION STRUCTURE - THE KEY NEW SECTION ⭐ */}
+              {/* AMORTIZATION STRUCTURE */}
               <div>
-                <h3 className="text-base font-bold text-slate-800 mb-4 pb-2 border-b-2 border-emerald-200">
-                  📅 Repayment Structure
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-slate-500" />
+                  Repayment Structure
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1695,13 +1690,13 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                     </select>
                     <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded border border-slate-200">
                       {draftParams.facilityAmortizationType === 'amortizing' && 
-                        "✅ Principal and interest paid every period. Loan fully repaid at maturity."}
+                        "Principal and interest paid every period. Loan fully repaid at maturity."}
                       {draftParams.facilityAmortizationType === 'interest-only' && 
-                        "⚠️ Only interest paid each period. All principal due at maturity."}
+                        "Only interest paid each period. All principal due at maturity."}
                       {draftParams.facilityAmortizationType === 'bullet' && 
-                        "🔴 No payments until maturity. All principal + accrued interest due at end."}
+                        "No payments until maturity. All principal + accrued interest due at end."}
                       {draftParams.facilityAmortizationType === 'balloon' && 
-                        "💡 Partial principal + interest paid each period. Large balloon payment at maturity."}
+                        "Partial principal + interest paid each period. Large balloon payment at maturity."}
                     </div>
                   </div>
                   
@@ -1787,7 +1782,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                   <div className="flex items-start gap-3">
                     <Calendar className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <h4 className="text-sm font-bold text-emerald-900 mb-2">💵 Estimated Annual Debt Service</h4>
+                      <h4 className="text-sm font-bold text-emerald-900 mb-2">Estimated Annual Debt Service</h4>
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
                           <p className="text-emerald-700">Interest Payment</p>
@@ -1838,20 +1833,20 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
           {/* ============================================ */}
           {/* EXISTING DEBT - Conditional */}
           {/* ============================================ */}
-          <Card className="border-l-4 border-l-purple-600 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
+          <Card className="border-l-2 border-l-slate-400">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building className="w-6 h-6 text-purple-600" />
-                    🏦 Existing Debt on Balance Sheet
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Building className="w-4 h-4 text-slate-600" />
+                    Existing Debt
                   </CardTitle>
-                  <p className="text-sm text-slate-600 mt-2">
-                    Does the company have existing debt obligations?
+                  <p className="text-xs text-slate-500 mt-1">
+                    Toggle if company has existing debt obligations
                   </p>
                 </div>
                 
-                {/* Toggle Switch */}
+                {/* Toggle Switch - Simplified */}
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input 
                     type="checkbox" 
@@ -1864,24 +1859,21 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                     }}
                     className="sr-only peer"
                   />
-                  <div className="w-14 h-7 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-purple-600 shadow-sm"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
             </CardHeader>
             
             {draftParams.hasExistingDebt && (
               <CardContent className="p-6 space-y-6">
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg mb-4">
-                  <p className="text-sm text-purple-800">
-                    <strong>ℹ️ Note:</strong> The projection will model BOTH existing debt service AND the new facility. 
-                    Use multi-tranche mode below for complex capital structures with different loan terms.
-                  </p>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600">
+                  <strong>Note:</strong> The projection will model BOTH existing debt service AND the new facility.
                 </div>
                 
                 {/* Simple Existing Debt Inputs (when multi-tranche is OFF) */}
                 {!draftParams.hasMultipleTranches && (
                   <div>
-                    <h3 className="text-base font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-200">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3">
                       Single Existing Debt Facility
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1940,7 +1932,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                 <div className="mt-6 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-sm font-bold text-indigo-900">🔀 Multiple Debt Tranches</h4>
+                      <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2"><Layers className="w-4 h-4" /> Multiple Debt Tranches</h4>
                       <p className="text-xs text-indigo-700 mt-1">
                         Enable if company has multiple loans with different terms (e.g., senior + subordinated)
                       </p>

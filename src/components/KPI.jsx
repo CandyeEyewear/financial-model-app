@@ -33,6 +33,7 @@ export function KPI({
   value,
   change,
   tooltip,
+  subtitle,
   
   // State
   trend, // 'up' | 'down' | 'flat' | undefined
@@ -202,6 +203,11 @@ export function KPI({
           </span>
         )}
       </div>
+
+      {/* Optional subtitle */}
+      {subtitle && (
+        <span className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{subtitle}</span>
+      )}
     </div>
   );
 }

@@ -350,7 +350,7 @@ function AIInsightPanel({ projection, params, ccy }) {
                         {insight.insight}
                       </p>
                       <div className={`text-xs text-${config.color}-800 bg-${config.color}-100 p-2 rounded border border-${config.color}-200`}>
-                        <strong className="font-semibold">💡 Recommendation:</strong> {insight.recommendation}
+                        <strong className="font-semibold">Recommendation:</strong> {insight.recommendation}
                       </div>
                     </div>
                   </div>

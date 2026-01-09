@@ -39,11 +39,11 @@ const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'xls', 'txt'];
 // User-friendly error messages
 const ERROR_MESSAGES = {
   'pdf.js': 'PDF processing is temporarily unavailable. Please try uploading an Excel or Word document instead.',
-  'api error': 'Our AI service is temporarily unavailable. Please try again in a few minutes.',
-  'parse': 'Could not understand the document format. Please ensure it contains clear financial tables with labeled columns.',
+  'api error': 'AI service unavailable, and smart parser couldn\'t extract data. Try an Excel file with clear headers.',
+  'parse': 'Could not find financial data. Please ensure the document has labeled rows (Revenue, COGS, etc.) and year columns.',
   'timeout': 'Processing took too long. Try uploading a smaller document or specific pages only.',
-  'token': 'Your session has expired. Please refresh the page and try again.',
-  'limit': 'You\'ve reached your monthly AI usage limit. Please upgrade your plan to continue.',
+  'token': 'Please sign in to use AI extraction, or try an Excel file which can be parsed without AI.',
+  'limit': 'You\'ve reached your monthly AI usage limit. Try uploading an Excel file (no AI needed).',
   'network': 'Network error. Please check your internet connection and try again.',
   'empty': 'The document appears to be empty or unreadable. Please try a different file.',
 };
@@ -269,6 +269,137 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
     return result.value;
   };
 
+  // Smart text parser - extracts financial data without AI
+  const parseFinancialText = (text) => {
+    // Normalize text - replace multiple spaces/tabs with single space
+    const normalizedText = text.replace(/[\t\r]+/g, ' ').replace(/  +/g, ' ');
+    
+    // Find all 4-digit years in the text (between 2000-2030)
+    const yearMatches = normalizedText.match(/\b(20[0-3]\d)\b/g);
+    const uniqueYears = [...new Set(yearMatches || [])].map(Number).sort((a, b) => b - a).slice(0, 5);
+    
+    if (uniqueYears.length === 0) {
+      throw new Error('parse: No years found in document');
+    }
+
+    // Financial line item patterns - maps keywords to our data fields
+    const lineItemPatterns = {
+      revenue: /(?:revenue|sales|turnover|total\s*(?:revenue|sales|income))[:\s]*/i,
+      cogs: /(?:cost\s*of\s*(?:goods\s*)?sold|cogs|direct\s*cost|cost\s*of\s*sales)[:\s]*/i,
+      grossProfit: /(?:gross\s*profit|gross\s*margin)[:\s]*/i,
+      opex: /(?:operating\s*expense|opex|administrative|admin\s*expense|sg&?a|selling.*admin)[:\s]*/i,
+      depreciation: /(?:depreciation|amortization|d&?a)[:\s]*/i,
+      interestExpense: /(?:interest\s*expense|finance\s*cost|interest\s*paid)[:\s]*/i,
+      taxExpense: /(?:tax(?:ation)?(?:\s*expense)?|income\s*tax)[:\s]*/i,
+      netIncome: /(?:net\s*(?:profit|income|loss)|profit\s*after\s*tax|pat)[:\s]*/i,
+      operatingProfit: /(?:operating\s*(?:profit|income)|ebit(?!da)|profit\s*from\s*operations)[:\s]*/i,
+      ebitda: /(?:ebitda)[:\s]*/i,
+      profitBeforeTax: /(?:profit\s*before\s*tax|pbt|ebt)[:\s]*/i,
+      cash: /(?:cash(?:\s*(?:and|&)\s*cash\s*equivalents)?|cash\s*at\s*bank)[:\s]*/i,
+      receivables: /(?:accounts?\s*receivable|trade\s*receivable|debtors)[:\s]*/i,
+      inventory: /(?:inventor(?:y|ies)|stock)[:\s]*/i,
+      ppe: /(?:property.*plant.*equipment|pp&?e|fixed\s*assets)[:\s]*/i,
+      accountsPayable: /(?:accounts?\s*payable|trade\s*payable|creditors)[:\s]*/i,
+      shortTermDebt: /(?:short[\s-]*term\s*(?:debt|borrowing)|current\s*(?:portion\s*of\s*)?(?:debt|loan))[:\s]*/i,
+      longTermDebt: /(?:long[\s-]*term\s*(?:debt|borrowing|loan)|non[\s-]*current\s*(?:debt|borrowing))[:\s]*/i,
+      opCashFlow: /(?:operat(?:ing|ions?)\s*cash\s*flow|cash\s*(?:from|generated\s*(?:by|from))\s*operat)[:\s]*/i,
+      capex: /(?:cap(?:ital)?\s*ex(?:penditure)?|purchase\s*of\s*(?:fixed\s*)?assets)[:\s]*/i,
+    };
+
+    // Helper to extract numbers near a pattern
+    const extractNumbersNearPattern = (pattern, searchText) => {
+      const numbers = [];
+      const lines = searchText.split('\n');
+      
+      for (const line of lines) {
+        if (pattern.test(line)) {
+          // Find all numbers in this line (handle formats like 924,102,154 or 924102154 or (100,000))
+          const numMatches = line.match(/\(?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?/g) || [];
+          for (const match of numMatches) {
+            // Check if it's a year - skip it
+            const cleanNum = match.replace(/[(),]/g, '');
+            if (/^20[0-3]\d$/.test(cleanNum)) continue;
+            
+            // Convert to number (handle parentheses as negative)
+            let num = parseFloat(cleanNum.replace(/,/g, ''));
+            if (match.startsWith('(') && match.endsWith(')')) {
+              num = -num;
+            }
+            if (!isNaN(num) && num !== 0) {
+              numbers.push(num);
+            }
+          }
+          break; // Only use first matching line
+        }
+      }
+      return numbers;
+    };
+
+    // Try to detect if numbers are in thousands/millions
+    const detectScale = (text) => {
+      if (/in\s*millions|in\s*\$?m\b|\(.*millions.*\)/i.test(text)) return 1000000;
+      if (/in\s*thousands|in\s*\$?k\b|\(.*thousands.*\)/i.test(text)) return 1000;
+      return 1;
+    };
+    const scale = detectScale(normalizedText);
+
+    // Build year data
+    const yearsData = uniqueYears.map((year, yearIndex) => {
+      const yearData = {
+        year,
+        revenue: 0,
+        cogs: 0,
+        opex: 0,
+        depreciation: 0,
+        interestExpense: 0,
+        taxExpense: 0,
+        cash: 0,
+        receivables: 0,
+        inventory: 0,
+        otherCurrentAssets: 0,
+        ppe: 0,
+        accountsPayable: 0,
+        accruedExp: 0,
+        shortTermDebt: 0,
+        longTermDebt: 0,
+        opCashFlow: 0,
+        capex: 0,
+      };
+
+      // Extract each line item
+      for (const [field, pattern] of Object.entries(lineItemPatterns)) {
+        const numbers = extractNumbersNearPattern(pattern, normalizedText);
+        if (numbers.length > yearIndex) {
+          // Assign the number for this year's column (assumes columns are in order)
+          const value = numbers[yearIndex] * scale;
+          if (field in yearData) {
+            yearData[field] = Math.abs(value); // Use absolute value, handle signs later
+          }
+        }
+      }
+
+      // If we found grossProfit but not COGS, calculate COGS
+      if (yearData.revenue > 0 && yearData.cogs === 0) {
+        const grossProfitNumbers = extractNumbersNearPattern(lineItemPatterns.grossProfit, normalizedText);
+        if (grossProfitNumbers.length > yearIndex) {
+          const grossProfit = grossProfitNumbers[yearIndex] * scale;
+          yearData.cogs = yearData.revenue - grossProfit;
+        }
+      }
+
+      return yearData;
+    });
+
+    // Filter out years with no meaningful data
+    const validYears = yearsData.filter(y => y.revenue > 0 || y.cogs > 0 || y.opex > 0);
+    
+    if (validYears.length === 0) {
+      throw new Error('parse: Could not extract financial data from document');
+    }
+
+    return validYears;
+  };
+
   // Data quality checks
   const detectDataQualityIssues = (years) => {
     const warnings = [];
@@ -417,13 +548,38 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
 
       setExtractedText(text);
 
-      // Step 4: AI Analysis
+      // Step 4: Try smart parsing first (no AI needed)
       updateStep('analyze');
-      const extractedYears = await processWithAI(text);
+      let extractedYears = null;
+      let usedAI = false;
+      let parseWarnings = [];
+
+      try {
+        // Try smart text parser first
+        extractedYears = parseFinancialText(text);
+        parseWarnings.push('Extracted using smart parser (no AI required)');
+      } catch (parseError) {
+        console.log('Smart parser failed, trying AI:', parseError.message);
+        
+        // Fall back to AI if smart parser fails
+        if (accessToken) {
+          try {
+            extractedYears = await processWithAI(text);
+            usedAI = true;
+          } catch (aiError) {
+            // If AI also fails, throw the original parse error with more context
+            console.error('AI fallback also failed:', aiError);
+            throw new Error('parse: Could not extract data. Try uploading an Excel file with clear column headers.');
+          }
+        } else {
+          // No AI available, throw helpful error
+          throw new Error('parse: Smart parser could not extract data. Try uploading an Excel file with labeled columns, or sign in to use AI extraction.');
+        }
+      }
 
       // Step 5: Parse and validate results
       updateStep('parse');
-      const warnings = detectDataQualityIssues(extractedYears);
+      const warnings = [...parseWarnings, ...detectDataQualityIssues(extractedYears)];
 
       // Step 6: Complete - show for review
       updateStep('complete');
@@ -433,9 +589,10 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
         needsReview: true
       });
 
+      const methodUsed = usedAI ? 'using AI' : 'using smart parser';
       setUploadStatus({ 
         type: 'success', 
-        message: `Found ${extractedYears.length} year(s) of financial data. Please review before applying.` 
+        message: `Found ${extractedYears.length} year(s) of financial data ${methodUsed}. Please review before applying.` 
       });
       announceStatus(`Successfully extracted ${extractedYears.length} years of data. Please review the results.`);
 

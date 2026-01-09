@@ -7,11 +7,6 @@
   "framework": "create-react-app",
   "installCommand": "npm install",
   "devCommand": "npm start",
-  "env": {
-    "SUPABASE_URL": "@supabase-url",
-    "SUPABASE_SERVICE_ROLE_KEY": "@supabase-service-role-key",
-    "DEEPSEEK_API_KEY": "@deepseek-api-key"
-  },
   "headers": [
     {
       "source": "/api/(.*)",

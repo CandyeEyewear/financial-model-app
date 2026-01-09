@@ -4,20 +4,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { handleCors } from '../_cors.js';
 
-// Lazy-initialize Supabase client to avoid crashes on missing env vars
-let supabase = null;
-const getSupabase = () => {
-  if (!supabase) {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
-    }
-    supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-  }
-  return supabase;
-};
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 // Plan limits
 const PLAN_LIMITS = {
@@ -45,18 +36,15 @@ export default async function handler(req, res) {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // Get Supabase client (lazy init)
-    const supabaseClient = getSupabase();
-
     // Verify the JWT token with Supabase
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
     // Get user profile from database
-    const { data: userProfile, error: profileError } = await supabaseClient
+    const { data: userProfile, error: profileError } = await supabase
       .from('users')
       .select('*')
       .eq('id', user.id)
@@ -71,7 +59,7 @@ export default async function handler(req, res) {
     const now = new Date();
     const lastReset = new Date(userProfile.last_reset_date);
     if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
-      await supabaseClient
+      await supabase
         .from('users')
         .update({
           ai_queries_this_month: 0,
@@ -162,7 +150,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     // Increment usage after successful response
-    await supabaseClient
+    await supabase
       .from('users')
       .update({
         ai_queries_this_month: userProfile.ai_queries_this_month + 1,
@@ -171,7 +159,7 @@ export default async function handler(req, res) {
       .eq('id', user.id);
 
     // Log usage
-    await supabaseClient
+    await supabase
       .from('ai_usage_logs')
       .insert({
         user_id: user.id,

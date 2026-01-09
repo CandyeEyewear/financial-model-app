@@ -282,57 +282,48 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
       throw new Error('parse: No years found in document');
     }
 
-    // Financial line item patterns - maps keywords to our data fields
-    const lineItemPatterns = {
-      revenue: /(?:revenue|sales|turnover|total\s*(?:revenue|sales|income))[:\s]*/i,
-      cogs: /(?:cost\s*of\s*(?:goods\s*)?sold|cogs|direct\s*cost|cost\s*of\s*sales)[:\s]*/i,
-      grossProfit: /(?:gross\s*profit|gross\s*margin)[:\s]*/i,
-      opex: /(?:operating\s*expense|opex|administrative|admin\s*expense|sg&?a|selling.*admin)[:\s]*/i,
-      depreciation: /(?:depreciation|amortization|d&?a)[:\s]*/i,
-      interestExpense: /(?:interest\s*expense|finance\s*cost|interest\s*paid)[:\s]*/i,
-      taxExpense: /(?:tax(?:ation)?(?:\s*expense)?|income\s*tax)[:\s]*/i,
-      netIncome: /(?:net\s*(?:profit|income|loss)|profit\s*after\s*tax|pat)[:\s]*/i,
-      operatingProfit: /(?:operating\s*(?:profit|income)|ebit(?!da)|profit\s*from\s*operations)[:\s]*/i,
-      ebitda: /(?:ebitda)[:\s]*/i,
-      profitBeforeTax: /(?:profit\s*before\s*tax|pbt|ebt)[:\s]*/i,
-      cash: /(?:cash(?:\s*(?:and|&)\s*cash\s*equivalents)?|cash\s*at\s*bank)[:\s]*/i,
-      receivables: /(?:accounts?\s*receivable|trade\s*receivable|debtors)[:\s]*/i,
-      inventory: /(?:inventor(?:y|ies)|stock)[:\s]*/i,
-      ppe: /(?:property.*plant.*equipment|pp&?e|fixed\s*assets)[:\s]*/i,
-      accountsPayable: /(?:accounts?\s*payable|trade\s*payable|creditors)[:\s]*/i,
-      shortTermDebt: /(?:short[\s-]*term\s*(?:debt|borrowing)|current\s*(?:portion\s*of\s*)?(?:debt|loan))[:\s]*/i,
-      longTermDebt: /(?:long[\s-]*term\s*(?:debt|borrowing|loan)|non[\s-]*current\s*(?:debt|borrowing))[:\s]*/i,
-      opCashFlow: /(?:operat(?:ing|ions?)\s*cash\s*flow|cash\s*(?:from|generated\s*(?:by|from))\s*operat)[:\s]*/i,
-      capex: /(?:cap(?:ital)?\s*ex(?:penditure)?|purchase\s*of\s*(?:fixed\s*)?assets)[:\s]*/i,
+    // Extract ALL large numbers from the text (likely financial figures)
+    const allNumbers = [];
+    const numberRegex = /\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\b/g;
+    let match;
+    while ((match = numberRegex.exec(normalizedText)) !== null) {
+      const num = parseFloat(match[1].replace(/,/g, ''));
+      // Only include numbers > 1000 (filter out years and small numbers)
+      if (num > 10000) {
+        allNumbers.push({ value: num, index: match.index });
+      }
+    }
+
+    // Financial keywords and their patterns
+    const keywords = {
+      revenue: /\b(revenue|sales|turnover|total\s*income)\b/i,
+      cogs: /\b(cost\s*of\s*(goods\s*)?sold|cogs|direct\s*cost|cost\s*of\s*sales)\b/i,
+      grossProfit: /\b(gross\s*profit|gross\s*margin)\b/i,
+      opex: /\b(operating\s*expense|opex|administrative|admin|sg&?a)\b/i,
+      interestExpense: /\b(interest\s*expense|finance\s*cost)\b/i,
+      taxExpense: /\b(tax(ation)?)\b/i,
+      netIncome: /\b(net\s*(profit|income|loss)|profit\s*after\s*tax)\b/i,
+      profitBeforeTax: /\b(profit\s*before\s*tax(ation)?|pbt)\b/i,
     };
 
-    // Helper to extract numbers near a pattern
-    const extractNumbersNearPattern = (pattern, searchText) => {
-      const numbers = [];
-      const lines = searchText.split('\n');
+    // Find positions of keywords in text
+    const findKeywordPosition = (pattern) => {
+      const match = pattern.exec(normalizedText);
+      return match ? match.index : -1;
+    };
+
+    // For each keyword, find the numbers that appear after it
+    const extractValuesForKeyword = (pattern) => {
+      const keywordPos = findKeywordPosition(pattern);
+      if (keywordPos === -1) return [];
       
-      for (const line of lines) {
-        if (pattern.test(line)) {
-          // Find all numbers in this line (handle formats like 924,102,154 or 924102154 or (100,000))
-          const numMatches = line.match(/\(?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?/g) || [];
-          for (const match of numMatches) {
-            // Check if it's a year - skip it
-            const cleanNum = match.replace(/[(),]/g, '');
-            if (/^20[0-3]\d$/.test(cleanNum)) continue;
-            
-            // Convert to number (handle parentheses as negative)
-            let num = parseFloat(cleanNum.replace(/,/g, ''));
-            if (match.startsWith('(') && match.endsWith(')')) {
-              num = -num;
-            }
-            if (!isNaN(num) && num !== 0) {
-              numbers.push(num);
-            }
-          }
-          break; // Only use first matching line
-        }
-      }
-      return numbers;
+      // Find numbers that appear within 200 characters after the keyword
+      const nearbyNumbers = allNumbers
+        .filter(n => n.index > keywordPos && n.index < keywordPos + 200)
+        .map(n => n.value)
+        .slice(0, uniqueYears.length); // Only take as many as we have years
+      
+      return nearbyNumbers;
     };
 
     // Try to detect if numbers are in thousands/millions
@@ -343,7 +334,7 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
     };
     const scale = detectScale(normalizedText);
 
-    // Build year data
+    // Build year data - try to match numbers with years
     const yearsData = uniqueYears.map((year, yearIndex) => {
       const yearData = {
         year,
@@ -365,26 +356,34 @@ export function FinancialStatementUpload({ onDataExtracted, accessToken, onChang
         opCashFlow: 0,
         capex: 0,
       };
+      
+      // Temporary storage for derived calculations
+      let grossProfit = 0;
 
-      // Extract each line item
-      for (const [field, pattern] of Object.entries(lineItemPatterns)) {
-        const numbers = extractNumbersNearPattern(pattern, normalizedText);
-        if (numbers.length > yearIndex) {
-          // Assign the number for this year's column (assumes columns are in order)
-          const value = numbers[yearIndex] * scale;
-          if (field in yearData) {
-            yearData[field] = Math.abs(value); // Use absolute value, handle signs later
+      // Extract values for each financial line item
+      for (const [field, pattern] of Object.entries(keywords)) {
+        const values = extractValuesForKeyword(pattern);
+        if (values.length > yearIndex) {
+          if (field === 'grossProfit') {
+            grossProfit = values[yearIndex] * scale;
+          } else if (field in yearData) {
+            yearData[field] = values[yearIndex] * scale;
           }
         }
       }
 
-      // If we found grossProfit but not COGS, calculate COGS
-      if (yearData.revenue > 0 && yearData.cogs === 0) {
-        const grossProfitNumbers = extractNumbersNearPattern(lineItemPatterns.grossProfit, normalizedText);
-        if (grossProfitNumbers.length > yearIndex) {
-          const grossProfit = grossProfitNumbers[yearIndex] * scale;
-          yearData.cogs = yearData.revenue - grossProfit;
+      // If we found grossProfit but not revenue, try to find revenue separately
+      if (yearData.revenue === 0) {
+        // Look for the largest numbers near "Revenue" or at the start
+        const revenueValues = extractValuesForKeyword(/\brevenue\b/i);
+        if (revenueValues.length > yearIndex) {
+          yearData.revenue = revenueValues[yearIndex] * scale;
         }
+      }
+
+      // Calculate COGS from gross profit if we have revenue but not COGS
+      if (yearData.revenue > 0 && yearData.cogs === 0 && grossProfit > 0) {
+        yearData.cogs = yearData.revenue - grossProfit;
       }
 
       return yearData;

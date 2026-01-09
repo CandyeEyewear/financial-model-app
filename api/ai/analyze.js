@@ -84,11 +84,14 @@ export default async function handler(req, res) {
     }
 
     // Get request body
-    const { prompt, modelData, messages, systemMessage } = req.body;
+    const { prompt, modelData, messages, systemMessage, extractionMode } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
+
+    // Use lower temperature for extraction tasks (more deterministic)
+    const temperature = extractionMode ? 0.2 : 0.8;
 
     // Check for API key
     if (!process.env.DEEPSEEK_API_KEY) {
@@ -118,6 +121,9 @@ export default async function handler(req, res) {
     });
 
     // Call DeepSeek API
+    // Use higher max_tokens for extraction mode to handle multi-year data
+    const maxTokens = extractionMode ? 3000 : 1500;
+    
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -127,8 +133,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'deepseek-chat',
         messages: deepseekMessages,
-        temperature: 0.8,
-        max_tokens: 1500
+        temperature,
+        max_tokens: maxTokens
       })
     });
 

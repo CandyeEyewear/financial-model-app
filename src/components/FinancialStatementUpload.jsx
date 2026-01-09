@@ -501,7 +501,34 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
         throw new Error('parse: No financial data found');
       }
 
-      return parsedData.years;
+      // Log what AI returned for debugging
+      console.log('AI extracted data:', JSON.stringify(parsedData.years, null, 2));
+
+      // Ensure all required fields have default values
+      const normalizedYears = parsedData.years.map(year => ({
+        year: year.year || 0,
+        revenue: Number(year.revenue) || 0,
+        cogs: Number(year.cogs) || 0,
+        opex: Number(year.opex) || 0,
+        depreciation: Number(year.depreciation) || 0,
+        interestExpense: Number(year.interestExpense) || 0,
+        taxExpense: Number(year.taxExpense) || 0,
+        cash: Number(year.cash) || 0,
+        receivables: Number(year.receivables) || 0,
+        inventory: Number(year.inventory) || 0,
+        otherCurrentAssets: Number(year.otherCurrentAssets) || 0,
+        ppe: Number(year.ppe) || 0,
+        accountsPayable: Number(year.accountsPayable) || 0,
+        accruedExp: Number(year.accruedExp) || 0,
+        shortTermDebt: Number(year.shortTermDebt) || 0,
+        longTermDebt: Number(year.longTermDebt) || 0,
+        opCashFlow: Number(year.opCashFlow) || 0,
+        capex: Number(year.capex) || 0,
+      }));
+
+      console.log('Normalized data:', JSON.stringify(normalizedYears, null, 2));
+
+      return normalizedYears;
 
     } catch (error) {
       console.error('AI processing error:', error);
@@ -547,32 +574,55 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
 
       setExtractedText(text);
 
-      // Step 4: Try smart parsing first (no AI needed)
+      // Step 4: Extract financial data
       updateStep('analyze');
       let extractedYears = null;
       let usedAI = false;
       let parseWarnings = [];
 
-      try {
-        // Try smart text parser first
-        extractedYears = parseFinancialText(text);
-        parseWarnings.push('Extracted using smart parser (no AI required)');
-      } catch (parseError) {
-        console.log('Smart parser failed, trying AI:', parseError.message);
-        
-        // Fall back to AI if smart parser fails
+      // Helper to check if extraction result is useful
+      const isValidExtraction = (years) => {
+        if (!years || years.length === 0) return false;
+        // At least one year should have revenue > 0
+        return years.some(y => y.revenue > 0);
+      };
+
+      // Try smart parser first for structured data (Excel)
+      const fileType = selectedFile.name.split('.').pop().toLowerCase();
+      const isExcel = ['xlsx', 'xls'].includes(fileType);
+      
+      if (isExcel) {
+        // For Excel files, try smart parser first
+        try {
+          extractedYears = parseFinancialText(text);
+          if (isValidExtraction(extractedYears)) {
+            parseWarnings.push('Extracted using smart parser (no AI required)');
+          } else {
+            console.log('Smart parser gave incomplete results, trying AI');
+            extractedYears = null;
+          }
+        } catch (parseError) {
+          console.log('Smart parser failed:', parseError.message);
+        }
+      }
+
+      // If smart parser didn't work or gave bad results, use AI
+      if (!extractedYears) {
         if (accessToken) {
           try {
             extractedYears = await processWithAI(text);
             usedAI = true;
+            
+            // Validate AI results too
+            if (!isValidExtraction(extractedYears)) {
+              parseWarnings.push('Warning: AI could not identify revenue - please verify data');
+            }
           } catch (aiError) {
-            // If AI also fails, throw the original parse error with more context
-            console.error('AI fallback also failed:', aiError);
+            console.error('AI extraction failed:', aiError);
             throw new Error('parse: Could not extract data. Try uploading an Excel file with clear column headers.');
           }
         } else {
-          // No AI available, throw helpful error
-          throw new Error('parse: Smart parser could not extract data. Try uploading an Excel file with labeled columns, or sign in to use AI extraction.');
+          throw new Error('parse: Please sign in to use AI extraction for this document format.');
         }
       }
 
@@ -904,31 +954,35 @@ ${text.substring(0, MAX_TEXT_LENGTH)}`;
                 </tr>
               </thead>
               <tbody>
-                {extractionResult.data.map((year, idx) => (
-                  <tr 
-                    key={year.year || idx} 
-                    className="border-b border-warning-100 dark:border-warning-800/50 last:border-0"
-                  >
-                    <td className="py-2 px-2 font-medium text-neutral-900 dark:text-neutral-100">
-                      {year.year}
-                    </td>
-                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                      {year.revenue > 0 ? currencyFmt(year.revenue) : '—'}
-                    </td>
-                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                      {year.cogs > 0 ? currencyFmt(year.cogs) : '—'}
-                    </td>
-                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                      {year.opex > 0 ? currencyFmt(year.opex) : '—'}
-                    </td>
-                    <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
-                      {(year.shortTermDebt + year.longTermDebt) > 0 
-                        ? currencyFmt(year.shortTermDebt + year.longTermDebt) 
-                        : '—'
-                      }
-                    </td>
-                  </tr>
-                ))}
+                {extractionResult.data.map((year, idx) => {
+                  const revenue = Number(year.revenue) || 0;
+                  const cogs = Number(year.cogs) || 0;
+                  const opex = Number(year.opex) || 0;
+                  const totalDebt = (Number(year.shortTermDebt) || 0) + (Number(year.longTermDebt) || 0);
+                  
+                  return (
+                    <tr 
+                      key={year.year || idx} 
+                      className="border-b border-warning-100 dark:border-warning-800/50 last:border-0"
+                    >
+                      <td className="py-2 px-2 font-medium text-neutral-900 dark:text-neutral-100">
+                        {year.year}
+                      </td>
+                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                        {revenue > 0 ? currencyFmt(revenue) : '—'}
+                      </td>
+                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                        {cogs > 0 ? currencyFmt(cogs) : '—'}
+                      </td>
+                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                        {opex > 0 ? currencyFmt(opex) : '—'}
+                      </td>
+                      <td className="text-right py-2 px-2 text-neutral-700 dark:text-neutral-300">
+                        {totalDebt > 0 ? currencyFmt(totalDebt) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

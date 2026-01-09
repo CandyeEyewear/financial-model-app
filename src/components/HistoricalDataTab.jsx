@@ -84,28 +84,69 @@ export function HistoricalDataTab({
   const [showMonthlyData, setShowMonthlyData] = useState(false);
 
   const handleExtractedData = (years) => {
+    console.log('HistoricalDataTab received:', JSON.stringify(years, null, 2));
+    
     const newHistoricalData = [...historicalData];
     
     years.forEach(yearData => {
       const existingIndex = newHistoricalData.findIndex(d => d.year === yearData.year);
       
+      // Ensure all values are numbers with defaults
+      const revenue = Number(yearData.revenue) || 0;
+      const cogs = Number(yearData.cogs) || 0;
+      const opex = Number(yearData.opex) || 0;
+      const depreciation = Number(yearData.depreciation) || 0;
+      const interestExpense = Number(yearData.interestExpense) || 0;
+      const taxExpense = Number(yearData.taxExpense) || 0;
+      const cash = Number(yearData.cash) || 0;
+      const receivables = Number(yearData.receivables) || 0;
+      const inventory = Number(yearData.inventory) || 0;
+      const otherCurrentAssets = Number(yearData.otherCurrentAssets) || 0;
+      const ppe = Number(yearData.ppe) || 0;
+      const accountsPayable = Number(yearData.accountsPayable) || 0;
+      const accruedExp = Number(yearData.accruedExp) || 0;
+      const opCashFlow = Number(yearData.opCashFlow) || 0;
+      const capex = Number(yearData.capex) || 0;
+      
+      // Calculate derived values
+      const grossProfit = revenue - cogs;
+      const ebitda = grossProfit - opex;
+      const ebit = ebitda - depreciation;
+      const ebt = ebit - interestExpense;
+      const netIncome = ebt - taxExpense;
+      
+      console.log(`Year ${yearData.year}: revenue=${revenue}, cogs=${cogs}, opex=${opex}, ebitda=${ebitda}`);
+      
       const formattedYear = {
         ...yearData,
+        revenue,
+        cogs,
+        opex,
+        depreciation,
+        interestExpense,
+        taxExpense,
+        cash,
+        receivables,
+        inventory,
+        otherCurrentAssets,
+        ppe,
+        accountsPayable,
+        accruedExp,
         dateEntered: new Date(),
-        ebitda: yearData.revenue - yearData.cogs - yearData.opex,
-        ebit: (yearData.revenue - yearData.cogs - yearData.opex) - yearData.depreciation,
-        netIncome: ((yearData.revenue - yearData.cogs - yearData.opex - yearData.depreciation - yearData.interestExpense) - (yearData.taxExpense || 0)),
-        totalAssets: yearData.cash + yearData.receivables + yearData.inventory + yearData.otherCurrentAssets + yearData.ppe,
-        workingCapital: (yearData.cash + yearData.receivables + yearData.inventory + yearData.otherCurrentAssets) - (yearData.accountsPayable + yearData.accruedExp),
-        fcf: yearData.opCashFlow - yearData.capex,
+        ebitda,
+        ebit,
+        netIncome,
+        totalAssets: cash + receivables + inventory + otherCurrentAssets + ppe,
+        workingCapital: (cash + receivables + inventory + otherCurrentAssets) - (accountsPayable + accruedExp),
+        fcf: opCashFlow - capex,
         monthlyCashFlows: Array(12).fill(null).map(() => ({ 
           operatingCashFlow: null,
           revenue: null,
           workingCapitalChange: null 
         })),
-        grossMargin: yearData.revenue > 0 ? (yearData.revenue - yearData.cogs) / yearData.revenue : 0,
-        ebitdaMargin: yearData.revenue > 0 ? (yearData.revenue - yearData.cogs - yearData.opex) / yearData.revenue : 0,
-        netMargin: yearData.revenue > 0 ? ((yearData.revenue - yearData.cogs - yearData.opex - yearData.depreciation - yearData.interestExpense - (yearData.taxExpense || 0)) / yearData.revenue) : 0,
+        grossMargin: revenue > 0 ? grossProfit / revenue : 0,
+        ebitdaMargin: revenue > 0 ? ebitda / revenue : 0,
+        netMargin: revenue > 0 ? netIncome / revenue : 0,
       };
       
       if (existingIndex >= 0) {

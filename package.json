@@ -1,24 +1,28 @@
 {
-  "name": "financial-model",
-  "version": "1.0.0",
+  "name": "finsight",
+  "version": "2.0.0",
+  "private": true,
+  "description": "FinSight - Financial Model & Stress Testing Platform",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "vercel-build": "npm run build"
   },
   "dependencies": {
-    "@auth0/auth0-react": "^2.6.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "react-is": "^18.2.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.544.0",
     "mammoth": "^1.11.0",
-    "openai": "^6.0.0",
     "pdf-parse": "^2.1.7",
     "pdfjs-dist": "^5.4.149",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-is": "^19.2.3",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.9.3",
     "react-scripts": "5.0.1",
@@ -41,5 +45,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

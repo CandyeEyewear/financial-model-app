@@ -284,24 +284,27 @@ const debtSchedule = (() => {
     return buildMultiTrancheSchedule(params);
   }
   
-  // Auto-create tranches if both opening debt and new facility exist
- // Auto-create tranches if EITHER opening debt OR new facility exists
-console.log(`🔍 DEBUG: requestedLoanAmount = ${params.requestedLoanAmount}, openingDebt = ${params.openingDebt}`); 
+  // Auto-create tranches if EITHER opening debt OR new facility exists
 if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
   const tranches = [];
   
   // Add opening debt tranche if it exists
+  // ✅ FIX: Use existing debt parameters (existingDebtRate, existingDebtTenor) instead of new facility params
   if (params.openingDebt > 0) {
     tranches.push({
       name: 'Opening Debt',
       amount: params.openingDebt,
-      rate: params.interestRate,
+      // Use existingDebtRate if available, fallback to interestRate for backward compatibility
+      rate: params.existingDebtRate || params.interestRate,
       seniority: 'Senior',
-      tenorYears: params.debtTenorYears,
+      // Use existingDebtTenor if available, fallback to debtTenorYears
+      tenorYears: params.existingDebtTenor || params.debtTenorYears,
       maturityDate: params.openingDebtMaturityDate,
-      amortizationType: params.openingDebtAmortizationType || 'amortizing',
+      // Use existingDebtAmortizationType if available
+      amortizationType: params.existingDebtAmortizationType || params.openingDebtAmortizationType || 'amortizing',
       paymentFrequency: params.openingDebtPaymentFrequency || 'Quarterly',
-      interestOnlyYears: params.interestOnlyYears || 0
+      // Existing debt typically doesn't have interest-only period (already in amortization)
+      interestOnlyYears: 0
     });
   }
   
@@ -314,9 +317,11 @@ if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
       seniority: 'Senior',
       tenorYears: params.proposedTenor || params.debtTenorYears,
       maturityDate: new Date(params.startYear + (params.proposedTenor || params.debtTenorYears), 11, 31).toISOString().split('T')[0],
-      amortizationType: params.openingDebtAmortizationType || 'amortizing',
+      // ✅ FIX: Use facilityAmortizationType for new facility, not openingDebtAmortizationType
+      amortizationType: params.facilityAmortizationType || 'amortizing',
       paymentFrequency: params.paymentFrequency || 'Quarterly',
-      interestOnlyYears: params.interestOnlyYears || 0
+      // ✅ FIX: Use interestOnlyPeriod for new facility
+      interestOnlyYears: params.interestOnlyPeriod || 0
     });
   }
   

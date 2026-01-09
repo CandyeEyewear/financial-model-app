@@ -138,13 +138,20 @@ export function DebtTrancheManager({ tranches, onChange, ccy }) {
             </div>
 
             {/* Annual Debt Service Preview */}
-            <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-              <span className="text-slate-600">Annual Debt Service:</span>
-              <span className="font-bold text-purple-900">
-                {ccy} {((tranche.amount * tranche.rate) + 
-                  (tranche.amortizationType === 'amortizing' ? tranche.amount / tranche.tenorYears : 0)
-                ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
+            <div className="pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-600">Annual Debt Service (Year 1):</span>
+                <span className="font-bold text-purple-900">
+                  {ccy} {((tranche.amount * tranche.rate) + 
+                    (tranche.amortizationType === 'amortizing' ? tranche.amount / tranche.tenorYears : 0)
+                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+              {tranche.amortizationType === 'amortizing' && (
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Interest portion decreases over time as principal is repaid
+                </p>
+              )}
             </div>
           </div>
         ))}

@@ -874,9 +874,16 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       
       // Sync existing debt → opening debt (if not using multi-tranche)
       openingDebt: prev.hasMultipleTranches ? 0 : (prev.hasExistingDebt ? prev.existingDebtAmount : 0),
+      
+      // ✅ NEW: Also sync existing debt rate, tenor, and amortization type
+      // These are used by buildProjection when creating the Opening Debt tranche
+      existingDebtRate: prev.existingDebtRate,
+      existingDebtTenor: prev.existingDebtTenor,
+      existingDebtAmortizationType: prev.existingDebtAmortizationType,
     }));
   }, [params.proposedPricing, params.proposedTenor, params.interestOnlyPeriod, 
-      params.hasExistingDebt, params.existingDebtAmount, params.hasMultipleTranches]);
+      params.hasExistingDebt, params.existingDebtAmount, params.hasMultipleTranches,
+      params.existingDebtRate, params.existingDebtTenor, params.existingDebtAmortizationType]);
 
   // Load scenarios from localStorage on mount
   useEffect(() => {
@@ -953,7 +960,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       const assumptions = calculateHistoricalAssumptions(historicalData);
 
       // ✅ Get the most recent (last) year in the list
-      const mostRecent = validYears[validYears.length - 2];
+      const mostRecent = validYears[validYears.length - 1];
 
       // ✅ Compute the average revenue across all years (backup)
       const avgRevenue =
@@ -1013,17 +1020,24 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     try {
       const assumptions = calculateHistoricalAssumptions(historicalData);
       if (assumptions) {
+        // Get the most recent year from historical data for revenue
+        const validYears = [...historicalData]
+          .filter(d => d.revenue > 0)
+          .sort((a, b) => a.year - b.year);
+        const mostRecentYear = validYears[validYears.length - 1];
+        
         setDraftParams(prev => ({
           ...prev,
+          // Use most recent year's revenue, falling back to calculated assumption
           baseRevenue: prev.baseRevenue === 0
-  ? (mostRecent.revenue || assumptions.baseRevenue)
-  : prev.baseRevenue,
+            ? (mostRecentYear?.revenue || assumptions.baseRevenue)
+            : prev.baseRevenue,
 
           growth:     prev.growth     === 0.08 ? assumptions.growth     : prev.growth,
-  cogsPct:    prev.cogsPct    === 0.40 ? assumptions.cogsPct    : prev.cogsPct,
-  opexPct:    prev.opexPct    === 0.25 ? assumptions.opexPct    : prev.opexPct,
-  wcPctOfRev: prev.wcPctOfRev === 0.15 ? assumptions.wcPctOfRev : prev.wcPctOfRev,
-  capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
+          cogsPct:    prev.cogsPct    === 0.40 ? assumptions.cogsPct    : prev.cogsPct,
+          opexPct:    prev.opexPct    === 0.25 ? assumptions.opexPct    : prev.opexPct,
+          wcPctOfRev: prev.wcPctOfRev === 0.15 ? assumptions.wcPctOfRev : prev.wcPctOfRev,
+          capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
 
         }));
         setShowInputs(true);
@@ -1595,8 +1609,16 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                               ccy
                             )}
                           </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Based on {(draftParams._industryBenchmarks?.maxNDToEBITDA || 3.5).toFixed(1)}x EBITDA ({draftParams.industry || 'Manufacturing'} benchmark)
+                          </p>
                         </div>
                       </div>
+                      <p className="text-xs text-blue-600 mt-3 border-t border-blue-200 pt-2">
+                        <strong>Note:</strong> Debt capacity is a rough estimate based on industry leverage multiples. 
+                        Actual capacity depends on DSCR requirements, interest rates, and loan terms. 
+                        See Capital Structure Analysis for detailed capacity analysis.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1781,6 +1803,11 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                           <p className="text-lg font-bold text-emerald-900">
                             {currencyFmtMM(draftParams.requestedLoanAmount * draftParams.proposedPricing, ccy)}
                           </p>
+                          <p className="text-xs text-emerald-600 mt-1">
+                            {draftParams.facilityAmortizationType === 'amortizing' 
+                              ? "Year 1 (decreases as principal is paid)"
+                              : "Annual interest on principal"}
+                          </p>
                         </div>
                         <div>
                           <p className="text-emerald-700">Principal Payment (Avg)</p>
@@ -1799,6 +1826,13 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                                 )
                               : currencyFmtMM(0, ccy)}
                           </p>
+                          <p className="text-xs text-emerald-600 mt-1">
+                            {draftParams.facilityAmortizationType === 'amortizing' 
+                              ? "Straight-line amortization"
+                              : draftParams.facilityAmortizationType === 'balloon'
+                              ? "Excluding balloon payment"
+                              : "No scheduled principal"}
+                          </p>
                         </div>
                         <div>
                           <p className="text-emerald-700">Total Debt Service</p>
@@ -1812,6 +1846,9 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                                 : 0), 
                               ccy
                             )}
+                          </p>
+                          <p className="text-xs text-emerald-600 mt-1">
+                            Year 1 estimate (P+I)
                           </p>
                         </div>
                       </div>

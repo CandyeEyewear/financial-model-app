@@ -181,13 +181,14 @@ const AuthPage = ({ mode: initialMode }) => {
 
             {mode === 'signin' && (
               <div className="text-right">
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="sm"
                   onClick={() => setMode('reset')}
-                  className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
                 >
                   Forgot password?
-                </button>
+                </Button>
               </div>
             )}
 
@@ -251,37 +252,40 @@ const AuthPage = ({ mode: initialMode }) => {
             {mode === 'signin' && (
               <p className="text-neutral-500 dark:text-neutral-400 text-sm">
                 Don't have an account?{' '}
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => setMode('signup')}
-                  className="text-primary-600 dark:text-primary-400 font-semibold hover:text-primary-700 dark:hover:text-primary-300"
+                  className="p-0 h-auto"
                 >
                   Sign up
-                </button>
+                </Button>
               </p>
             )}
             {mode === 'signup' && (
               <p className="text-neutral-500 dark:text-neutral-400 text-sm">
                 Already have an account?{' '}
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => setMode('signin')}
-                  className="text-primary-600 dark:text-primary-400 font-semibold hover:text-primary-700 dark:hover:text-primary-300"
+                  className="p-0 h-auto"
                 >
                   Sign in
-                </button>
+                </Button>
               </p>
             )}
             {mode === 'reset' && (
               <p className="text-neutral-500 dark:text-neutral-400 text-sm">
                 Remember your password?{' '}
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => setMode('signin')}
-                  className="text-primary-600 dark:text-primary-400 font-semibold hover:text-primary-700 dark:hover:text-primary-300"
+                  className="p-0 h-auto"
                 >
                   Sign in
-                </button>
+                </Button>
               </p>
             )}
           </div>

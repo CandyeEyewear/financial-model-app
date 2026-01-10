@@ -1,11 +1,11 @@
 // src/components/LoanMetricsTable.jsx
 import React, { useState, useMemo, useEffect } from 'react';
 
-import { 
-  TrendingDown, 
-  TrendingUp, 
-  AlertTriangle, 
-  CheckCircle2, 
+import {
+  TrendingDown,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle2,
   Info,
   DollarSign,
   Percent,
@@ -17,6 +17,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
+import { Button } from './Button';
 import { currencyFmtMM, pctFmt, numFmt } from '../utils/formatters';
 import { MessageCircle as MessageCircleIcon } from "lucide-react";
 import { AITextRenderer } from './AITextRenderer';
@@ -514,23 +515,21 @@ export default function LoanMetricsTable({ projection, params, ccy }) {
       <div className="flex justify-end">
         
 
-<button
+<Button
   onClick={() => {
     console.log("✅ Triggering AI analysis event...");
-    
-    // Create a focused summary from the table data
     const tableSummary = generateTableSummary(projection, params, ccy);
-    
-    // Trigger the AI analysis with the table data
     window.dispatchEvent(new CustomEvent("trigger-ai-analysis", {
       detail: { summary: tableSummary, projection, params, ccy }
     }));
   }}
-  className="flex items-center gap-2 px-4 py-2 mt-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold rounded-md shadow hover:from-blue-600 hover:to-indigo-700 transition-all"
+  variant="primary"
+  leftIcon={MessageCircleIcon}
+  size="sm"
+  className="mt-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
 >
-  <MessageCircleIcon className="w-4 h-4 text-white" />
-  <span>FinAssist AI: Interpret Loan Metrics</span>
-</button>
+  FinAssist AI: Interpret Loan Metrics
+</Button>
       </div>
 
       {/* Summary Cards */}
@@ -609,38 +608,29 @@ export default function LoanMetricsTable({ projection, params, ccy }) {
         <CardHeader className="bg-slate-50 border-b">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg font-bold text-slate-900">Debt Service Schedule</CardTitle>
-            <div className="flex gap-2">
-              <button
+            <div className="flex gap-2 flex-wrap">
+              <Button
                 onClick={() => setActiveView('summary')}
-                className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-                  activeView === 'summary'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-white text-slate-600 hover:bg-slate-100'
-                }`}
+                variant={activeView === 'summary' ? 'primary' : 'secondary'}
+                size="sm"
               >
                 Summary View
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setActiveView('detailed')}
-                className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-                  activeView === 'detailed'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-white text-slate-600 hover:bg-slate-100'
-                }`}
+                variant={activeView === 'detailed' ? 'primary' : 'secondary'}
+                size="sm"
               >
                 Detailed View
-              </button>
+              </Button>
               {projection.hasMultipleTranches && (
-                <button
+                <Button
                   onClick={() => setActiveView('tranches')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-                    activeView === 'tranches'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-slate-600 hover:bg-slate-100'
-                  }`}
+                  variant={activeView === 'tranches' ? 'primary' : 'secondary'}
+                  size="sm"
                 >
                   Tranche Detail
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -1230,19 +1220,19 @@ function TrancheView({ projection, params, ccy }) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <p className="text-xs text-purple-700 font-semibold mb-1">Total Tranches</p>
-            <p className="text-2xl font-bold text-purple-900">
+            <p className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
               {projection.multiTrancheInfo.totalTranches}
             </p>
           </div>
           <div>
             <p className="text-xs text-purple-700 font-semibold mb-1">Total Debt</p>
-            <p className="text-2xl font-bold text-purple-900">
+            <p className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
               {currencyFmtMM(projection.multiTrancheInfo.totalDebt, ccy)}
             </p>
           </div>
           <div>
             <p className="text-xs text-purple-700 font-semibold mb-1">Blended Rate</p>
-            <p className="text-2xl font-bold text-purple-900">
+            <p className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
               {pctFmt(projection.multiTrancheInfo.blendedRate)}
             </p>
           </div>

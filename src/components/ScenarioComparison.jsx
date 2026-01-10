@@ -1065,17 +1065,17 @@ export function ScenarioComparison({ projections, ccy, facilityParams }) {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center p-3 bg-white rounded-lg border border-purple-200">
                   <div className="text-xs text-purple-700 mb-1">Total Tranches</div>
-                  <div className="text-2xl font-bold text-purple-900">{selectedScenarioData.multiTrancheInfo.totalTranches}</div>
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">{selectedScenarioData.multiTrancheInfo.totalTranches}</div>
                 </div>
                 <div className="text-center p-3 bg-white rounded-lg border border-purple-200">
                   <div className="text-xs text-purple-700 mb-1">Total Debt</div>
-                  <div className="text-2xl font-bold text-purple-900">
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
                     {currencyFmtMM(selectedScenarioData.multiTrancheInfo.totalDebt, ccy)}
                   </div>
                 </div>
                 <div className="text-center p-3 bg-white rounded-lg border border-purple-200">
                   <div className="text-xs text-purple-700 mb-1">Blended Rate</div>
-                  <div className="text-2xl font-bold text-purple-900">
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
                     {pctFmt(selectedScenarioData.multiTrancheInfo.blendedRate)}
                   </div>
                 </div>
@@ -1104,19 +1104,19 @@ export function ScenarioComparison({ projections, ccy, facilityParams }) {
           <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
               <div className="text-sm text-blue-700 mb-1">Total Principal Repaid</div>
-              <div className="text-2xl font-bold text-blue-900">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-900">
                 {currencyFmtMM(selectedScenarioData.totalDebtRepaid, ccy)}
               </div>
             </div>
             <div className="p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
               <div className="text-sm text-purple-700 mb-1">Total Interest Paid</div>
-              <div className="text-2xl font-bold text-purple-900">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
                 {currencyFmtMM(selectedScenarioData.totalInterestPaid, ccy)}
               </div>
             </div>
             <div className="p-4 bg-indigo-50 rounded-lg border-2 border-indigo-200">
               <div className="text-sm text-indigo-700 mb-1">Total Debt Service</div>
-              <div className="text-2xl font-bold text-indigo-900">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-indigo-900">
                 {currencyFmtMM(selectedScenarioData.totalDebtService, ccy)}
               </div>
             </div>
@@ -1352,7 +1352,7 @@ export function ScenarioComparison({ projections, ccy, facilityParams }) {
           {/* Summary Statistics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="text-center p-5 bg-white rounded-lg border-2 border-blue-200 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-blue-600 mb-1">
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-blue-600 mb-1">
                 {enhancedData.filter(d => d.hasDebt && d.resilienceScore >= 60).length}/{enhancedData.filter(d => d.hasDebt).length}
               </div>
               <div className="text-sm text-slate-600 font-medium">Resilient Scenarios</div>
@@ -1360,7 +1360,7 @@ export function ScenarioComparison({ projections, ccy, facilityParams }) {
             </div>
             
             <div className="text-center p-5 bg-white rounded-lg border-2 border-emerald-200 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-emerald-600 mb-1">
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-emerald-600 mb-1">
                 {pctFmt(enhancedData.filter(d => d.hasDebt).reduce((sum, d) => sum + d.irr, 0) / enhancedData.filter(d => d.hasDebt).length)}
               </div>
               <div className="text-sm text-slate-600 font-medium">Average IRR</div>
@@ -1368,7 +1368,7 @@ export function ScenarioComparison({ projections, ccy, facilityParams }) {
             </div>
             
             <div className="text-center p-5 bg-white rounded-lg border-2 border-amber-200 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-amber-600 mb-1">
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-amber-600 mb-1">
                 {enhancedData.filter(d => d.hasDebt && d.breaches > 0).length}
               </div>
               <div className="text-sm text-slate-600 font-medium">Scenarios w/ Breaches</div>
@@ -1376,7 +1376,7 @@ export function ScenarioComparison({ projections, ccy, facilityParams }) {
             </div>
             
             <div className="text-center p-5 bg-white rounded-lg border-2 border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className={`text-3xl font-bold mb-1 ${
+              <div className={`text-xl sm:text-2xl md:text-3xl font-bold mb-1 ${
                 selectedScenarioData.resilienceScore >= 70 ? 'text-emerald-600' :
                 selectedScenarioData.resilienceScore >= 50 ? 'text-amber-600' : 'text-red-600'
               }`}>

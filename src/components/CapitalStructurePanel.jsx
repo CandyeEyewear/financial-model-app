@@ -96,13 +96,13 @@ export function CapitalStructurePanel({ recommendations, ccy, isLoading }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 bg-white border-2 border-slate-200 rounded-lg">
               <p className="text-xs text-slate-600 font-semibold mb-1">Current Leverage</p>
-              <p className="text-2xl font-bold text-slate-900">{numFmt(currentState.currentLeverage)}x</p>
+              <p className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900">{numFmt(currentState.currentLeverage)}x</p>
               <p className="text-xs text-slate-500 mt-1">Net Debt / EBITDA</p>
             </div>
 
             <div className="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-lg">
               <p className="text-xs text-emerald-700 font-semibold mb-1">Target Leverage</p>
-              <p className="text-2xl font-bold text-emerald-900">{numFmt(optimalStructure.targetLeverage)}x</p>
+              <p className="text-lg sm:text-xl md:text-2xl font-bold text-emerald-900">{numFmt(optimalStructure.targetLeverage)}x</p>
               <div className="flex items-center gap-1 mt-1 text-xs text-emerald-600">
                 <TrendingUp className="w-3 h-3" />
                 <span>{numFmt(Math.abs(optimalStructure.leverageImprovement))}x improvement</span>
@@ -111,7 +111,7 @@ export function CapitalStructurePanel({ recommendations, ccy, isLoading }) {
 
             <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-lg">
               <p className="text-xs text-purple-700 font-semibold mb-1">Action Required</p>
-              <p className="text-2xl font-bold text-purple-900">
+              <p className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">
                 {optimalStructure.debtReductionNeeded > 0 
                   ? currencyFmtMM(optimalStructure.debtReductionNeeded, ccy)
                   : 'None'}

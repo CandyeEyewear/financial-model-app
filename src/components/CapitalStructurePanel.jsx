@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { currencyFmtMM, pctFmt, numFmt } from '../utils/formatters';
+import { AITextRendererCompact } from './AITextRenderer';
 
 export function CapitalStructurePanel({ recommendations, ccy, isLoading }) {
   const [expandedSection, setExpandedSection] = useState(null);
@@ -84,9 +85,10 @@ export function CapitalStructurePanel({ recommendations, ccy, isLoading }) {
                 <Sparkles className="w-4 h-4" />
                 AI Executive Summary
               </h4>
-              <p className="text-sm text-indigo-800 leading-relaxed whitespace-pre-line">
-                {aiInsights.executiveSummary}
-              </p>
+              <AITextRendererCompact 
+                content={aiInsights.executiveSummary}
+                className="text-sm text-indigo-800 leading-relaxed"
+              />
             </div>
           )}
 

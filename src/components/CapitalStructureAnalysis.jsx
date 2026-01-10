@@ -49,6 +49,7 @@ import {
   getIndustryBenchmarks
 } from "../utils/debtCapacityAnalyzer";
 import { generateAICapitalStructureRecommendations } from "../utils/aiCapitalStructureAdvisor";
+import { AITextRenderer, AITextRendererCompact } from "./AITextRenderer";
 
 // Color palette
 const COLORS = {
@@ -1272,9 +1273,10 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                         {aiRecommendations.riskAssessment} RISK
                       </div>
                     </div>
-                    <p className="text-sm text-slate-700 leading-relaxed">
-                      {aiRecommendations.summary}
-                    </p>
+                    <AITextRendererCompact 
+                      content={aiRecommendations.summary}
+                      className="text-sm text-slate-700 leading-relaxed"
+                    />
                   </div>
                 </div>
               </div>
@@ -1285,8 +1287,11 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   <BarChart3 className="w-5 h-5 text-slate-600" />
                   <h4 className="font-bold text-slate-800">Detailed AI Analysis</h4>
                 </div>
-                <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap bg-white p-4 rounded border border-slate-200 shadow-sm">
-                  {aiRecommendations.fullAnalysis}
+                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm">
+                  <AITextRenderer 
+                    content={aiRecommendations.fullAnalysis}
+                    className="text-slate-700"
+                  />
                 </div>
               </div>
 
@@ -1299,7 +1304,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                       className="p-4 bg-blue-50 rounded-lg border border-blue-200 flex items-start gap-3"
                     >
                       <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-blue-900">{finding}</p>
+                      <AITextRendererCompact content={finding} className="text-sm text-blue-900" />
                     </div>
                   ))}
                 </div>

@@ -178,12 +178,31 @@ export function generateAlternativeStructures(params, projection, debtCapacity) 
   // ============================================================================
   // Alternative 2: Optimize to Target Leverage (industry standard)
   // ============================================================================
-  // Target 3.0x Net Debt/EBITDA as industry standard
-  const targetLeverage = maxLeverage; 
-  const alt2_debt = Math.min(ebitda * targetLeverage, currentDebt); // Can't exceed current
-  const alt2_equityIncrease = currentDebt - alt2_debt;
-  const alt2_equity = currentEquity + alt2_equityIncrease;
-  const alt2_totalCapital = alt2_debt + alt2_equity;
+  // Target leverage based on industry standard or covenant
+  const targetLeverage = maxLeverage;
+  const currentLeverage = ebitda > 0 ? currentDebt / ebitda : 0;
+  const targetDebtAtLeverage = ebitda * targetLeverage;
+  
+  // Determine if we're over or under leveraged
+  const isOverLeveraged = currentLeverage > targetLeverage;
+  
+  let alt2_debt, alt2_equity, alt2_equityChange, alt2_totalCapital, alt2_isMaximizing;
+  
+  if (isOverLeveraged) {
+    // Over-leveraged: reduce debt to hit target leverage
+    alt2_debt = targetDebtAtLeverage;
+    alt2_equityChange = currentDebt - alt2_debt; // Positive = equity increase needed
+    alt2_equity = currentEquity + alt2_equityChange;
+    alt2_totalCapital = alt2_debt + alt2_equity;
+    alt2_isMaximizing = false;
+  } else {
+    // Under-leveraged: show capacity to increase debt up to target
+    alt2_debt = targetDebtAtLeverage;
+    alt2_equityChange = 0; // No equity change when maximizing
+    alt2_equity = currentEquity;
+    alt2_totalCapital = alt2_debt + alt2_equity;
+    alt2_isMaximizing = true;
+  }
   
   // ============================================================================
   // Alternative 3: Extend Tenor (reduce annual debt service burden)
@@ -239,6 +258,7 @@ export function generateAlternativeStructures(params, projection, debtCapacity) 
   
   const currentImpact = calculateImpact(currentDebt, currentEquity, baseTenor, totalCapital);
   const alt1Impact = calculateImpact(alt1_debt, alt1_equity, baseTenor, alt1_totalCapital);
+  // For alt2, use the dynamically calculated values based on leverage position
   const alt2Impact = calculateImpact(alt2_debt, alt2_equity, baseTenor, alt2_totalCapital);
   const alt3Impact = calculateImpact(alt3_debt, alt3_equity, alt3_tenor, totalCapital);
   
@@ -257,12 +277,15 @@ export function generateAlternativeStructures(params, projection, debtCapacity) 
         : 'Current structure already at safe level'
     },
     alternative2: {
-      name: 'Optimize Debt/Equity Mix',
-      description: `Target ${targetLeverage.toFixed(1)}x leverage (industry standard)`,
+      name: alt2_isMaximizing ? 'Maximize Debt Capacity' : 'Optimize Debt/Equity Mix',
+      description: alt2_isMaximizing 
+        ? `Room to increase debt to ${targetLeverage.toFixed(1)}x leverage`
+        : `Reduce debt to target ${targetLeverage.toFixed(1)}x leverage`,
       ...alt2Impact,
-      changes: alt2_debt < currentDebt
-        ? formatChange(alt2_debt - currentDebt, alt2_equityIncrease)
-        : 'Current leverage within target range'
+      changes: alt2_isMaximizing
+        ? `Could increase debt by ${((alt2_debt - currentDebt) / 1_000_000).toFixed(1)}M to reach ${targetLeverage.toFixed(1)}x`
+        : formatChange(alt2_debt - currentDebt, alt2_equityChange),
+      isMaximizing: alt2_isMaximizing
     },
     alternative3: {
       name: 'Extend Loan Tenor',

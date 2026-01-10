@@ -19,6 +19,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { currencyFmtMM, pctFmt, numFmt } from '../utils/formatters';
 import { MessageCircle as MessageCircleIcon } from "lucide-react";
+import { AITextRenderer } from './AITextRenderer';
  
 /**
  * AI-Powered Financial Analysis Component
@@ -632,9 +633,10 @@ export default function LoanMetricsTable({ projection, params, ccy }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <p className="text-sm leading-relaxed text-slate-800 whitespace-pre-wrap">
-              {aiSummary}
-            </p>
+            <AITextRenderer 
+              content={aiSummary}
+              className="text-sm leading-relaxed text-slate-800"
+            />
           </CardContent>
         </Card>
       )}

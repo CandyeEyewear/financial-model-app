@@ -610,38 +610,32 @@ export function ValuationTab({ projections, params, ccy }) {
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button
                 size="sm"
+                leftIcon={Download}
                 onClick={() => handleExport('full')}
                 disabled={!valuationResults || valuationResults.error}
-                className={`bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-4 py-2 shadow-md font-semibold ${
-                  (!valuationResults || valuationResults.error) ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-md"
               >
-                <Download className="w-4 h-4 mr-2" />
                 Full DCF Export
               </Button>
               <Button
                 size="sm"
+                leftIcon={Download}
                 onClick={() => handleExport('sensitivity')}
                 disabled={!valuationResults || valuationResults.error}
-                className={`bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-4 py-2 shadow-md font-semibold ${
-                  (!valuationResults || valuationResults.error) ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-md"
               >
-                <Download className="w-4 h-4 mr-2" />
                 Sensitivity Matrix
               </Button>
               <Button
                 size="sm"
+                leftIcon={Download}
                 onClick={() => handleExport('buildup')}
                 disabled={!valuationResults || valuationResults.error}
-                className={`bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white px-4 py-2 shadow-md font-semibold ${
-                  (!valuationResults || valuationResults.error) ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white shadow-md"
               >
-                <Download className="w-4 h-4 mr-2" />
                 DCF Build-Up
               </Button>
             </div>

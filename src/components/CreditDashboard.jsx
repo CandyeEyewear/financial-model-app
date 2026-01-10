@@ -504,13 +504,12 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             </div>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={handleExportPDF} className="bg-blue-600 hover:bg-blue-700 text-white">
-            <Download className="w-4 h-4 mr-2" />
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" leftIcon={Download} onClick={handleExportPDF} className="bg-blue-600 hover:bg-blue-700 text-white">
             Export PDF
           </Button>
           <Button size="sm" onClick={handlePrint} variant="outline">
-            🖨️ Print
+            Print
           </Button>
         </div>
       </div>

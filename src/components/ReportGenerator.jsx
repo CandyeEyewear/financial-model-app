@@ -1814,18 +1814,18 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
                         onClick={() => logoInputRef.current?.click()}
                         variant="outline"
                         size="sm"
+                        leftIcon={Upload}
                         className="flex-1"
                       >
-                        <Upload className="w-4 h-4 mr-2" />
                         Change Logo
                       </Button>
                       <Button
                         onClick={removeLogo}
                         variant="outline"
                         size="sm"
+                        leftIcon={X}
                         className="text-red-600 hover:text-red-700"
                       >
-                        <X className="w-4 h-4 mr-2" />
                         Remove
                       </Button>
                     </div>
@@ -2068,8 +2068,8 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
                   onClick={() => setShowAIPreview(!showAIPreview)}
                   variant="outline"
                   size="sm"
+                  leftIcon={Eye}
                 >
-                  <Eye className="w-4 h-4 mr-2" />
                   {showAIPreview ? 'Hide' : 'Show'} Preview
                 </Button>
               </div>
@@ -2086,9 +2086,9 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
                           onClick={() => copyAIContent(content)}
                           variant="ghost"
                           size="sm"
+                          leftIcon={Copy}
                           className="text-blue-600 hover:text-blue-700"
                         >
-                          <Copy className="w-3 h-3 mr-1" />
                           Copy
                         </Button>
                       </div>
@@ -2331,9 +2331,10 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <Label className="text-sm font-semibold text-slate-800">Report Sections</Label>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={CheckSquare}
                 onClick={() => {
                   const allSelected = Object.values(selectedSections).every(v => v);
                   const newState = {};
@@ -2343,7 +2344,6 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
                   setSelectedSections(newState);
                 }}
               >
-                <CheckSquare className="w-4 h-4 mr-2" />
                 {Object.values(selectedSections).every(v => v) ? 'Deselect All' : 'Select All'}
               </Button>
             </div>
@@ -2371,28 +2371,31 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
 
           {/* Export Buttons */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button 
-              onClick={generatePDF} 
+            <Button
+              onClick={generatePDF}
               disabled={isExporting}
+              loading={isExporting}
+              leftIcon={isExporting ? undefined : FileText}
               className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold shadow-md hover:shadow-lg"
             >
-              {isExporting ? <Loader className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
               Generate PDF Report
             </Button>
-            <Button 
-              onClick={generateExcel} 
+            <Button
+              onClick={generateExcel}
               disabled={isExporting}
+              loading={isExporting}
+              leftIcon={isExporting ? undefined : FileSpreadsheet}
               className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold shadow-md hover:shadow-lg"
             >
-              {isExporting ? <Loader className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
               Generate Excel Report
             </Button>
-            <Button 
-              onClick={generateTermSheet} 
+            <Button
+              onClick={generateTermSheet}
               disabled={isExporting}
+              loading={isExporting}
+              leftIcon={isExporting ? undefined : FileText}
               className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold shadow-md hover:shadow-lg"
             >
-              {isExporting ? <Loader className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
               Generate Term Sheet
             </Button>
           </div>

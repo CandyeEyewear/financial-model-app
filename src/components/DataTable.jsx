@@ -40,10 +40,10 @@ export function DataTable({ projection, ccy, title = "" }) {
           <h3 className="text-lg font-semibold">{title}</h3>
           <Button
             size="sm"
+            leftIcon={Download}
             onClick={() => exportDetailedCSV(projection, title, ccy)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 w-full sm:w-auto"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs w-full sm:w-auto"
           >
-            <Download className="w-3 h-3 mr-1" />
             Export Table
           </Button>
         </div>

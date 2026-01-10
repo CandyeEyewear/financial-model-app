@@ -151,6 +151,69 @@ export function validateFacilityTerms(params) {
 }
 
 /**
+ * Validate existing debt terms
+ * @param {Object} params - Model parameters
+ * @returns {Object} - { isValid, errors, warnings }
+ */
+export function validateExistingDebtTerms(params) {
+  const errors = [];
+  const warnings = [];
+
+  // Only validate if existing debt is enabled
+  if (!params.hasExistingDebt) {
+    return { isValid: true, errors, warnings };
+  }
+
+  // Amount validation
+  if (params.existingDebtAmount === undefined || params.existingDebtAmount === null) {
+    errors.push("Existing debt amount is required when existing debt is enabled");
+  } else if (params.existingDebtAmount < 0) {
+    errors.push("Existing debt amount cannot be negative");
+  } else if (params.existingDebtAmount === 0) {
+    warnings.push("Existing debt amount is zero - consider disabling existing debt");
+  }
+
+  // Interest rate validation
+  if (params.existingDebtRate === undefined || params.existingDebtRate === null) {
+    errors.push("Existing debt interest rate is required");
+  } else if (params.existingDebtRate <= 0) {
+    errors.push("Existing debt interest rate must be positive");
+  } else if (params.existingDebtRate > 0.50) {
+    warnings.push("Existing debt rate appears unusually high (>50%). Verify this is correct.");
+  } else if (params.existingDebtRate < 0.01) {
+    warnings.push("Existing debt rate appears unusually low (<1%). Verify this is correct.");
+  }
+
+  // Tenor validation
+  if (params.existingDebtTenor === undefined || params.existingDebtTenor === null) {
+    errors.push("Existing debt remaining tenor is required");
+  } else if (params.existingDebtTenor <= 0) {
+    errors.push("Existing debt remaining tenor must be positive");
+  } else if (params.existingDebtTenor > 30) {
+    warnings.push("Existing debt tenor exceeds 30 years. Verify this is correct.");
+  }
+
+  // Maturity date validation
+  if (params.openingDebtMaturityDate) {
+    const maturityDate = new Date(params.openingDebtMaturityDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+    if (isNaN(maturityDate.getTime())) {
+      errors.push("Existing debt maturity date is invalid");
+    } else if (maturityDate <= today) {
+      errors.push("Existing debt maturity date must be in the future");
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
  * Check covenant breaches
  */
 export function checkCovenantBreaches(metrics, covenants) {
@@ -374,7 +437,10 @@ export function validateEntireModel(params, historicalData) {
   
   // Validate facility terms
   results.sections.facilityTerms = validateFacilityTerms(params);
-  
+
+  // Validate existing debt terms
+  results.sections.existingDebtTerms = validateExistingDebtTerms(params);
+
   // Validate credit assessment
   results.sections.creditAssessment = validateCreditAssessment(params);
   

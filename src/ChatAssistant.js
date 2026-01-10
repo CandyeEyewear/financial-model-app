@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
 import { generateModelDataSummary } from "./utils/ModelDataSummary";
+import { AITextRendererCompact } from "./components/AITextRenderer";
 import { 
   Send, Bot, User, AlertCircle, RefreshCw, Trash2, 
   Download, Copy, Check, Sparkles, TrendingUp 
@@ -340,9 +341,16 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
                     ? "bg-red-50 text-red-800 rounded-bl-none border border-red-200"
                     : "bg-white text-slate-800 rounded-bl-none border border-slate-200 shadow-sm"
               }`}>
-                <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                  {m.content}
-                </div>
+                {m.role === "user" ? (
+                  <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                    {m.content}
+                  </div>
+                ) : (
+                  <AITextRendererCompact 
+                    content={m.content} 
+                    className="text-sm leading-relaxed"
+                  />
+                )}
                 
                 {/* Copy button for assistant messages */}
                 {m.role === "assistant" && !m.isError && (

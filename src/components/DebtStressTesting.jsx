@@ -2,7 +2,8 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { buildProjection } from "../utils/buildProjection";
-import { generateModelDataSummary } from "../utils/ModelDataSummary"; 
+import { generateModelDataSummary } from "../utils/ModelDataSummary";
+import { AITextRenderer } from "./AITextRenderer";
 import { 
   AlertTriangle, CheckCircle, XCircle, TrendingDown, Shield, Activity, 
   Download, History, Calendar, DollarSign, Info, Zap, TrendingUp, Database,
@@ -1078,8 +1079,11 @@ const triggerAIAnalysis = async () => {
           <span className="ml-3 text-slate-600">Analyzing loan structure and stress scenarios from lender's perspective...</span>
         </div>
       ) : (
-        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-white p-4 rounded border border-slate-200 shadow-sm">
-          {aiNarrative}
+        <div className="bg-white p-4 rounded border border-slate-200 shadow-sm">
+          <AITextRenderer 
+            content={aiNarrative}
+            className="text-sm text-slate-700 leading-relaxed"
+          />
         </div>
       )}
     </div>

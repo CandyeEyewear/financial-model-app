@@ -6,12 +6,86 @@
  */
 
 // ============================================================================
+// CURRENCY SYMBOLS & CONFIGURATION
+// ============================================================================
+
+/**
+ * Abbreviated currency symbols for compact display
+ * Uses short symbols like "J$" instead of "JMD" for mobile-friendly display
+ */
+const CURRENCY_SYMBOLS = {
+  JMD: 'J$',
+  USD: 'US$',
+  EUR: '€',
+  GBP: '£',
+  CAD: 'C$',
+  AUD: 'A$',
+  TTD: 'TT$',
+  BBD: 'BD$',
+  XCD: 'EC$',
+  KYD: 'KY$',
+  BSD: 'B$',
+  BZD: 'BZ$',
+  GYD: 'G$',
+  SRD: 'SR$',
+  HTG: 'G',
+  DOP: 'RD$',
+  CUP: 'CU$',
+  MXN: 'MX$',
+  CNY: '¥',
+  JPY: '¥',
+  INR: '₹',
+  KRW: '₩',
+  CHF: 'CHF',
+  SEK: 'kr',
+  NOK: 'kr',
+  DKK: 'kr',
+  PLN: 'zł',
+  BRL: 'R$',
+  ARS: 'AR$',
+  CLP: 'CL$',
+  COP: 'CO$',
+  PEN: 'S/',
+  ZAR: 'R',
+  NGN: '₦',
+  KES: 'KSh',
+  GHS: 'GH₵',
+  EGP: 'E£',
+  AED: 'د.إ',
+  SAR: 'SR',
+  ILS: '₪',
+  TRY: '₺',
+  RUB: '₽',
+  UAH: '₴',
+  THB: '฿',
+  VND: '₫',
+  MYR: 'RM',
+  SGD: 'S$',
+  HKD: 'HK$',
+  TWD: 'NT$',
+  PHP: '₱',
+  IDR: 'Rp',
+  PKR: '₨',
+  BDT: '৳',
+  LKR: 'Rs',
+};
+
+/**
+ * Get the abbreviated symbol for a currency
+ * @param {string} currency - Currency code (e.g., 'USD', 'JMD')
+ * @returns {string} - Abbreviated symbol (e.g., 'US$', 'J$')
+ */
+export function getCurrencySymbol(currency = 'USD') {
+  return CURRENCY_SYMBOLS[currency.toUpperCase()] || currency;
+}
+
+// ============================================================================
 // CURRENCY FORMATTING
 // ============================================================================
 
 /**
  * Format a number as currency
- * 
+ *
  * @param {number} value - The value to format
  * @param {string} currency - Currency code (e.g., 'USD', 'JMD', 'EUR')
  * @param {Object} options - Additional options
@@ -27,8 +101,25 @@ export function formatCurrency(value, currency = 'USD', options = {}) {
     maximumFractionDigits = 0,
     showSign = false,
     compact = false,
+    useShortSymbol = true, // Use abbreviated symbols (J$, US$) by default
   } = options;
 
+  // Use abbreviated symbol for compact, mobile-friendly display
+  if (useShortSymbol) {
+    const symbol = getCurrencySymbol(currency);
+    const sign = value < 0 ? '-' : (showSign && value > 0 ? '+' : '');
+    const absValue = Math.abs(value);
+
+    const formatted = new Intl.NumberFormat(undefined, {
+      minimumFractionDigits,
+      maximumFractionDigits,
+      notation: compact ? 'compact' : 'standard',
+    }).format(absValue);
+
+    return `${sign}${symbol}${formatted}`;
+  }
+
+  // Fall back to Intl currency formatting for full names
   try {
     const formatter = new Intl.NumberFormat(undefined, {
       style: 'currency',
@@ -50,9 +141,9 @@ export function formatCurrency(value, currency = 'USD', options = {}) {
 }
 
 /**
- * Format a number as currency in millions (e.g., $1.5M)
+ * Format a number as currency in millions (e.g., J$1.5M)
  * Standard format for investment banking
- * 
+ *
  * @param {number} value - The value to format (in actual units, not millions)
  * @param {string} currency - Currency code
  * @param {Object} options - Additional options
@@ -68,29 +159,25 @@ export function formatCurrencyMM(value, currency = 'USD', options = {}) {
     minimumFractionDigits = 1,
     maximumFractionDigits = 1,
     showSign = false,
+    useShortSymbol = true,
   } = options;
 
-  try {
-    const formatted = new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      minimumFractionDigits,
-      maximumFractionDigits,
-      signDisplay: showSign ? 'exceptZero' : 'auto',
-    }).format(millions);
-    return `${formatted}M`;
-  } catch {
-    const formatted = new Intl.NumberFormat(undefined, {
-      minimumFractionDigits,
-      maximumFractionDigits,
-    }).format(millions);
-    return `${currency} ${formatted}M`;
-  }
+  // Use abbreviated symbol for compact, mobile-friendly display
+  const symbol = getCurrencySymbol(currency);
+  const sign = millions < 0 ? '-' : (showSign && millions > 0 ? '+' : '');
+  const absMillions = Math.abs(millions);
+
+  const formatted = new Intl.NumberFormat(undefined, {
+    minimumFractionDigits,
+    maximumFractionDigits,
+  }).format(absMillions);
+
+  return `${sign}${symbol}${formatted}M`;
 }
 
 /**
- * Format a number as currency in thousands (e.g., $150K)
- * 
+ * Format a number as currency in thousands (e.g., J$150K)
+ *
  * @param {number} value - The value to format
  * @param {string} currency - Currency code
  * @returns {string}
@@ -101,23 +188,21 @@ export function formatCurrencyK(value, currency = 'USD') {
   }
 
   const thousands = value / 1_000;
+  const symbol = getCurrencySymbol(currency);
+  const sign = thousands < 0 ? '-' : '';
+  const absThousands = Math.abs(thousands);
 
-  try {
-    const formatted = new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 1,
-    }).format(thousands);
-    return `${formatted}K`;
-  } catch {
-    return `${currency} ${thousands.toFixed(1)}K`;
-  }
+  const formatted = new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(absThousands);
+
+  return `${sign}${symbol}${formatted}K`;
 }
 
 /**
- * Format a number as currency in billions (e.g., $1.5B)
- * 
+ * Format a number as currency in billions (e.g., US$1.5B)
+ *
  * @param {number} value - The value to format
  * @param {string} currency - Currency code
  * @returns {string}
@@ -128,18 +213,16 @@ export function formatCurrencyB(value, currency = 'USD') {
   }
 
   const billions = value / 1_000_000_000;
+  const symbol = getCurrencySymbol(currency);
+  const sign = billions < 0 ? '-' : '';
+  const absBillions = Math.abs(billions);
 
-  try {
-    const formatted = new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 2,
-    }).format(billions);
-    return `${formatted}B`;
-  } catch {
-    return `${currency} ${billions.toFixed(2)}B`;
-  }
+  const formatted = new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  }).format(absBillions);
+
+  return `${sign}${symbol}${formatted}B`;
 }
 
 /**
@@ -519,31 +602,32 @@ export default {
   formatCurrencyK,
   formatCurrencyB,
   formatCurrencyAuto,
-  
+  getCurrencySymbol,
+
   // Numbers
   formatNumber,
   formatWithCommas,
   formatRatio,
   formatMultiple,
-  
+
   // Percentages
   formatPercent,
   formatBasisPoints,
   formatAsBasisPoints,
-  
+
   // Dates
   formatDate,
   formatDateISO,
   formatRelativeTime,
-  
+
   // Parsing
   parseCurrency,
   parsePercent,
-  
+
   // Utilities
   getValueColorClass,
   getStatusFromValue,
-  
+
   // Legacy aliases
   currencyFmt,
   currencyFmtMM,

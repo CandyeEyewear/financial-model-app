@@ -692,19 +692,19 @@ export function ValuationTab({ projections, params, ccy }) {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl">
               <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Enterprise Value</div>
-              <div className="text-3xl font-bold mb-1">{currencyFmtMM(valuationResults.enterpriseValue, ccy)}</div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1">{currencyFmtMM(valuationResults.enterpriseValue, ccy)}</div>
               <div className="text-xs opacity-80">DCF Valuation</div>
             </div>
 
             <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl">
               <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Equity Value</div>
-              <div className="text-3xl font-bold mb-1">{currencyFmtMM(valuationResults.equityValue, ccy)}</div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1">{currencyFmtMM(valuationResults.equityValue, ccy)}</div>
               <div className="text-xs opacity-80">{hasDebt ? 'After Debt Adjustment' : 'No Leverage'}</div>
             </div>
 
             <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl">
               <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">Price per Share</div>
-              <div className="text-3xl font-bold mb-1">
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1">
                 {valuationResults.impliedMultiples.pricePerShare 
   ? `${ccy} ${valuationResults.impliedMultiples.pricePerShare.toLocaleString('en-US', {
       minimumFractionDigits: 2,
@@ -719,7 +719,7 @@ export function ValuationTab({ projections, params, ccy }) {
 
             <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-5 text-white transform transition-all duration-200 hover:scale-105 hover:shadow-xl">
               <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-2">WACC</div>
-              <div className="text-3xl font-bold mb-1">{pctFmt(valuationResults.wacc)}</div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1">{pctFmt(valuationResults.wacc)}</div>
               <div className="text-xs opacity-80">{valuationResults.waccSource}</div>
             </div>
           </div>
@@ -808,7 +808,7 @@ export function ValuationTab({ projections, params, ccy }) {
                     {valuationInputs.useModelWACC ? (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="text-xs text-blue-700 font-semibold mb-1">Model WACC</div>
-                        <div className="text-2xl font-bold text-blue-600">{pctFmt(params.wacc)}</div>
+                        <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-600">{pctFmt(params.wacc)}</div>
                         <div className="text-xs text-blue-600 mt-1">From Financial Parameters (Consistent)</div>
                       </div>
                     ) : (

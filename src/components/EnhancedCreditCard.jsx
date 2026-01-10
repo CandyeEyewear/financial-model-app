@@ -43,7 +43,7 @@ export function EnhancedCreditCard({
           </div>
         </div>
         
-        <div className="text-3xl font-bold text-slate-800 mb-1">
+        <div className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 mb-1">
           {value}
         </div>
         

@@ -662,7 +662,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                       : "bg-slate-300 text-slate-700"
                   }`}
                 >
-                  <div className="text-4xl font-bold">
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold">
                     {hasExistingDebt
                       ? Math.round(
                           clampPct(
@@ -873,7 +873,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             </span>
           </div>
           <h3 className="text-sm font-semibold text-slate-600 mb-2">Annual Debt Service</h3>
-          <div className="text-3xl font-bold text-slate-800 mb-1">
+          <div className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 mb-1">
             {hasExistingDebt && baseProj?.rows && baseProj.rows[0]
               ? fmtM(
                   safe(baseProj.rows[0].principalPayment, 0) +
@@ -964,15 +964,15 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <div className="text-xs text-purple-600 font-semibold mb-1">Total Tranches</div>
-                <div className="text-2xl font-bold text-purple-900">{multiTrancheInfo.totalTranches}</div>
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">{multiTrancheInfo.totalTranches}</div>
               </div>
               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <div className="text-xs text-purple-600 font-semibold mb-1">Total Debt</div>
-                <div className="text-2xl font-bold text-purple-900">{fmtM(multiTrancheInfo.totalDebt)}</div>
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">{fmtM(multiTrancheInfo.totalDebt)}</div>
               </div>
               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <div className="text-xs text-purple-600 font-semibold mb-1">Blended Rate</div>
-                <div className="text-2xl font-bold text-purple-900">{pctFmt(multiTrancheInfo.blendedRate)}</div>
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-purple-900">{pctFmt(multiTrancheInfo.blendedRate)}</div>
               </div>
             </div>
 
@@ -1539,7 +1539,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
       {hasExistingDebt && (
         <div className="mt-8">
           <div className="flex items-center gap-2 mb-6">
-            <h2 className="text-2xl font-bold text-slate-800">Capital Structure Recommendations</h2>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800">Capital Structure Recommendations</h2>
             <div className="px-3 py-1 bg-indigo-100 border border-indigo-300 rounded-full flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-indigo-600" />
               <span className="text-xs font-semibold text-indigo-900">AI-Powered Analysis</span>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
+import { Button } from "./Button";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { buildProjection } from "../utils/buildProjection";
 import { generateModelDataSummary } from "../utils/ModelDataSummary";
@@ -706,13 +707,14 @@ const triggerAIAnalysis = async () => {
                 </div>
                 {onNavigateToTab && (
                   <div className="mt-6">
-                    <button
+                    <Button
                       onClick={() => onNavigateToTab('historical-data')}
-                      className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition-all duration-200"
+                      variant="warning"
+                      leftIcon={ArrowRight}
+                      className="flex-1 sm:flex-none"
                     >
-                      <ArrowRight className="w-4 h-4" />
                       Enter Financial Data
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -781,20 +783,22 @@ const triggerAIAnalysis = async () => {
                 </div>
                 {onNavigateToTab && (
                   <div className="flex gap-3 flex-wrap">
-                    <button
+                    <Button
                       onClick={() => onNavigateToTab('deal-information')}
-                      className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-all duration-200"
+                      variant="warning"
+                      leftIcon={ArrowRight}
+                      className="flex-1 sm:flex-none"
                     >
-                      <ArrowRight className="w-4 h-4" />
                       Configure New Facility
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => onNavigateToTab('opening-debt-schedule')}
-                      className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-all duration-200"
+                      variant="primary"
+                      leftIcon={ArrowRight}
+                      className="flex-1 sm:flex-none bg-purple-600 hover:bg-purple-700"
                     >
-                      <ArrowRight className="w-4 h-4" />
                       Add Existing Debt
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -814,11 +818,11 @@ const triggerAIAnalysis = async () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <div className="text-xs text-slate-500 font-semibold uppercase mb-1">Base Revenue</div>
-                <div className="text-2xl font-bold text-slate-800">{currencyFmtMM(params.baseRevenue, ccy)}</div>
+                <div className="text-lg sm:text-xl md:text-lg sm:text-xl md:text-2xl font-bold text-slate-800">{currencyFmtMM(params.baseRevenue, ccy)}</div>
               </div>
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <div className="text-xs text-slate-500 font-semibold uppercase mb-1">Growth Rate</div>
-                <div className="text-2xl font-bold text-slate-800">{pctFmt(params.growth || 0)}</div>
+                <div className="text-lg sm:text-xl md:text-lg sm:text-xl md:text-2xl font-bold text-slate-800">{pctFmt(params.growth || 0)}</div>
               </div>
               <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <div className="text-xs text-slate-500 font-semibold uppercase mb-1">Industry</div>
@@ -941,7 +945,7 @@ const triggerAIAnalysis = async () => {
 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
   <div className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
     <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Scenarios Tested</div>
-    <div className="text-3xl font-bold">{Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
+    <div className="text-xl sm:text-2xl md:text-3xl font-bold">{Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
     <div className="text-xs opacity-80">Comprehensive</div>
   </div>
   
@@ -951,7 +955,7 @@ const triggerAIAnalysis = async () => {
       : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
   }`}>
     <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Worst Case DSCR</div>
-    <div className="text-3xl font-bold">{numFmt(worstCaseScenario?.minDSCR || 0)}</div>
+    <div className="text-xl sm:text-2xl md:text-3xl font-bold">{numFmt(worstCaseScenario?.minDSCR || 0)}</div>
     <div className="text-xs opacity-80 truncate">{worstCaseScenario?.name || "N/A"}</div>
   </div>
   
@@ -961,13 +965,13 @@ const triggerAIAnalysis = async () => {
       : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
   }`}>
     <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">With Breaches</div>
-    <div className="text-3xl font-bold">{breachCount}</div>
+    <div className="text-xl sm:text-2xl md:text-3xl font-bold">{breachCount}</div>
     <div className="text-xs opacity-80">Out of {Object.keys(DEBT_STRESS_SCENARIOS).length}</div>
   </div>
   
   <div className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
     <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Total Exposure</div>
-    <div className="text-2xl font-bold">
+    <div className="text-lg sm:text-xl md:text-2xl font-bold">
       {currencyFmtMM(totalDebt, ccy)}
     </div>
     <div className="text-xs opacity-80">
@@ -977,7 +981,7 @@ const triggerAIAnalysis = async () => {
   
   <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-lg text-white transform transition-all duration-200 hover:scale-105">
     <div className="text-xs font-semibold uppercase tracking-wide opacity-90 mb-1">Data Quality</div>
-    <div className="text-2xl font-bold">{hasHistoricalData ? "Enhanced" : "Standard"}</div>
+    <div className="text-lg sm:text-xl md:text-2xl font-bold">{hasHistoricalData ? "Enhanced" : "Standard"}</div>
     <div className="text-xs opacity-80">{hasHistoricalData ? `${historicalMetrics.yearsOfData} yrs data` : "Projection only"}</div>
   </div>
 </div>
@@ -993,23 +997,17 @@ const triggerAIAnalysis = async () => {
         </span>
       </CardTitle>
       {/* Manual trigger button */}
-      <button
+      <Button
         onClick={triggerAIAnalysis}
         disabled={isLoadingAI}
-        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold rounded-md shadow hover:from-emerald-600 hover:to-teal-700 transition-all disabled:from-slate-400 disabled:to-slate-500 disabled:cursor-not-allowed"
+        loading={isLoadingAI}
+        variant="success"
+        leftIcon={isLoadingAI ? undefined : Sparkles}
+        size="sm"
+        className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700"
       >
-        {isLoadingAI ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Analyzing...</span>
-          </>
-        ) : (
-          <>
-            <Sparkles className="w-4 h-4" />
-            <span>Generate Credit Analysis</span>
-          </>
-        )}
-      </button>
+        {isLoadingAI ? 'Analyzing...' : 'Generate Credit Analysis'}
+      </Button>
     </div>
   </CardHeader>
   

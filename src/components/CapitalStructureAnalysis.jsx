@@ -374,21 +374,21 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                 {/* Current Request */}
                 <div className="p-4 bg-gradient-to-br from-slate-500 to-slate-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
                   <div className="text-xs opacity-90 mb-1">Current Request</div>
-                  <div className="text-2xl font-bold">{currencyFmtMM(debtCapacity.currentDebtRequest, ccy)}</div>
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold">{currencyFmtMM(debtCapacity.currentDebtRequest, ccy)}</div>
                   <div className="text-xs opacity-80 mt-1">As Proposed</div>
                 </div>
 
                 {/* Maximum Sustainable */}
                 <div className="p-4 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
                   <div className="text-xs opacity-90 mb-1">Maximum Sustainable</div>
-                  <div className="text-2xl font-bold">{currencyFmtMM(debtCapacity.maxSustainableDebt, ccy)}</div>
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold">{currencyFmtMM(debtCapacity.maxSustainableDebt, ccy)}</div>
                   <div className="text-xs opacity-80 mt-1">@ {numFmt(debtCapacity.targetDSCR)}x DSCR</div>
                 </div>
 
                 {/* Safe Debt Level */}
                 <div className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
                   <div className="text-xs opacity-90 mb-1">Safe Debt Level</div>
-                  <div className="text-2xl font-bold">{currencyFmtMM(debtCapacity.safeDebt, ccy)}</div>
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold">{currencyFmtMM(debtCapacity.safeDebt, ccy)}</div>
                   <div className="text-xs opacity-80 mt-1">@ {numFmt(debtCapacity.targetDSCRWithBuffer)}x DSCR</div>
                 </div>
 
@@ -401,7 +401,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   <div className="text-xs opacity-90 mb-1">
                     {debtCapacity.availableCapacity > 0 ? 'Available Capacity' : 'Excess Debt'}
                   </div>
-                  <div className="text-2xl font-bold">
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold">
                     {currencyFmtMM(debtCapacity.availableCapacity > 0 ? debtCapacity.availableCapacity : debtCapacity.excessDebt, ccy)}
                   </div>
                   <div className="text-xs opacity-80 mt-1">
@@ -1036,7 +1036,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div className="text-center p-3 bg-white rounded border border-slate-200">
                     <div className="text-xs text-slate-600 mb-1">Your Structure</div>
-                    <div className={`text-2xl font-bold ${
+                    <div className={`text-lg sm:text-xl md:text-lg sm:text-xl md:text-2xl font-bold ${
                       projection?.rows?.[0]?.ndToEbitda <= industryBenchmarks.medianLeverage 
                         ? 'text-emerald-600' 
                         : 'text-amber-600'
@@ -1046,7 +1046,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   </div>
                   <div className="text-center p-3 bg-emerald-50 rounded border border-emerald-200">
                     <div className="text-xs text-emerald-700 mb-1">Industry Median</div>
-                    <div className="text-2xl font-bold text-emerald-700">
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold text-emerald-700">
                       {numFmt(industryBenchmarks.medianLeverage)}x
                     </div>
                   </div>
@@ -1081,7 +1081,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div className="text-center p-3 bg-white rounded border border-slate-200">
                     <div className="text-xs text-slate-600 mb-1">Your Min DSCR</div>
-                    <div className={`text-2xl font-bold ${
+                    <div className={`text-lg sm:text-xl md:text-lg sm:text-xl md:text-2xl font-bold ${
                       (projection?.creditStats?.minDSCR || 0) >= industryBenchmarks.medianDSCR
                         ? 'text-emerald-600'
                         : 'text-amber-600'
@@ -1091,7 +1091,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   </div>
                   <div className="text-center p-3 bg-emerald-50 rounded border border-emerald-200">
                     <div className="text-xs text-emerald-700 mb-1">Industry Median</div>
-                    <div className="text-2xl font-bold text-emerald-700">
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold text-emerald-700">
                       {numFmt(industryBenchmarks.medianDSCR)}x
                     </div>
                   </div>
@@ -1224,17 +1224,18 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
               </p>
             </div>
             {aiRecommendations && (
-              <button
+              <Button
                 onClick={() => {
                   setLastAIContext(null);
                   setAiRecommendations(null);
                 }}
-                className="px-3 py-1 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors flex items-center gap-1"
+                variant="ghost"
+                size="sm"
+                leftIcon={Activity}
                 title="Clear cached analysis and regenerate"
               >
-                <Activity className="w-3 h-3" />
                 Refresh Analysis
-              </button>
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -1414,7 +1415,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="text-center p-4 bg-white rounded-lg border-2 border-slate-200 shadow-sm">
                   <div className="text-xs text-slate-600 mb-2">Debt Capacity Status</div>
-                  <div className={`text-3xl font-bold ${
+                  <div className={`text-xl sm:text-2xl md:text-3xl font-bold ${
                     debtCapacity.utilizationPct <= 80 ? 'text-emerald-600' :
                     debtCapacity.utilizationPct <= 100 ? 'text-amber-600' :
                     'text-red-600'
@@ -1428,7 +1429,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
 
                 <div className="text-center p-4 bg-white rounded-lg border-2 border-slate-200 shadow-sm">
                   <div className="text-xs text-slate-600 mb-2">Industry Position</div>
-                  <div className={`text-3xl font-bold ${
+                  <div className={`text-xl sm:text-2xl md:text-3xl font-bold ${
                     (projection?.rows?.[0]?.ndToEbitda || 0) <= industryBenchmarks.medianLeverage ? 'text-emerald-600' : 'text-amber-600'
                   }`}>
                     {(projection?.rows?.[0]?.ndToEbitda || 0) <= industryBenchmarks.medianLeverage ? 'BELOW' : 'ABOVE'}
@@ -1440,7 +1441,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
 
                 <div className="text-center p-4 bg-white rounded-lg border-2 border-slate-200 shadow-sm">
                   <div className="text-xs text-slate-600 mb-2">Covenant Risk</div>
-                  <div className={`text-3xl font-bold ${
+                  <div className={`text-xl sm:text-2xl md:text-3xl font-bold ${
                     (projection?.breaches?.dscrBreaches || 0) === 0 ? 'text-emerald-600' : 'text-red-600'
                   }`}>
                     {(projection?.breaches?.dscrBreaches || 0) === 0 ? 'LOW' : 'HIGH'}
@@ -1518,7 +1519,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
                     Final Recommendation
                   </div>
-                  <div className={`text-2xl font-bold mb-3 ${
+                  <div className={`text-lg sm:text-xl md:text-2xl font-bold mb-3 ${
                     debtCapacity.recommendation === 'APPROVE' ? 'text-emerald-700' :
                     debtCapacity.recommendation === 'APPROVE WITH CONDITIONS' ? 'text-amber-700' :
                     'text-red-700'

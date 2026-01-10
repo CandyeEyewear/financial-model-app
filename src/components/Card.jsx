@@ -230,7 +230,7 @@ export function MetricCard({
           <Icon className="w-8 h-8 opacity-80 mb-2" aria-hidden="true" />
         )}
         <div className="text-sm opacity-90 mb-1">{title}</div>
-        <div className="text-2xl font-bold tabular-nums">{value}</div>
+        <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">{value}</div>
         {subtitle && (
           <div className="text-xs opacity-75 mt-1">{subtitle}</div>
         )}
@@ -259,7 +259,7 @@ export function StatsCard({
         <div className={`grid grid-cols-${columns} gap-4`}>
           {stats.map((stat, index) => (
             <div key={index} className="text-center">
-              <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 tabular-nums">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-neutral-900 dark:text-neutral-100 tabular-nums">
                 {stat.value}
               </div>
               <div className="text-sm text-neutral-500 dark:text-neutral-400">

@@ -168,10 +168,12 @@ function TextAreaField({ label, value, onChange, placeholder, rows = 3 }) {
 }
 
 function MoneyField({ label, value, onChange, ccy }) {
-  const [displayValue, setDisplayValue] = React.useState(value.toLocaleString('en-US', { maximumFractionDigits: 0 }));
-  
+  const safeValue = value ?? 0;
+  const [displayValue, setDisplayValue] = React.useState(safeValue.toLocaleString('en-US', { maximumFractionDigits: 0 }));
+
   React.useEffect(() => {
-    setDisplayValue(value.toLocaleString('en-US', { maximumFractionDigits: 0 }));
+    const safeVal = value ?? 0;
+    setDisplayValue(safeVal.toLocaleString('en-US', { maximumFractionDigits: 0 }));
   }, [value]);
 
   return (

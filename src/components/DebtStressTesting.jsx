@@ -3,6 +3,12 @@ import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { Button } from "./Button";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { buildProjection } from "../utils/buildProjection";
+import {
+  getTotalDebt,
+  getTotalDebtFromParams,
+  hasExistingDebt as hasExistingDebtHelper,
+  hasNewFacility as hasNewFacilityHelper
+} from "../utils/debtHelpers";
 import { generateModelDataSummary } from "../utils/ModelDataSummary";
 import { AITextRenderer } from "./AITextRenderer";
 import { 
@@ -306,7 +312,9 @@ function calculateLiquidityRunway(projection, scenarioKey, adjustments, params) 
     const stressedEBITDA = baseEBITDA * (1 + (adjustments.revenueShock || 0)) * (1 - (adjustments.cogsShock || 0));
     
     // Account for increased debt service under rate shock
-    const baseDebtService = (params.openingDebt || 0 + params.requestedLoanAmount || 0) * params.interestRate;
+    // FIXED: Use getTotalDebtFromParams to avoid operator precedence bugs
+    const totalDebtAmount = getTotalDebtFromParams(params);
+    const baseDebtService = totalDebtAmount * params.interestRate;
     const stressedDebtService = baseDebtService * (1 + (adjustments.rateShock || 0) / params.interestRate);
     
     // Account for working capital drain
@@ -400,8 +408,10 @@ function determineRiskLevel(metrics, params, historicalMetrics) {
 // ✅ NEW: Calculate breaking points
 function calculateBreakingPoints(params, baseCase) {
   const minDSCR = params.minDSCR || 1.25;
-  const baseEBITDA = baseCase.ebitda || params.baseRevenue * 0.2;
-  const annualDebtService = (params.openingDebt || 0 + params.requestedLoanAmount || 0) * params.interestRate;
+  const baseEBITDA = baseCase?.ebitda || params.baseRevenue * 0.2;
+  // FIXED: Use getTotalDebtFromParams to avoid operator precedence bugs
+  const totalDebt = getTotalDebtFromParams(params);
+  const annualDebtService = totalDebt * (params.interestRate || 0.08);
   
   // DSCR = EBITDA / Debt Service
   // Need: EBITDA / Debt Service >= minDSCR
@@ -420,7 +430,8 @@ function calculateBreakingPoints(params, baseCase) {
   
   // Interest rate ceiling
   const maxDebtService = baseEBITDA / minDSCR;
-  const maxRate = maxDebtService / (params.openingDebt || 0 + params.requestedLoanAmount || 0);
+  // FIXED: Use totalDebt variable already calculated above
+  const maxRate = totalDebt > 0 ? maxDebtService / totalDebt : 0;
   const rateCeiling = (maxRate - params.interestRate) * 100;
   
   return {
@@ -456,12 +467,14 @@ export default function DebtStressTesting({
     return params?.baseRevenue > 0;
   }, [params]);
 
+  // FIXED: Check ALL possible existing debt indicators
   const hasExistingDebt = useMemo(() => {
-    return params?.openingDebt > 0;
+    return hasExistingDebtHelper(params);
   }, [params]);
 
+  // FIXED: Use helper for consistency
   const hasNewFacility = useMemo(() => {
-    return params?.requestedLoanAmount > 0;
+    return hasNewFacilityHelper(params);
   }, [params]);
 
   const hasAnyDebt = hasExistingDebt || hasNewFacility;
@@ -619,8 +632,8 @@ const triggerAIAnalysis = async () => {
     // Calculate breaking points
     const breakingPoints = calculateBreakingPoints(params, baseCase);
     
-    // Calculate current leverage
-    const totalDebt = (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+    // Calculate current leverage - FIXED: Use helper for consistent debt detection
+    const totalDebt = getTotalDebtFromParams(params);
     const currentLeverage = totalDebt / (baseCase?.ebitda || params.baseRevenue * 0.2);
     
     // Generate failure reasons for worst scenarios
@@ -853,7 +866,8 @@ const triggerAIAnalysis = async () => {
   }
 
   const breachCount = Object.values(stressTestResults).filter(r => r.totalBreaches > 0).length;
-  const totalDebt = (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+  // FIXED: Use helper for consistent debt detection across the app
+  const totalDebt = getTotalDebtFromParams(params);
 
   // Toggle scenario selection
   const toggleScenario = (scenarioKey) => {

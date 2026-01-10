@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2, Calendar, Info, Save, FolderOpen, Trash2, Copy, X, AlertTriangle, Zap, Wallet, CreditCard, Clock, Lightbulb, RefreshCw, Layers, ChevronRight } from "lucide-react";
+import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2, Calendar, Info, Save, FolderOpen, Trash2, Copy, X, AlertTriangle, Zap, Wallet, CreditCard, Clock, Lightbulb, RefreshCw, Layers, ChevronRight, Sliders } from "lucide-react";
 
 // Component imports
 import { Card, CardHeader, CardTitle, CardContent } from "./components/Card.jsx";
@@ -3051,7 +3051,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   onValueChange={setActiveTab}
   className="space-y-6"
 >
-        <TabsList className="flex overflow-x-auto lg:grid lg:grid-cols-7 w-full bg-slate-100 p-1 rounded-lg shadow-sm scrollbar-hide">
+        <TabsList className="flex overflow-x-auto lg:grid lg:grid-cols-8 w-full bg-slate-100 p-1 rounded-lg shadow-sm scrollbar-hide">
   <TabsTrigger value="capital-structure" className="flex-shrink-0 text-sm whitespace-nowrap">
     <TrendingUp className="w-4 h-4 mr-2" />
     <span className="hidden sm:inline">Capital Structure</span>
@@ -3069,8 +3069,13 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   </TabsTrigger>
   <TabsTrigger value="stress-testing" className="flex-shrink-0 text-sm whitespace-nowrap">
     <Building className="w-4 h-4 mr-2" />
-    <span className="hidden sm:inline">Stress Testing</span>
-    <span className="sm:hidden">Stress</span>
+    <span className="hidden sm:inline">Debt Stress</span>
+    <span className="sm:hidden">Debt</span>
+  </TabsTrigger>
+  <TabsTrigger value="custom-stress" className="flex-shrink-0 text-sm whitespace-nowrap">
+    <Sliders className="w-4 h-4 mr-2" />
+    <span className="hidden sm:inline">Custom Stress</span>
+    <span className="sm:hidden">Custom</span>
   </TabsTrigger>
   <TabsTrigger value="loan-metrics" className="flex-shrink-0 text-sm whitespace-nowrap">
     <DollarSign className="w-4 h-4 mr-2" />
@@ -3145,6 +3150,24 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded flex items-center gap-3">
               <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
               <p className="text-yellow-800 font-semibold">Loading stress testing data...</p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Custom Stress Testing */}
+        <TabsContent value="custom-stress" className="space-y-6">
+          {projections?.base ? (
+            <CustomStressTesting
+              projections={projections}
+              params={params}
+              customShocks={customShocks}
+              onShocksChange={setCustomShocks}
+              ccy={ccy}
+            />
+          ) : (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded flex items-center gap-3">
+              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+              <p className="text-yellow-800 font-semibold">Loading custom stress testing...</p>
             </div>
           )}
         </TabsContent>

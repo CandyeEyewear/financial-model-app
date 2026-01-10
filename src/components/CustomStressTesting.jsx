@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
+import { getTotalDebt } from "../utils/debtHelpers";
 import { AlertTriangle, TrendingUp, TrendingDown, CheckCircle, XCircle, Shield, Sliders, Info, ChevronDown, ChevronUp } from "lucide-react";
 
 // Metric explanations database
@@ -422,7 +423,10 @@ export function CustomStressTesting({ projections, params, customShocks, onShock
   const baseProjection = projections.base;
   const stressedProjection = projections.custom || baseProjection;
   
-  // Calculate loan metrics
+  // Calculate total debt using helper (checks all debt sources)
+  const totalDebt = getTotalDebt(baseProjection, params);
+
+  // Calculate loan metrics with proper debt detection and division guards
   const baseMetrics = {
     minDSCR: baseProjection.creditStats.minDSCR,
     minICR: baseProjection.creditStats.minICR,
@@ -430,10 +434,14 @@ export function CustomStressTesting({ projections, params, customShocks, onShock
     avgDebtService: baseProjection.rows.reduce((sum, r) => sum + r.debtService, 0) / baseProjection.rows.length,
     debtServicePctRevenue: (baseProjection.rows.reduce((sum, r) => sum + r.debtService, 0) / baseProjection.rows.length) / params.baseRevenue,
     breakEvenEBITDA: baseProjection.rows.reduce((sum, r) => sum + r.debtService, 0) / baseProjection.rows.length,
-    loanToValue: params.openingDebt / params.collateralValue,
-    assetCoverage: params.totalAssets / params.openingDebt,
+    // FIXED: Use totalDebt and guard against division by zero
+    loanToValue: (params.collateralValue || 0) > 0 ? totalDebt / params.collateralValue : 0,
+    assetCoverage: totalDebt > 0 ? (params.totalAssets || 0) / totalDebt : Infinity,
   };
   
+  // Get total debt for stressed projection (might differ due to stress scenarios)
+  const stressedTotalDebt = getTotalDebt(stressedProjection, params);
+
   const stressedMetrics = {
     minDSCR: stressedProjection.creditStats.minDSCR,
     minICR: stressedProjection.creditStats.minICR,
@@ -441,8 +449,9 @@ export function CustomStressTesting({ projections, params, customShocks, onShock
     avgDebtService: stressedProjection.rows.reduce((sum, r) => sum + r.debtService, 0) / stressedProjection.rows.length,
     debtServicePctRevenue: (stressedProjection.rows.reduce((sum, r) => sum + r.debtService, 0) / stressedProjection.rows.length) / (params.baseRevenue * (1 + customShocks.growthDelta)),
     breakEvenEBITDA: stressedProjection.rows.reduce((sum, r) => sum + r.debtService, 0) / stressedProjection.rows.length,
-    loanToValue: params.openingDebt / params.collateralValue,
-    assetCoverage: params.totalAssets / params.openingDebt,
+    // FIXED: Use stressedTotalDebt and guard against division by zero
+    loanToValue: (params.collateralValue || 0) > 0 ? stressedTotalDebt / params.collateralValue : 0,
+    assetCoverage: stressedTotalDebt > 0 ? (params.totalAssets || 0) / stressedTotalDebt : Infinity,
   };
   
   // Count breaches

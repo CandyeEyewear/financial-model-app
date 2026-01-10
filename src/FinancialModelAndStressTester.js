@@ -957,6 +957,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
               name: model.name,
               description: model.description,
               params: model.model_data?.params || model.model_data || {},
+              historicalData: model.model_data?.historicalData || [],
+              ccy: model.model_data?.ccy || 'JMD',
               tags: model.model_data?.tags || [],
               createdAt: model.created_at,
               updatedAt: model.updated_at,
@@ -997,12 +999,13 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     loadScenarios();
   }, [isAuthenticated, user]);
 
-  // Save scenarios to localStorage whenever they change
+  // Save scenarios to localStorage whenever they change (only for non-authenticated users)
   useEffect(() => {
-    if (scenarios.length > 0) {
+    // Only save to localStorage for non-authenticated users or local scenarios
+    if (!isAuthenticated && scenarios.length > 0) {
       localStorage.setItem('finsight_scenarios', JSON.stringify(scenarios));
     }
-  }, [scenarios]);
+  }, [scenarios, isAuthenticated]);
 
   // Add this useEffect
   useEffect(() => {
@@ -1301,8 +1304,11 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     try {
       if (isAuthenticated && user) {
         // Save to database for authenticated users
+        // Include ALL model data: params, historicalData, and metadata
         const modelData = {
           params: { ...params },
+          historicalData: [...historicalData],
+          ccy: ccy,
           tags: [params.industry, params.facilityType].filter(Boolean),
         };
         
@@ -1399,6 +1405,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
         }
       } else {
         // Save to localStorage for non-authenticated users
+        // Include ALL model data: params, historicalData, and metadata
         if (currentScenarioId) {
           setScenarios(prev => prev.map(s => 
             s.id === currentScenarioId 
@@ -1407,6 +1414,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                   name,
                   description,
                   params: { ...params },
+                  historicalData: [...historicalData],
+                  ccy: ccy,
                   updatedAt: timestamp,
                 }
               : s
@@ -1418,6 +1427,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
             name,
             description,
             params: { ...params },
+            historicalData: [...historicalData],
+            ccy: ccy,
             createdAt: timestamp,
             updatedAt: timestamp,
             tags: [params.industry, params.facilityType].filter(Boolean),
@@ -1455,6 +1466,16 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     const loadedParams = ensureEditedFieldsArray(scenario.params);
     setParams(loadedParams);
     setDraftParams(loadedParams);
+    
+    // Load historical data if available
+    if (scenario.historicalData && Array.isArray(scenario.historicalData)) {
+      setHistoricalData(scenario.historicalData);
+    }
+    
+    // Load currency if available
+    if (scenario.ccy) {
+      setCcy(scenario.ccy);
+    }
     
     setCurrentScenarioId(scenario.id);
     setCurrentScenarioName(scenario.name);
@@ -1591,21 +1612,59 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   useEffect(() => {
     if (!currentScenarioId || !currentScenarioName) return;
     
-    const autoSaveInterval = setInterval(() => {
-      // Silently update the current scenario
-      setScenarios(prev => prev.map(s => 
-        s.id === currentScenarioId 
-          ? {
-              ...s,
-              params: { ...params },
-              updatedAt: new Date().toISOString(),
-            }
-          : s
-      ));
+    const autoSaveInterval = setInterval(async () => {
+      const currentScenario = scenarios.find(s => s.id === currentScenarioId);
+      
+      if (isAuthenticated && currentScenario?.isFromDatabase) {
+        // Auto-save to database for authenticated users
+        try {
+          const modelData = {
+            params: { ...params },
+            historicalData: [...historicalData],
+            ccy: ccy,
+            tags: [params.industry, params.facilityType].filter(Boolean),
+          };
+          
+          await db.updateSavedModel(
+            currentScenarioId,
+            currentScenarioName,
+            currentScenario.description || '',
+            modelData
+          );
+          
+          // Update local state silently
+          setScenarios(prev => prev.map(s => 
+            s.id === currentScenarioId 
+              ? {
+                  ...s,
+                  params: { ...params },
+                  historicalData: [...historicalData],
+                  ccy: ccy,
+                  updatedAt: new Date().toISOString(),
+                }
+              : s
+          ));
+        } catch (error) {
+          console.error('Auto-save to database failed:', error);
+        }
+      } else {
+        // Auto-save to local state (localStorage sync happens via effect)
+        setScenarios(prev => prev.map(s => 
+          s.id === currentScenarioId 
+            ? {
+                ...s,
+                params: { ...params },
+                historicalData: [...historicalData],
+                ccy: ccy,
+                updatedAt: new Date().toISOString(),
+              }
+            : s
+        ));
+      }
     }, 30000); // Auto-save every 30 seconds
     
     return () => clearInterval(autoSaveInterval);
-  }, [currentScenarioId, currentScenarioName, params]);
+  }, [currentScenarioId, currentScenarioName, params, historicalData, ccy, isAuthenticated, scenarios]);
 
   // Auto-populate covenant ratios when industry changes
   useEffect(() => {

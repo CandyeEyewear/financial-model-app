@@ -148,9 +148,20 @@ export const db = {
 
   // List all saved models for a user
   listSavedModels: async () => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      return { data: null, error: userError };
+    }
+
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return { data: null, error: new Error('Authenticated user not found') };
+    }
+
     const { data, error } = await supabase
       .from('saved_models')
       .select('id, name, description, created_at, updated_at, model_data')
+      .eq('user_id', userId)
       .order('updated_at', { ascending: false });
     return { data, error };
   },

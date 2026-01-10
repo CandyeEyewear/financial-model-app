@@ -5,6 +5,69 @@ import { Button } from './Button';
 import { Input } from './Input';
 import { Label } from './Label';
 
+// Account for interest-only periods in Year 1 preview
+const calculateYear1DebtService = (tranche) => {
+  const amount = tranche.amount || 0;
+  const rate = tranche.rate || 0;
+  const tenorYears = tranche.tenorYears || 1;
+  const interestOnlyYears = tranche.interestOnlyYears || 0;
+  const amortizationType = tranche.amortizationType || 'amortizing';
+
+  // Year 1 interest (always applies)
+  const year1Interest = amount * rate;
+
+  // Year 1 principal depends on structure
+  let year1Principal = 0;
+
+  if (amortizationType === 'bullet' || amortizationType === 'interest-only') {
+    // No principal in Year 1 for bullet/IO structures
+    year1Principal = 0;
+  } else if (interestOnlyYears >= 1) {
+    // In interest-only period - no principal
+    year1Principal = 0;
+  } else if (amortizationType === 'amortizing') {
+    // Amortizing with no IO period
+    const amortizingYears = tenorYears - interestOnlyYears;
+    year1Principal = amortizingYears > 0 ? amount / amortizingYears : 0;
+  }
+
+  return {
+    principal: year1Principal,
+    interest: year1Interest,
+    total: year1Principal + year1Interest
+  };
+};
+
+// Validate tranche before adding
+const validateTranche = (tranche) => {
+  const errors = [];
+
+  if (!tranche.name || tranche.name.trim() === '') {
+    errors.push('Tranche name is required');
+  }
+
+  if (!tranche.amount || tranche.amount <= 0) {
+    errors.push('Tranche amount must be greater than zero');
+  }
+
+  if (!tranche.rate || tranche.rate <= 0) {
+    errors.push('Tranche interest rate must be greater than zero');
+  }
+
+  if (!tranche.tenorYears || tranche.tenorYears <= 0) {
+    errors.push('Tranche tenor must be greater than zero');
+  }
+
+  if (tranche.interestOnlyYears && tranche.interestOnlyYears >= tranche.tenorYears) {
+    errors.push('Interest-only period cannot exceed or equal total tenor');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
 export function DebtTrancheManager({ tranches, onChange, ccy }) {
   const addTranche = () => {
     const newTranche = {
@@ -139,19 +202,33 @@ export function DebtTrancheManager({ tranches, onChange, ccy }) {
 
             {/* Annual Debt Service Preview */}
             <div className="pt-2 border-t border-slate-200">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600">Annual Debt Service (Year 1):</span>
-                <span className="font-bold text-purple-900">
-                  {ccy} {((tranche.amount * tranche.rate) + 
-                    (tranche.amortizationType === 'amortizing' ? tranche.amount / tranche.tenorYears : 0)
-                  ).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-              {tranche.amortizationType === 'amortizing' && (
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Interest portion decreases over time as principal is repaid
-                </p>
-              )}
+              {(() => {
+                const year1DS = calculateYear1DebtService(tranche);
+                return (
+                  <>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600">Annual Debt Service (Year 1):</span>
+                      <span className="font-bold text-purple-900">
+                        {ccy} {year1DS.total.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+                      <span>Interest: {ccy} {year1DS.interest.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                      <span>Principal: {ccy} {year1DS.principal.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                    </div>
+                    {tranche.amortizationType === 'amortizing' && !tranche.interestOnlyYears && (
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Interest portion decreases over time as principal is repaid
+                      </p>
+                    )}
+                    {tranche.interestOnlyYears > 0 && tranche.amortizationType === 'amortizing' && (
+                      <p className="text-[10px] text-amber-600 mt-1">
+                        Interest-only for {tranche.interestOnlyYears} year(s), then amortizing
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         ))}

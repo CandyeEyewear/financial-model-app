@@ -3,6 +3,32 @@ import React from 'react';
 import { DollarSign, Percent, Calendar, TrendingUp, AlertTriangle } from 'lucide-react';
 import { currencyFmtMM } from '../utils/formatters';
 
+// Calculate Year 1 principal accounting for interest-only periods
+const calculateYear1Principal = (tranches) => {
+  return tranches.reduce((sum, t) => {
+    const amount = t.amount || 0;
+    const tenorYears = t.tenorYears || 1;
+    const interestOnlyYears = t.interestOnlyYears || 0;
+    const amortizationType = t.amortizationType || 'amortizing';
+
+    // No principal for bullet/IO structures in Year 1
+    if (amortizationType === 'bullet' || amortizationType === 'interest-only') {
+      return sum;
+    }
+
+    // No principal during interest-only period
+    if (interestOnlyYears >= 1) {
+      return sum;
+    }
+
+    // Amortizing - calculate annual principal
+    const amortizingYears = tenorYears - interestOnlyYears;
+    const annualPrincipal = amortizingYears > 0 ? amount / amortizingYears : 0;
+
+    return sum + annualPrincipal;
+  }, 0);
+};
+
 export function BlendedDebtMetrics({ tranches, ccy, startYear, projectionYears }) {
   if (!tranches || tranches.length === 0) return null;
 
@@ -11,14 +37,10 @@ export function BlendedDebtMetrics({ tranches, ccy, startYear, projectionYears }
     totalDebt > 0 ? tranches.reduce((sum, t) => sum + (t.amount * t.rate), 0) / totalDebt : 0;
 
   // Calculate estimated annual debt service (interest + amortization if applicable)
-  const totalInterest = tranches.reduce((s, t) => s + t.amount * t.rate, 0);
-  const totalPrincipal = tranches.reduce((s, t) => {
-    if (t.amortizationType === 'amortizing' && t.tenorYears > 0) {
-      return s + t.amount / t.tenorYears;
-    }
-    return s;
-  }, 0);
-  const totalDebtService = totalInterest + totalPrincipal;
+  const totalInterest = tranches.reduce((s, t) => s + (t.amount || 0) * (t.rate || 0), 0);
+  // Use the new function that accounts for interest-only periods
+  const totalYear1Principal = calculateYear1Principal(tranches);
+  const totalDebtService = totalInterest + totalYear1Principal;
 
   const maturities = tranches.map((t) => new Date(t.maturityDate).getFullYear());
   const earliestYear = Math.min(...maturities);

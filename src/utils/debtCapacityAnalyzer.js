@@ -2,6 +2,33 @@
 // Lender-focused debt capacity and structure optimization
 
 /**
+ * Use appropriate rate based on context
+ */
+const getApplicableRate = (params) => {
+  const hasOpeningDebt = (params.openingDebt || 0) > 0;
+  const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
+
+  if (hasOpeningDebt && !hasNewFacility) {
+    return params.existingDebtRate || params.interestRate || 0.08;
+  } else if (!hasOpeningDebt && hasNewFacility) {
+    return params.proposedPricing || params.interestRate || 0.08;
+  } else if (hasOpeningDebt && hasNewFacility) {
+    // Both exist - calculate weighted average rate
+    const existingAmount = params.openingDebt || 0;
+    const newAmount = params.requestedLoanAmount || 0;
+    const totalDebt = existingAmount + newAmount;
+    if (totalDebt === 0) return params.interestRate || 0.08;
+
+    const existingRate = params.existingDebtRate || params.interestRate || 0.08;
+    const newRate = params.proposedPricing || params.interestRate || 0.08;
+
+    return (existingAmount * existingRate + newAmount * newRate) / totalDebt;
+  }
+
+  return params.interestRate || 0.08;
+};
+
+/**
  * Calculate maximum sustainable debt based on EBITDA and target DSCR
  * Industry-standard approach using Cash Flow Available for Debt Service (CFADS)
  */
@@ -19,8 +46,8 @@ export function calculateDebtCapacity(params, projection) {
   const safetyBuffer = 1.20; // 20% cushion above covenant for "safe" debt level
   const targetDSCRWithBuffer = targetDSCR * safetyBuffer;
   
-  // Loan parameters
-  const avgInterestRate = params.interestRate || 0.10;
+  // Loan parameters - use appropriate rate based on context
+  const avgInterestRate = getApplicableRate(params);
   const tenorYears = params.debtTenorYears || 5;
   
   // Calculate annual payment factor for amortizing loan
@@ -39,8 +66,10 @@ export function calculateDebtCapacity(params, projection) {
   const safeDebt = ebitda / (annualPaymentFactor * targetDSCRWithBuffer);
   const aggressiveDebt = ebitda / (annualPaymentFactor * 1.10); // Minimum 1.10x DSCR (aggressive)
   
-  // Current debt position
-  const currentDebtRequest = (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+  // Current debt position - with breakdown
+  const existingDebt = params.openingDebt || 0;
+  const newFacility = params.requestedLoanAmount || 0;
+  const currentDebtRequest = existingDebt + newFacility;
   
   // Calculate available capacity or excess debt
   // Positive = over capacity (excess debt), Negative = under capacity (available room)
@@ -136,7 +165,16 @@ export function calculateDebtCapacity(params, projection) {
     targetDSCRWithBuffer,
     annualPaymentFactor,
     annualDebtService,
-    collateralValue
+    collateralValue,
+
+    // Debt breakdown (existing vs new)
+    debtBreakdown: {
+      existingDebt,
+      newFacility,
+      totalDebt: currentDebtRequest,
+      existingDebtPct: currentDebtRequest > 0 ? (existingDebt / currentDebtRequest) * 100 : 0,
+      newFacilityPct: currentDebtRequest > 0 ? (newFacility / currentDebtRequest) * 100 : 0
+    }
   };
 }
 

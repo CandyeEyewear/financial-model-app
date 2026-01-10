@@ -23,12 +23,22 @@ export function SmartSuggestion({ type, current, suggested, impact }) {
   );
 }
 
+// More accurate year calculation accounting for leap years
+const calculateYearsDifference = (date1, date2) => {
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  const diffTime = Math.abs(d2 - d1);
+  // Use 365.25 to account for leap years on average
+  const diffYears = diffTime / (365.25 * 24 * 60 * 60 * 1000);
+  return Math.round(diffYears * 10) / 10; // Round to 1 decimal
+};
+
 export function OpeningDebtWarning({ maturityDate, newFacilityEndDate, onCalculate }) {
   const maturity = new Date(maturityDate);
   const facilityEnd = new Date(newFacilityEndDate);
-  
+
   if (maturity < facilityEnd) {
-    const yearsRemaining = (facilityEnd - maturity) / (365 * 24 * 60 * 60 * 1000);
+    const yearsRemaining = calculateYearsDifference(maturity, facilityEnd);
     
     return (
       <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-300 rounded-lg">
@@ -38,7 +48,7 @@ export function OpeningDebtWarning({ maturityDate, newFacilityEndDate, onCalcula
           <p className="text-xs text-amber-800 mb-2">
             Opening debt matures <strong>{new Date(maturityDate).toLocaleDateString()}</strong> but 
             new facility runs until <strong>{new Date(newFacilityEndDate).toLocaleDateString()}</strong>.
-            Gap of <strong>{yearsRemaining.toFixed(1)} years</strong> needs coverage.
+            Gap of <strong>{yearsRemaining} years</strong> needs coverage.
           </p>
           {onCalculate && (
             <button 

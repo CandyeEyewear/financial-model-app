@@ -45,14 +45,52 @@ function calculateWACC(equityValue, debtValue, costOfEquity, afterTaxCostOfDebt)
  */
 function getTotalDebt(params) {
   if (!params) return 0;
-  
+
   // Multi-tranche case
   if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
     return params.debtTranches.reduce((sum, tranche) => sum + (tranche.amount || 0), 0);
   }
-  
+
   // Single debt case - combine opening debt + new facility
   return (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+}
+
+/**
+ * Get blended interest rate for cost of debt calculation
+ * Handles: multi-tranche (weighted average), existing + new (weighted), single debt
+ */
+function getBlendedRate(params) {
+  if (!params) return 0;
+
+  // Multi-tranche mode: use projection's blended rate if available, or calculate
+  if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
+    const totalDebt = params.debtTranches.reduce((sum, t) => sum + (t.amount || 0), 0);
+    if (totalDebt === 0) return 0;
+
+    const weightedRate = params.debtTranches.reduce((sum, t) => {
+      return sum + (t.amount || 0) * (t.rate || 0);
+    }, 0);
+
+    return weightedRate / totalDebt;
+  }
+
+  // Single debt mode: weighted average of existing and new debt rates
+  const existingDebt = params.openingDebt || 0;
+  const newFacility = params.requestedLoanAmount || 0;
+  const totalDebt = existingDebt + newFacility;
+
+  if (totalDebt === 0) return 0;
+
+  // Get appropriate rates
+  const existingRate = params.existingDebtRate || params.interestRate || 0;
+  const newRate = params.proposedPricing || params.interestRate || 0;
+
+  // If only one type of debt, return that rate
+  if (existingDebt === 0) return newRate;
+  if (newFacility === 0) return existingRate;
+
+  // Weighted average
+  return (existingDebt * existingRate + newFacility * newRate) / totalDebt;
 }
 
 /**
@@ -287,23 +325,27 @@ export function ValuationTab({ projections, params, ccy }) {
       let capmCostOfEquity;
       let afterTaxCostOfDebt;
       
+      // Get blended rate for cost of debt (handles multi-tranche, existing+new, single debt)
+      const blendedDebtRate = getBlendedRate(params);
+
       if (valuationInputs.useModelWACC) {
         // Use model's consistent WACC
         effectiveWACC = params.wacc;
         waccSource = 'Model Parameters';
-        
+
         // Calculate CAPM for reference only
         capmCostOfEquity = calculateCostOfEquity(
           valuationInputs.riskFreeRate,
           valuationInputs.beta,
           valuationInputs.marketRiskPremium
         );
-        
+
+        // Use blended rate for accurate cost of debt
         afterTaxCostOfDebt = calculateAfterTaxCostOfDebt(
-          params.interestRate || 0,
+          blendedDebtRate,
           params.taxRate || 0
         );
-        
+
       } else {
         // Calculate independent WACC using CAPM
         capmCostOfEquity = calculateCostOfEquity(
@@ -311,12 +353,13 @@ export function ValuationTab({ projections, params, ccy }) {
           valuationInputs.beta,
           valuationInputs.marketRiskPremium
         );
-        
+
+        // Use blended rate for accurate cost of debt
         afterTaxCostOfDebt = calculateAfterTaxCostOfDebt(
-          params.interestRate || 0,
+          blendedDebtRate,
           params.taxRate || 0
         );
-        
+
         const targetEquityRatio = 1 - valuationInputs.targetDebtRatio;
         effectiveWACC = calculateWACC(
           targetEquityRatio * 1000,
@@ -324,7 +367,7 @@ export function ValuationTab({ projections, params, ccy }) {
           capmCostOfEquity,
           afterTaxCostOfDebt
         );
-        
+
         waccSource = 'Independent CAPM Calculation';
       }
       

@@ -223,9 +223,12 @@ function buildMultiTrancheSchedule(params) {
   // Calculate each tranche separately
   const trancheSchedules = params.debtTranches.map(tranche => {
     // Create params object for this specific tranche
+    // IMPORTANT: Clear requestedLoanAmount to prevent double-counting when
+    // buildAmortizationSchedule adds openingDebt + requestedLoanAmount
     const trancheParams = {
       ...params,
       openingDebt: tranche.amount,
+      requestedLoanAmount: 0, // Clear to prevent double-counting with tranche.amount
       interestRate: tranche.rate,
       debtTenorYears: tranche.tenorYears,
       openingDebtMaturityDate: tranche.maturityDate,

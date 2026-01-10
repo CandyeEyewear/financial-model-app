@@ -267,8 +267,9 @@ function AIInsightPanel({ projection, params, ccy }) {
     // 7. FCF ADEQUACY FOR DEBT SERVICE
     const totalFCF = stats.totalFCFGenerated;
     const totalDebtService = projection.rows.reduce((sum, r) => sum + r.debtService, 0);
-    const fcfCoverage = totalFCF / totalDebtService;
-    
+    // Protect against division by zero - if no debt service, FCF coverage is infinite
+    const fcfCoverage = totalDebtService > 0 ? totalFCF / totalDebtService : Infinity;
+
     if (fcfCoverage >= 1.0) {
       analysis.push({
         type: 'positive',
@@ -1371,7 +1372,7 @@ function TrancheView({ projection, params, ccy }) {
                 </td>
                 {projection.rows.map((row, i) => (
                   <td key={i} className="text-right py-2 px-4">
-                    <CovenantIndicator value={row.dscr} threshold={params.minDSCR} />
+                    <CovenantIndicator value={row.dscr} threshold={params.minDSCR} debtBalance={row.debtBalance} />
                   </td>
                 ))}
               </tr>
@@ -1383,7 +1384,7 @@ function TrancheView({ projection, params, ccy }) {
                 </td>
                 {projection.rows.map((row, i) => (
                   <td key={i} className="text-right py-2 px-4">
-                    <CovenantIndicator value={row.icr} threshold={params.targetICR} />
+                    <CovenantIndicator value={row.icr} threshold={params.targetICR} debtBalance={row.debtBalance} />
                   </td>
                 ))}
               </tr>

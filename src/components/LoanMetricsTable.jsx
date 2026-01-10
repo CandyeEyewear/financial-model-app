@@ -264,19 +264,50 @@ function AIInsightPanel({ projection, params, ccy }) {
       }
     }
     
-    // 7. FCF ADEQUACY FOR DEBT SERVICE
+    // 7. FCF ADEQUACY FOR DEBT SERVICE (with year-by-year analysis)
     const totalFCF = stats.totalFCFGenerated;
     const totalDebtService = projection.rows.reduce((sum, r) => sum + r.debtService, 0);
-    const fcfCoverage = totalFCF / totalDebtService;
-    
-    if (fcfCoverage >= 1.0) {
+    const fcfCoverage = totalDebtService > 0 ? totalFCF / totalDebtService : null;
+
+    // Year-by-year FCF coverage analysis
+    const yearByYearAnalysis = projection.rows.map((row, index) => {
+      const fcf = row.fcf || 0;
+      const debtService = row.debtService || 0;
+      const coverage = debtService > 0 ? fcf / debtService : null;
+      const shortfall = fcf < debtService ? debtService - fcf : 0;
+
+      return {
+        year: row.year || index + 1,
+        fcf,
+        debtService,
+        coverage,
+        shortfall,
+        isShortfall: fcf < debtService && debtService > 0
+      };
+    });
+
+    const yearsWithShortfall = yearByYearAnalysis.filter(y => y.isShortfall);
+
+    // Report year-specific shortfalls even if cumulative is positive
+    if (yearsWithShortfall.length > 0 && fcfCoverage >= 1.0) {
+      const shortfallYears = yearsWithShortfall.map(y => y.year).join(', ');
+      const totalShortfall = yearsWithShortfall.reduce((sum, y) => sum + y.shortfall, 0);
+      analysis.push({
+        type: 'warning',
+        category: 'Year-by-Year FCF',
+        insight: `Although cumulative FCF is positive, years ${shortfallYears} show FCF shortfalls totaling ${currencyFmtMM(totalShortfall, ccy)}.`,
+        recommendation: 'Consider cash flow timing. May need revolving credit facility or cash reserves to bridge shortfall years.'
+      });
+    }
+
+    if (fcfCoverage !== null && fcfCoverage >= 1.0) {
       analysis.push({
         type: 'positive',
         category: 'Free Cash Flow',
         insight: `Cumulative FCF of ${currencyFmtMM(totalFCF, ccy)} fully covers total debt service of ${currencyFmtMM(totalDebtService, ccy)} (${numFmt(fcfCoverage)}x coverage).`,
         recommendation: 'Self-funding debt service from operations demonstrates financial sustainability. Excess FCF available for growth or returns to shareholders.'
       });
-    } else {
+    } else if (fcfCoverage !== null) {
       analysis.push({
         type: 'critical',
         category: 'Free Cash Flow',

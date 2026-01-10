@@ -750,8 +750,9 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     siteVisitFrequency: "",
     
     // Opening Debt Date Management
-    openingDebtStartDate: '2023-01-01',
-    openingDebtMaturityDate: '2028-12-31',
+    openingDebtStartDate: new Date().toISOString().split('T')[0],
+    // Calculate dynamic default: 5 years from now, end of year
+    openingDebtMaturityDate: `${new Date().getFullYear() + 5}-12-31`,
     openingDebtAmortizationType: 'amortizing',
     openingDebtPaymentFrequency: 'Quarterly',
     
@@ -860,8 +861,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     conditionsPrecedent: "",
     reportingRequirements: "",
     siteVisitFrequency: "",
-    openingDebtStartDate: '2023-01-01',
-    openingDebtMaturityDate: '2028-12-31',
+    openingDebtStartDate: new Date().toISOString().split('T')[0],
+    openingDebtMaturityDate: `${new Date().getFullYear() + 5}-12-31`,
     openingDebtAmortizationType: 'amortizing',
     openingDebtPaymentFrequency: 'Quarterly',
     hasMultipleTranches: false,
@@ -2314,24 +2315,68 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                         checked={draftParams.hasMultipleTranches}
                         onChange={(e) => {
                           const isEnabled = e.target.checked;
+                          // Helper function to create tranches using current form values
+                          const createDefaultTranches = () => {
+                            const tranches = [];
+
+                            // Add existing debt tranche if present
+                            if (draftParams.hasExistingDebt && (draftParams.existingDebtAmount || draftParams.openingDebt) > 0) {
+                              tranches.push({
+                                id: Date.now(),
+                                name: 'Existing Debt',
+                                amount: draftParams.existingDebtAmount || draftParams.openingDebt || 0,
+                                rate: draftParams.existingDebtRate || draftParams.interestRate || 0.08,
+                                tenorYears: draftParams.existingDebtTenor || draftParams.debtTenorYears || 5,
+                                maturityDate: draftParams.openingDebtMaturityDate || `${new Date().getFullYear() + 5}-12-31`,
+                                amortizationType: draftParams.existingDebtAmortizationType || 'amortizing',
+                                paymentFrequency: draftParams.openingDebtPaymentFrequency || 'Quarterly',
+                                interestOnlyYears: 0,
+                                seniority: 'Senior Secured'
+                              });
+                            }
+
+                            // Add new facility tranche if present
+                            if (draftParams.requestedLoanAmount > 0) {
+                              tranches.push({
+                                id: Date.now() + 1,
+                                name: 'New Facility',
+                                amount: draftParams.requestedLoanAmount || 0,
+                                rate: draftParams.proposedPricing || draftParams.interestRate || 0.08,
+                                tenorYears: draftParams.proposedTenor || draftParams.debtTenorYears || 5,
+                                maturityDate: `${new Date().getFullYear() + (draftParams.proposedTenor || 5)}-12-31`,
+                                amortizationType: draftParams.facilityAmortizationType || 'amortizing',
+                                paymentFrequency: draftParams.paymentFrequency || 'Quarterly',
+                                interestOnlyYears: draftParams.interestOnlyPeriod || 0,
+                                seniority: 'Senior Secured'
+                              });
+                            }
+
+                            // If no debt configured, create a default placeholder tranche
+                            if (tranches.length === 0) {
+                              tranches.push({
+                                id: Date.now(),
+                                name: 'Tranche 1',
+                                amount: 0,
+                                rate: draftParams.interestRate || 0.08,
+                                tenorYears: draftParams.debtTenorYears || 5,
+                                maturityDate: `${new Date().getFullYear() + 5}-12-31`,
+                                amortizationType: 'amortizing',
+                                paymentFrequency: 'Quarterly',
+                                interestOnlyYears: 0,
+                                seniority: 'Senior Secured'
+                              });
+                            }
+
+                            return tranches;
+                          };
+
                           setDraftParams({
-                            ...draftParams, 
+                            ...draftParams,
                             hasMultipleTranches: isEnabled,
-                            debtTranches: isEnabled 
-                              ? (draftParams.debtTranches?.length > 0 
-                                  ? draftParams.debtTranches 
-                                  : [{
-                                      id: Date.now(),
-                                      name: "Existing Debt",
-                                      amount: draftParams.existingDebtAmount || 0,
-                                      rate: draftParams.existingDebtRate || 0.10,
-                                      maturityDate: new Date(Date.now() + (draftParams.existingDebtTenor || 5)*365*24*60*60*1000).toISOString().split('T')[0],
-                                      amortizationType: draftParams.existingDebtAmortizationType || 'amortizing',
-                                      tenorYears: draftParams.existingDebtTenor || 5,
-                                      paymentFrequency: draftParams.openingDebtPaymentFrequency || 'Quarterly',
-                                      seniority: "Senior Secured",
-                                      interestOnlyYears: 0
-                                    }])
+                            debtTranches: isEnabled
+                              ? (draftParams.debtTranches?.length > 0
+                                  ? draftParams.debtTranches
+                                  : createDefaultTranches())
                               : draftParams.debtTranches
                           });
                         }}

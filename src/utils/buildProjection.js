@@ -11,6 +11,42 @@
 import { calculateIRR, calculateMOIC, safeDivide } from './financialCalculations';
 
 /**
+ * Calculate interest based on day count convention
+ * @param {number} principal - Loan principal
+ * @param {number} annualRate - Annual interest rate (decimal)
+ * @param {number} days - Number of days in period
+ * @param {string} convention - Day count convention
+ * @returns {number} - Interest amount
+ */
+function calculateInterestWithDayCount(principal, annualRate, days, convention = 'Actual/360') {
+  switch (convention) {
+    case 'Actual/360':
+      return principal * annualRate * (days / 360);
+    case 'Actual/365':
+      return principal * annualRate * (days / 365);
+    case '30/360':
+      // Assumes 30 days per month, 360 days per year
+      return principal * annualRate * (days / 360);
+    case 'Actual/Actual':
+      // For simplicity, use actual days / actual days in year
+      return principal * annualRate * (days / 365.25);
+    default:
+      // Default to Actual/360 (common in commercial lending)
+      return principal * annualRate * (days / 360);
+  }
+}
+
+/**
+ * Get the last day of a given year
+ * @param {number} year - The year
+ * @returns {string} - ISO date string (YYYY-MM-DD)
+ */
+function getYearEndDate(year) {
+  // December 31st of the given year
+  return `${year}-12-31`;
+}
+
+/**
  * Helper function to determine payments per year based on frequency
  */
 function getPaymentsPerYear(frequency) {
@@ -52,7 +88,21 @@ const principal = params.openingDebt || params.requestedLoanAmount || 0;
     });
   }
 
-  const annualRate = params.interestRate || 0;
+  // Determine the appropriate rate based on what debt exists
+  const hasOpeningDebt = (params.openingDebt || 0) > 0;
+  const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
+
+  let annualRate;
+  if (hasOpeningDebt && !hasNewFacility) {
+    // Only existing debt - use existing debt rate
+    annualRate = params.existingDebtRate || params.interestRate || 0;
+  } else if (!hasOpeningDebt && hasNewFacility) {
+    // Only new facility - use proposed pricing
+    annualRate = params.proposedPricing || params.interestRate || 0;
+  } else {
+    // Both or neither - use the general interestRate (blended scenarios handled by multi-tranche)
+    annualRate = params.interestRate || 0;
+  }
   const tenorYears = params.debtTenorYears || 5;
   const interestOnlyYears = params.interestOnlyYears || 0;
   
@@ -83,8 +133,10 @@ const principal = params.openingDebt || params.requestedLoanAmount || 0;
       continue;
     }
 
-    // Calculate interest payment on remaining balance
-    const interestPayment = remainingBalance * annualRate;
+    // Calculate interest payment using day count convention
+    // For annual projections, assume 365 days per year
+    const dayCountConvention = params.dayCountConvention || 'Actual/365';
+    const interestPayment = calculateInterestWithDayCount(remainingBalance, annualRate, 365, dayCountConvention);
     
     // Calculate principal payment based on amortization type
     let principalPayment = 0;
@@ -437,14 +489,23 @@ if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
     // ==========================================================================
     // COVENANT RATIOS (Credit Analysis - Industry Standard)
     // ==========================================================================
-    
+
     // Debt Service Coverage Ratio (DSCR) - uses EBITDA
     // = EBITDA / Total Debt Service
-    const dscr = totalDebtService > 0 ? ebitda / totalDebtService : 999;
-    
+    // Returns null when no debt service (more accurate than 999 for "N/A" display)
+    const hasDebtService = totalDebtService > 0;
+    const rawDscr = hasDebtService ? ebitda / totalDebtService : null;
+    // Cap at 99 for display purposes, but keep null for N/A cases
+    const dscr = rawDscr === null ? null : (rawDscr > 99 ? 99 : rawDscr);
+    // Legacy compatibility: use 999 marker for very high/no debt cases in filtering
+    const dscrForFiltering = rawDscr === null ? 999 : (rawDscr > 99 ? 999 : rawDscr);
+
     // Interest Coverage Ratio (ICR) - uses EBIT (not EBITDA)
     // = EBIT / Interest Expense
-    const icr = interestExpense > 0 ? ebit / interestExpense : 999;
+    const hasInterestExpense = interestExpense > 0;
+    const rawIcr = hasInterestExpense ? ebit / interestExpense : null;
+    const icr = rawIcr === null ? null : (rawIcr > 99 ? 99 : rawIcr);
+    const icrForFiltering = rawIcr === null ? 999 : (rawIcr > 99 ? 999 : rawIcr);
     
     // Leverage Ratio - uses EBITDA
     // = Net Debt / EBITDA
@@ -536,6 +597,12 @@ if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
       ndToEbitda,
       fixedChargeCoverage,
       cashAvailableForDebtService: ebitda - tax - capex - wcDelta,
+
+      // DSCR/ICR metadata for N/A handling
+      hasDebtService,
+      hasInterestExpense,
+      dscrForFiltering,
+      icrForFiltering,
       
       // Additional metrics
       debtToEquity: (params.equityContribution + retainedEarnings) > 0 
@@ -551,8 +618,9 @@ if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
   // CREDIT STATISTICS (Summary metrics for covenant monitoring)
   // ============================================================================
   
-  const dscrValues = rows.map(r => r.dscr).filter(v => isFinite(v) && v < 999);
-  const icrValues = rows.map(r => r.icr).filter(v => isFinite(v) && v < 999);
+  // Use forFiltering values to get valid numeric values for stats calculation
+  const dscrValues = rows.map(r => r.dscrForFiltering).filter(v => isFinite(v) && v < 999 && v !== null);
+  const icrValues = rows.map(r => r.icrForFiltering).filter(v => isFinite(v) && v < 999 && v !== null);
   const leverageValues = rows.map(r => r.ndToEbitda).filter(v => isFinite(v));
   
   const creditStats = {

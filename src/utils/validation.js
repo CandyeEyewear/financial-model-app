@@ -4,6 +4,64 @@
  */
 
 /**
+ * Validate tranche names are unique
+ */
+export function validateTrancheNames(tranches) {
+  const errors = [];
+  const warnings = [];
+
+  if (!tranches || tranches.length === 0) {
+    return { isValid: true, errors, warnings };
+  }
+
+  const names = tranches.map(t => t.name?.toLowerCase().trim());
+  const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
+
+  if (duplicates.length > 0) {
+    const uniqueDuplicates = [...new Set(duplicates)];
+    errors.push(`Duplicate tranche names found: ${uniqueDuplicates.join(', ')}. Each tranche must have a unique name.`);
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
+ * Validate individual tranche before adding
+ */
+export function validateTranche(tranche) {
+  const errors = [];
+
+  if (!tranche.name || tranche.name.trim() === '') {
+    errors.push('Tranche name is required');
+  }
+
+  if (!tranche.amount || tranche.amount <= 0) {
+    errors.push('Tranche amount must be greater than zero');
+  }
+
+  if (!tranche.rate || tranche.rate <= 0) {
+    errors.push('Tranche interest rate must be greater than zero');
+  }
+
+  if (!tranche.tenorYears || tranche.tenorYears <= 0) {
+    errors.push('Tranche tenor must be greater than zero');
+  }
+
+  if (tranche.interestOnlyYears && tranche.interestOnlyYears >= tranche.tenorYears) {
+    errors.push('Interest-only period cannot exceed or equal total tenor');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
  * Validate historical financial data inputs
  */
 export function validateFinancialInputs(inputs) {

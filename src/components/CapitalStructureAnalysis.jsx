@@ -412,16 +412,20 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   <div className="text-xs opacity-80 mt-1">@ {numFmt(debtCapacity.targetDSCRWithBuffer)}x DSCR</div>
                 </div>
 
-                {/* Excess / Shortfall */}
+                {/* Available Capacity / Excess Debt */}
                 <div className={`p-4 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105 ${
-                  debtCapacity.excessDebt > 0 
-                    ? 'bg-gradient-to-br from-red-500 to-red-600' 
-                    : 'bg-gradient-to-br from-emerald-500 to-emerald-600'
+                  debtCapacity.availableCapacity > 0 
+                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' 
+                    : 'bg-gradient-to-br from-red-500 to-red-600'
                 }`}>
-                  <div className="text-xs opacity-90 mb-1">{debtCapacity.excessDebt > 0 ? 'Excess Debt' : 'Available Capacity'}</div>
-                  <div className="text-2xl font-bold">{currencyFmtMM(Math.abs(debtCapacity.excessDebt), ccy)}</div>
+                  <div className="text-xs opacity-90 mb-1">
+                    {debtCapacity.availableCapacity > 0 ? 'Available Capacity' : 'Excess Debt'}
+                  </div>
+                  <div className="text-2xl font-bold">
+                    {currencyFmtMM(debtCapacity.availableCapacity > 0 ? debtCapacity.availableCapacity : debtCapacity.excessDebt, ccy)}
+                  </div>
                   <div className="text-xs opacity-80 mt-1">
-                    {debtCapacity.excessDebt > 0 ? 'Over Capacity' : 'Under Capacity'}
+                    {debtCapacity.availableCapacity > 0 ? 'Under Capacity' : 'Over Capacity'}
                   </div>
                 </div>
               </div>
@@ -547,6 +551,36 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                     <span className="text-blue-700">Annual Payment Factor:</span>
                     <span className="font-bold text-blue-900">{pctFmt(debtCapacity.annualPaymentFactor)}</span>
                   </div>
+                  {debtCapacity.impliedDSCR && debtCapacity.impliedDSCR < 999 && (
+                    <div className="flex justify-between pt-2 border-t border-blue-200 mt-2">
+                      <span className="text-blue-700">Current DSCR:</span>
+                      <span className={`font-bold ${debtCapacity.impliedDSCR >= debtCapacity.targetDSCR ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {numFmt(debtCapacity.impliedDSCR)}x
+                      </span>
+                    </div>
+                  )}
+                  {debtCapacity.leverage > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-blue-700">Current Leverage:</span>
+                      <span className={`font-bold ${debtCapacity.leverage <= (params.maxNDToEBITDA || 3.0) ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {numFmt(debtCapacity.leverage)}x
+                      </span>
+                    </div>
+                  )}
+                  {debtCapacity.totalAssets > 0 && (
+                    <div className="flex justify-between pt-2 border-t border-blue-200 mt-2">
+                      <span className="text-blue-700">Total Assets:</span>
+                      <span className="font-bold text-blue-900">{currencyFmtMM(debtCapacity.totalAssets, ccy)}</span>
+                    </div>
+                  )}
+                  {debtCapacity.ltv > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-blue-700">LTV (Loan-to-Value):</span>
+                      <span className={`font-bold ${debtCapacity.ltv <= 75 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {debtCapacity.ltv.toFixed(0)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

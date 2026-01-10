@@ -40,37 +40,47 @@ import { useDebounce } from "./hooks/debounce.js";
 import { SmartPctField } from "./components/SmartFields";
 import { SmartSuggestion, OpeningDebtWarning } from "./components/SmartSuggestions";
 
-// Helper function to safely check if a field has been edited
-// Handles cases where _editedFields might be a Set, array, object, or undefined
-const isFieldEdited = (editedFields, fieldName) => {
+/**
+ * Check if a field has been manually edited
+ * Works with both Set and Array (for backwards compatibility)
+ */
+const hasEditedField = (editedFields, fieldName) => {
   if (!editedFields) return false;
   if (editedFields instanceof Set) return editedFields.has(fieldName);
   if (Array.isArray(editedFields)) return editedFields.includes(fieldName);
-  // Handle case where it was serialized as an object (from JSON)
   return false;
 };
 
-// Helper function to safely add a field to editedFields, always returning a Set
+/**
+ * Add a field to the edited fields list
+ * Returns an Array (for JSON serialization compatibility)
+ */
 const addEditedField = (editedFields, fieldName) => {
-  const existingFields = editedFields instanceof Set 
+  const existing = editedFields instanceof Set 
     ? [...editedFields] 
     : Array.isArray(editedFields) 
       ? editedFields 
       : [];
-  return new Set([...existingFields, fieldName]);
+  return [...new Set([...existing, fieldName])];
 };
 
-// Helper to ensure _editedFields is always a Set
-const ensureEditedFieldsSet = (params) => {
+/**
+ * Ensure _editedFields is an Array when loading from storage
+ */
+const ensureEditedFieldsArray = (params) => {
   if (!params) return params;
-  if (params._editedFields && !(params._editedFields instanceof Set)) {
-    return {
-      ...params,
-      _editedFields: new Set(Array.isArray(params._editedFields) ? params._editedFields : [])
-    };
-  }
-  return params;
+  return {
+    ...params,
+    _editedFields: Array.isArray(params._editedFields)
+      ? params._editedFields
+      : params._editedFields instanceof Set
+        ? [...params._editedFields]
+        : []
+  };
 };
+
+// Backwards compatibility alias
+const isFieldEdited = hasEditedField;
 
 // Color palette for consistency
 const COLORS = {
@@ -740,8 +750,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     hasMultipleTranches: false,
     debtTranches: [],
     
-    // Internal Tracking
-    _editedFields: new Set(),
+    // Internal Tracking (Array for JSON serialization compatibility)
+    _editedFields: [],
     _historicalValues: null,
     _industryBenchmarks: null,
   });
@@ -847,7 +857,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     openingDebtPaymentFrequency: 'Quarterly',
     hasMultipleTranches: false,
     debtTranches: [],
-    _editedFields: new Set(),
+    _editedFields: [],
     _historicalValues: null,
     _industryBenchmarks: null,
   };
@@ -1258,8 +1268,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       return;
     }
     
-    // Load params into state, ensuring _editedFields is a Set
-    const loadedParams = ensureEditedFieldsSet(scenario.params);
+    // Load params into state, ensuring _editedFields is an Array
+    const loadedParams = ensureEditedFieldsArray(scenario.params);
     setParams(loadedParams);
     setDraftParams(loadedParams);
     

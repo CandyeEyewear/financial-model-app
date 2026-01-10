@@ -37,9 +37,10 @@ function getPaymentsPerYear(frequency) {
 function buildAmortizationSchedule(params) {
   const schedule = [];
   
-  // ✅ FIX: Combine opening debt + new facility
-  // Determine principal amount - use ONLY the relevant debt source
-const principal = params.openingDebt || params.requestedLoanAmount || 0;
+  // Combine both debt sources - they are additive, not alternatives
+  const existingDebtAmount = params.openingDebt || 0;
+  const newFacilityAmount = params.requestedLoanAmount || 0;
+  const principal = existingDebtAmount + newFacilityAmount;
   
   // No debt - return empty schedule
   if (principal === 0) {
@@ -280,61 +281,57 @@ let retainedEarnings = 0;  // Accumulated retained earnings
 // ============================================================================
 // Support both single debt and multi-tranche structures
 const debtSchedule = (() => {
+  // Explicit multi-tranche mode
   if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
     return buildMultiTrancheSchedule(params);
   }
-  
-  // Auto-create tranches if EITHER opening debt OR new facility exists
-if (params.requestedLoanAmount > 0 || params.openingDebt > 0) {
-  const tranches = [];
-  
-  // Add opening debt tranche if it exists
-  // ✅ FIX: Use existing debt parameters (existingDebtRate, existingDebtTenor) instead of new facility params
-  if (params.openingDebt > 0) {
-    tranches.push({
-      name: 'Opening Debt',
-      amount: params.openingDebt,
-      // Use existingDebtRate if available, fallback to interestRate for backward compatibility
-      rate: params.existingDebtRate || params.interestRate,
-      seniority: 'Senior',
-      // Use existingDebtTenor if available, fallback to debtTenorYears
-      tenorYears: params.existingDebtTenor || params.debtTenorYears,
-      maturityDate: params.openingDebtMaturityDate,
-      // Use existingDebtAmortizationType if available
-      amortizationType: params.existingDebtAmortizationType || params.openingDebtAmortizationType || 'amortizing',
-      paymentFrequency: params.openingDebtPaymentFrequency || 'Quarterly',
-      // Existing debt typically doesn't have interest-only period (already in amortization)
-      interestOnlyYears: 0
-    });
+
+  // Check if we need to auto-create tranches (both existing AND new)
+  const hasOpeningDebt = (params.openingDebt || 0) > 0;
+  const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
+
+  if (hasOpeningDebt && hasNewFacility) {
+    // Auto-create separate tranches for each debt source
+    const autoTranches = {
+      ...params,
+      hasMultipleTranches: true,
+      debtTranches: [
+        {
+          name: 'Existing Debt',
+          amount: params.openingDebt,
+          rate: params.existingDebtRate || params.interestRate,
+          tenorYears: params.existingDebtTenor || params.debtTenorYears,
+          maturityDate: params.openingDebtMaturityDate,
+          amortizationType: params.existingDebtAmortizationType || 'amortizing',
+          paymentFrequency: params.openingDebtPaymentFrequency || 'Quarterly',
+          interestOnlyYears: 0,
+          seniority: 'Senior'
+        },
+        {
+          name: 'New Facility',
+          amount: params.requestedLoanAmount,
+          rate: params.proposedPricing || params.interestRate,
+          tenorYears: params.proposedTenor || params.debtTenorYears,
+          maturityDate: calculateMaturityDate(params.startYear, params.proposedTenor || params.debtTenorYears),
+          amortizationType: params.facilityAmortizationType || 'amortizing',
+          paymentFrequency: params.paymentFrequency || 'Quarterly',
+          interestOnlyYears: params.interestOnlyPeriod || 0,
+          seniority: 'Senior'
+        }
+      ]
+    };
+    return buildMultiTrancheSchedule(autoTranches);
   }
-  
-  // Add new facility tranche if it exists
-  if (params.requestedLoanAmount > 0) {
-    tranches.push({
-      name: 'New Facility',
-      amount: params.requestedLoanAmount,
-      rate: params.proposedPricing || params.interestRate,
-      seniority: 'Senior',
-      tenorYears: params.proposedTenor || params.debtTenorYears,
-      maturityDate: new Date(params.startYear + (params.proposedTenor || params.debtTenorYears), 11, 31).toISOString().split('T')[0],
-      // ✅ FIX: Use facilityAmortizationType for new facility, not openingDebtAmortizationType
-      amortizationType: params.facilityAmortizationType || 'amortizing',
-      paymentFrequency: params.paymentFrequency || 'Quarterly',
-      // ✅ FIX: Use interestOnlyPeriod for new facility
-      interestOnlyYears: params.interestOnlyPeriod || 0
-    });
-  }
-  
-  const autoTranches = {
-    ...params,
-    hasMultipleTranches: true,
-    debtTranches: tranches
-  };
-  return buildMultiTrancheSchedule(autoTranches);
-}  
-  // Single debt facility
+
+  // Single debt source only (either existing OR new, not both)
   return buildAmortizationSchedule(params);
 })();
+
+// Helper function for calculating maturity date
+function calculateMaturityDate(startYear, tenorYears) {
+  const maturityYear = startYear + tenorYears;
+  return new Date(maturityYear, 11, 31).toISOString().split('T')[0];
+}
   
   // ============================================================================
   // ANNUAL PROJECTIONS

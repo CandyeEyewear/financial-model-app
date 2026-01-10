@@ -618,6 +618,198 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
   );
 }
 
+// ==========================================
+// LOCAL STORAGE PERSISTENCE
+// ==========================================
+const STORAGE_KEY_PARAMS = 'finsight_params';
+const STORAGE_KEY_HISTORICAL = 'finsight_historical_data';
+
+// Default params for initialization and reset
+const getDefaultParams = () => ({
+  // TIER 1: CORE ASSUMPTIONS
+  startYear: new Date().getFullYear(),
+  years: 5,
+  baseRevenue: 0,
+  growth: 0.08,
+  cogsPct: 0.40,
+  opexPct: 0.25,
+  capexPct: 0.05,
+  daPctOfPPE: 0.10,
+  wcPctOfRev: 0.15,
+  taxRate: 0.21,
+  wacc: 0.10,
+  terminalGrowth: 0.03,
+  equityContribution: 0,
+  entryMultiple: 8.0,
+  sharesOutstanding: 1_000_000,
+  industry: "Manufacturing",
+
+  // NEW FACILITY
+  requestedLoanAmount: 0,
+  proposedPricing: 0.12,
+  proposedTenor: 5,
+  facilityAmortizationType: 'amortizing',
+  interestOnlyPeriod: 0,
+  paymentFrequency: "Quarterly",
+  balloonPercentage: 0,
+
+  // EXISTING DEBT
+  hasExistingDebt: false,
+  existingDebtAmount: 0,
+  existingDebtRate: 0.08,
+  existingDebtTenor: 5,
+  existingDebtAmortizationType: 'amortizing',
+
+  // OPENING BALANCE SHEET
+  openingCash: 0,
+
+  // COVENANTS
+  minDSCR: 1.2,
+  maxNDToEBITDA: 3.5,
+  targetICR: 2.0,
+
+  // LEGACY FIELDS (for backward compatibility)
+  openingDebt: 0,
+  interestRate: 0.12,
+  debtTenorYears: 5,
+  interestOnlyYears: 0,
+
+  // FACILITY DETAILS
+  facilityType: "Senior Secured Term Loan",
+  useBalloonPayment: false,
+  dayCountConvention: "Actual/365",
+  openingDate: new Date().toISOString().split('T')[0],
+  issueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  prepaymentNoticeDays: 30,
+  prepaymentPenaltyPct: 0,
+  arrangerBroker: "ABC Wealth Limited",
+  legalCounsel: "",
+  trustee: "",
+  registrar: "",
+  payingAgent: "",
+  distributionMethod: "Private Placement",
+  investorType: "Accredited Investors",
+  possibleUpsizeAmount: 0,
+
+  // COMPANY INFORMATION
+  companyLegalName: "",
+  companyOperatingName: "",
+  companyAddress: "",
+  taxId: "",
+  loanPurpose: "",
+  useOfProceeds: "",
+  dealStructure: "Term loan, revolving credit etc",
+  customAmortization: [20, 20, 20, 20, 20],
+
+  // BUSINESS DESCRIPTION
+  businessModel: "",
+  productsServices: "",
+  keyCustomers: "",
+  competitivePosition: "",
+  marketShare: "",
+
+  // MANAGEMENT
+  keyManagementNames: "",
+  managementTrackRecord: "",
+
+  // CREDIT ASSESSMENT
+  creditHistory: "Clean",
+  totalAssets: 0,
+  collateralValue: 0,
+  businessAge: 0,
+  managementExperience: "Strong",
+  creditStrengths: "",
+  keyRisks: "",
+  mitigatingFactors: "",
+
+  // COLLATERAL
+  collateralDescription: "",
+  lienPosition: "First Lien",
+  appraisalValue: 0,
+  appraisalDate: "",
+
+  // RELATIONSHIP
+  relationshipManager: "",
+  existingRelationshipYears: 0,
+  referralSource: "",
+
+  // FINANCIAL COMMENTARY
+  revenueCommentary: "",
+  marginCommentary: "",
+  workingCapitalCommentary: "",
+  seasonalityFactors: "",
+
+  // EXIT STRATEGY
+  primaryRepaymentSource: "",
+  secondaryRepaymentSource: "",
+
+  // CONDITIONS & MONITORING
+  conditionsPrecedent: "",
+  reportingRequirements: "",
+  siteVisitFrequency: "",
+
+  // OPENING DEBT DATE MANAGEMENT
+  openingDebtStartDate: new Date().toISOString().split('T')[0],
+  openingDebtMaturityDate: `${new Date().getFullYear() + 5}-12-31`,
+  openingDebtAmortizationType: 'amortizing',
+  openingDebtPaymentFrequency: 'Quarterly',
+
+  // MULTI-TRANCHE SUPPORT
+  hasMultipleTranches: false,
+  debtTranches: [],
+
+  // INTERNAL TRACKING
+  _editedFields: [],
+  _historicalValues: null,
+  _industryBenchmarks: null,
+});
+
+// Default historical data
+const getDefaultHistoricalData = () => [
+  { year: 2021, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0, dateEntered: new Date().toISOString() },
+  { year: 2022, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0, dateEntered: new Date().toISOString() },
+  { year: 2023, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0, dateEntered: new Date().toISOString() },
+];
+
+/**
+ * Load saved params from localStorage, merging with defaults
+ */
+const loadSavedParams = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_PARAMS);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Merge with defaults to ensure all fields exist
+      const merged = { ...getDefaultParams(), ...parsed };
+      // Ensure _editedFields is an array
+      return ensureEditedFieldsArray(merged);
+    }
+  } catch (error) {
+    console.error('Error loading params from localStorage:', error);
+  }
+  return getDefaultParams();
+};
+
+/**
+ * Load saved historical data from localStorage
+ */
+const loadSavedHistoricalData = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_HISTORICAL);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Convert dateEntered strings back to proper format if needed
+      return parsed.map(row => ({
+        ...row,
+        dateEntered: row.dateEntered ? new Date(row.dateEntered) : new Date()
+      }));
+    }
+  } catch (error) {
+    console.error('Error loading historical data from localStorage:', error);
+  }
+  return getDefaultHistoricalData();
+};
+
 export default function FinancialModelAndStressTester({ onDataUpdate, accessToken }) {
   // Get authentication state for database persistence
   const { user, isAuthenticated } = useAuth();
@@ -626,150 +818,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingScenarios, setIsLoadingScenarios] = useState(false);
   
-  // Main params state - UPDATED STRUCTURE
-  const [params, setParams] = useState({
-    // ==========================================
-    // TIER 1: CORE ASSUMPTIONS
-    // ==========================================
-    
-    // Financial Core
-    startYear: new Date().getFullYear(),
-    years: 5,
-    baseRevenue: 0,
-    growth: 0.08,              // 8%
-    cogsPct: 0.40,             // 40%
-    opexPct: 0.25,             // 25%
-    capexPct: 0.05,            // 5%
-    daPctOfPPE: 0.10,          // 10%
-    wcPctOfRev: 0.15,          // 15%
-    taxRate: 0.21,             // 21%
-    wacc: 0.10,                // 10%
-    terminalGrowth: 0.03,      // 3%
-    equityContribution: 0,
-    entryMultiple: 8.0,
-    sharesOutstanding: 1000000,
-    industry: "Manufacturing",
-    
-    // NEW FACILITY (Primary inputs)
-    requestedLoanAmount: 0,
-    proposedPricing: 0.12,     // 12%
-    proposedTenor: 5,
-    facilityAmortizationType: 'amortizing',  // ⭐ NEW FIELD
-    interestOnlyPeriod: 0,                   // ⭐ NEW FIELD
-    paymentFrequency: "Quarterly",
-    balloonPercentage: 0,
-    
-    // EXISTING DEBT
-    hasExistingDebt: false,                  // ⭐ NEW TOGGLE
-    existingDebtAmount: 0,                   // ⭐ NEW FIELD
-    existingDebtRate: 0.12,                  // ⭐ NEW FIELD
-    existingDebtTenor: 5,                    // ⭐ NEW FIELD
-    existingDebtAmortizationType: 'amortizing', // ⭐ NEW FIELD
-
-    // OPENING BALANCE SHEET
-    openingCash: 0,                          // ⭐ Opening cash balance for Net Debt calculation
-    
-    // COVENANTS
-    minDSCR: 1.2,
-    maxNDToEBITDA: 3.5,
-    targetICR: 2.0,
-    
-    // LEGACY FIELDS (for backward compatibility - auto-synced)
-    openingDebt: 0,           // Synced from existingDebtAmount
-    interestRate: 0.12,       // Synced from proposedPricing
-    debtTenorYears: 5,        // Synced from proposedTenor
-    interestOnlyYears: 0,     // Synced from interestOnlyPeriod
-    
-    // All other existing fields...
-    facilityType: "Senior Secured Term Loan",
-    useBalloonPayment: false,
-    dayCountConvention: "Actual/365",
-    openingDate: new Date().toISOString().split('T')[0],
-    issueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    prepaymentNoticeDays: 30,
-    prepaymentPenaltyPct: 0,
-    arrangerBroker: "ABC Wealth Limited",
-    legalCounsel: "",
-    trustee: "",
-    registrar: "",
-    payingAgent: "",
-    distributionMethod: "Private Placement",
-    investorType: "Accredited Investors",
-    possibleUpsizeAmount: 0,
-    
-    // Company Information
-    companyLegalName: "",
-    companyOperatingName: "",
-    companyAddress: "",
-    taxId: "",
-    loanPurpose: "",
-    useOfProceeds: "",
-    dealStructure: "Term loan, revolving credit etc",
-    customAmortization: [20, 20, 20, 20, 20],
-    
-    // Business Description
-    businessModel: "",
-    productsServices: "",
-    keyCustomers: "",
-    competitivePosition: "",
-    marketShare: "",
-    
-    // Management
-    keyManagementNames: "",
-    managementTrackRecord: "",
-    
-    // Credit Assessment
-    creditHistory: "Clean",
-    totalAssets: 0,
-    collateralValue: 0,
-    businessAge: 0,
-    managementExperience: "Strong",
-    creditStrengths: "",
-    keyRisks: "",
-    mitigatingFactors: "",
-    
-    // Collateral
-    collateralDescription: "",
-    lienPosition: "First Lien",
-    appraisalValue: 0,
-    appraisalDate: "",
-    
-    // Relationship
-    relationshipManager: "",
-    existingRelationshipYears: 0,
-    referralSource: "",
-    
-    // Financial Commentary
-    revenueCommentary: "",
-    marginCommentary: "",
-    workingCapitalCommentary: "",
-    seasonalityFactors: "",
-    
-    // Exit Strategy
-    primaryRepaymentSource: "",
-    secondaryRepaymentSource: "",
-    
-    // Conditions & Monitoring
-    conditionsPrecedent: "",
-    reportingRequirements: "",
-    siteVisitFrequency: "",
-    
-    // Opening Debt Date Management
-    openingDebtStartDate: new Date().toISOString().split('T')[0],
-    // Calculate dynamic default: 5 years from now, end of year
-    openingDebtMaturityDate: `${new Date().getFullYear() + 5}-12-31`,
-    openingDebtAmortizationType: 'amortizing',
-    openingDebtPaymentFrequency: 'Quarterly',
-    
-    // Multi-Tranche Support
-    hasMultipleTranches: false,
-    debtTranches: [],
-    
-    // Internal Tracking (Array for JSON serialization compatibility)
-    _editedFields: [],
-    _historicalValues: null,
-    _industryBenchmarks: null,
-  });
+  // Main params state - loads from localStorage if available
+  const [params, setParams] = useState(loadSavedParams);
 
   // Save/Load state variables
   const [scenarios, setScenarios] = useState([]);
@@ -779,104 +829,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  // Default params for reset
-  const DEFAULT_PARAMS = {
-    startYear: new Date().getFullYear(),
-    years: 5,
-    baseRevenue: 0,
-    growth: 0.08,
-    cogsPct: 0.40,
-    opexPct: 0.25,
-    capexPct: 0.05,
-    daPctOfPPE: 0.10,
-    wcPctOfRev: 0.15,
-    taxRate: 0.21,
-    wacc: 0.10,
-    terminalGrowth: 0.03,
-    equityContribution: 0,
-    entryMultiple: 8.0,
-    industry: "Manufacturing",
-    requestedLoanAmount: 0,
-    proposedPricing: 0.12,
-    proposedTenor: 5,
-    facilityAmortizationType: 'amortizing',
-    interestOnlyPeriod: 0,
-    paymentFrequency: "Quarterly",
-    balloonPercentage: 0,
-    hasExistingDebt: false,
-    existingDebtAmount: 0,
-    existingDebtRate: 0.12,
-    existingDebtTenor: 5,
-    existingDebtAmortizationType: 'amortizing',
-    openingCash: 0,
-    minDSCR: 1.2,
-    maxNDToEBITDA: 3.5,
-    targetICR: 2.0,
-    sharesOutstanding: 1000000,
-    facilityType: "Senior Secured Term Loan",
-    useBalloonPayment: false,
-    dayCountConvention: "Actual/365",
-    openingDate: new Date().toISOString().split('T')[0],
-    issueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    prepaymentNoticeDays: 30,
-    prepaymentPenaltyPct: 0,
-    arrangerBroker: "ABC Wealth Limited",
-    legalCounsel: "",
-    trustee: "",
-    registrar: "",
-    payingAgent: "",
-    distributionMethod: "Private Placement",
-    investorType: "Accredited Investors",
-    possibleUpsizeAmount: 0,
-    companyLegalName: "",
-    companyOperatingName: "",
-    companyAddress: "",
-    taxId: "",
-    loanPurpose: "",
-    useOfProceeds: "",
-    dealStructure: "Term loan, revolving credit etc",
-    customAmortization: [20, 20, 20, 20, 20],
-    businessModel: "",
-    productsServices: "",
-    keyCustomers: "",
-    competitivePosition: "",
-    marketShare: "",
-    keyManagementNames: "",
-    managementTrackRecord: "",
-    creditHistory: "Clean",
-    totalAssets: 0,
-    collateralValue: 0,
-    businessAge: 0,
-    managementExperience: "Strong",
-    creditStrengths: "",
-    keyRisks: "",
-    mitigatingFactors: "",
-    collateralDescription: "",
-    lienPosition: "First Lien",
-    appraisalValue: 0,
-    appraisalDate: "",
-    relationshipManager: "",
-    existingRelationshipYears: 0,
-    referralSource: "",
-    revenueCommentary: "",
-    marginCommentary: "",
-    workingCapitalCommentary: "",
-    seasonalityFactors: "",
-    primaryRepaymentSource: "",
-    secondaryRepaymentSource: "",
-    conditionsPrecedent: "",
-    reportingRequirements: "",
-    siteVisitFrequency: "",
-    openingDebtStartDate: new Date().toISOString().split('T')[0],
-    openingDebtMaturityDate: `${new Date().getFullYear() + 5}-12-31`,
-    openingDebtAmortizationType: 'amortizing',
-    openingDebtPaymentFrequency: 'Quarterly',
-    hasMultipleTranches: false,
-    debtTranches: [],
-    _editedFields: [],
-    _historicalValues: null,
-    _industryBenchmarks: null,
-  };
+  // Default params for reset - uses shared helper function
+  const DEFAULT_PARAMS = getDefaultParams();
 
   // Now declare custom shocks state
   const [customShocks, setCustomShocks] = useState({
@@ -901,11 +855,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
-  const [historicalData, setHistoricalData] = useState([
-    { year: 2021, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0, dateEntered: new Date() },
-    { year: 2022, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0, dateEntered: new Date() },
-    { year: 2023, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0, dateEntered: new Date() },
-  ]);
+  // Historical data state - loads from localStorage if available
+  const [historicalData, setHistoricalData] = useState(loadSavedHistoricalData);
 
   // Refs for PDF export
   const loanMetricsRef = useRef();
@@ -920,6 +871,72 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
 
   // Add this new state
   const [activeTab, setActiveTab] = useState("capital-structure");
+
+  // ==========================================
+  // LOCAL STORAGE PERSISTENCE - Save on change
+  // ==========================================
+
+  // Save params to localStorage whenever they change
+  useEffect(() => {
+    try {
+      // Serialize params, converting Date objects to ISO strings
+      const paramsToSave = {
+        ...params,
+        // Ensure dates are strings for JSON serialization
+        openingDate: params.openingDate,
+        issueDate: params.issueDate,
+        openingDebtStartDate: params.openingDebtStartDate,
+        openingDebtMaturityDate: params.openingDebtMaturityDate,
+        appraisalDate: params.appraisalDate,
+      };
+      localStorage.setItem(STORAGE_KEY_PARAMS, JSON.stringify(paramsToSave));
+    } catch (error) {
+      console.error('Error saving params to localStorage:', error);
+    }
+  }, [params]);
+
+  // Save historical data to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      // Serialize historicalData, converting Date objects to ISO strings
+      const dataToSave = historicalData.map(row => ({
+        ...row,
+        dateEntered: row.dateEntered instanceof Date
+          ? row.dateEntered.toISOString()
+          : row.dateEntered
+      }));
+      localStorage.setItem(STORAGE_KEY_HISTORICAL, JSON.stringify(dataToSave));
+    } catch (error) {
+      console.error('Error saving historical data to localStorage:', error);
+    }
+  }, [historicalData]);
+
+  // ==========================================
+  // PARAMS UPDATE HELPER - Syncs debt fields
+  // ==========================================
+
+  /**
+   * Update params with automatic debt field synchronization.
+   * Use this instead of setParams when updating debt-related fields
+   * to ensure openingDebt, existingDebtAmount, and hasExistingDebt stay in sync.
+   */
+  const updateParams = (updates) => {
+    setParams(prev => {
+      const newParams = { ...prev, ...updates };
+
+      // Sync debt fields bidirectionally
+      if ('openingDebt' in updates) {
+        newParams.existingDebtAmount = updates.openingDebt;
+        newParams.hasExistingDebt = updates.openingDebt > 0;
+      }
+      if ('existingDebtAmount' in updates) {
+        newParams.openingDebt = updates.existingDebtAmount;
+        newParams.hasExistingDebt = updates.existingDebtAmount > 0;
+      }
+
+      return newParams;
+    });
+  };
 
   // Auto-sync new facility terms to legacy fields for buildProjection compatibility
   useEffect(() => {
@@ -1597,11 +1614,16 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
 
   // === CLEAR ALL FUNCTION ===
   const handleClearAll = () => {
-    setParams({ ...DEFAULT_PARAMS });
-    setDraftParams({ ...DEFAULT_PARAMS });
+    const freshParams = getDefaultParams();
+    setParams(freshParams);
+    setDraftParams(freshParams);
+    setHistoricalData(getDefaultHistoricalData());
     setCurrentScenarioId(null);
     setCurrentScenarioName('');
+    // Clear localStorage for fresh start
     localStorage.removeItem('finsight_last_scenario');
+    localStorage.removeItem(STORAGE_KEY_PARAMS);
+    localStorage.removeItem(STORAGE_KEY_HISTORICAL);
     setShowClearConfirm(false);
     setSuccessMessage('All fields cleared');
     setShowSuccessToast(true);

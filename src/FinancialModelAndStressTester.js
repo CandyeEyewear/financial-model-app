@@ -3014,6 +3014,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
               projection={projections.base}
               params={params}
               ccy={ccy}
+              accessToken={accessToken}
             />
           </div>
         </TabsContent>

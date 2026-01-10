@@ -104,29 +104,8 @@ const generateAIInputHash = (projection, params, capacity, alternatives) => {
 // MAIN COMPONENT
 // ============================================================================
 
-export default function CapitalStructureAnalysis({ projection, params, ccy = "JMD" }) {
+export default function CapitalStructureAnalysis({ projection, params, ccy = "JMD", accessToken }) {
 
- // 🔍 DEBUG LOGGING - Remove after fixing
-  // ============================================================================
-  console.log('=== CAPITAL STRUCTURE DEBUG ===');
-  console.log('projection:', projection);
-  console.log('projection.rows:', projection?.rows);
-  console.log('projection.rows.length:', projection?.rows?.length);
-  console.log('params:', params);
-  console.log('params.openingDebt:', params?.openingDebt);
-  console.log('params.requestedLoanAmount:', params?.requestedLoanAmount);
-  console.log('hasValidData check:', {
-    hasProjection: !!projection,
-    hasRows: !!projection?.rows,
-    rowsLength: projection?.rows?.length || 0,
-    hasParams: !!params
-  });
-  console.log('hasDebt check:', {
-    openingDebt: params?.openingDebt || 0,
-    requestedLoan: params?.requestedLoanAmount || 0,
-    total: (params?.openingDebt || 0) + (params?.requestedLoanAmount || 0)
-  });
-  console.log('================================');
   // ============================================================================
   // STATE MANAGEMENT
   // ============================================================================
@@ -284,7 +263,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
     const timer = setTimeout(() => {
       setIsLoadingAI(true);
       
-      generateAICapitalStructureRecommendations(projection, params, ccy)
+      generateAICapitalStructureRecommendations(projection, params, ccy, accessToken)
         .then(recs => {
           setAiRecommendations(recs);
           setIsLoadingAI(false);
@@ -299,7 +278,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
     }, 2000); // 2 second debounce
 
     return () => clearTimeout(timer);
-  }, [hasValidData, hasDebt, projection, params, ccy, debtCapacity, alternatives, lastAIContext]);
+  }, [hasValidData, hasDebt, projection, params, ccy, debtCapacity, alternatives, lastAIContext, accessToken]);
 
   // ============================================================================
   // HELPER FUNCTIONS
@@ -945,12 +924,12 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                   <div className="text-center">
                     <div className="text-xs text-indigo-700 mb-1">Excess/(Gap)</div>
                     <div className={`text-xl font-bold ${
-                      liveDebtCapacity.excessDebt > 0 ? 'text-red-600' : 'text-emerald-600'
+                      (liveDebtCapacity.excessOverSafe || 0) > 0 ? 'text-red-600' : 'text-emerald-600'
                     }`}>
-                      {currencyFmtMM(Math.abs(liveDebtCapacity.excessDebt), ccy)}
+                      {currencyFmtMM(liveDebtCapacity.excessOverSafe || 0, ccy)}
                     </div>
                     <div className="text-xs text-indigo-600 mt-1">
-                      {liveDebtCapacity.excessDebt > 0 ? 'Over' : 'Under'}
+                      {(liveDebtCapacity.excessOverSafe || 0) > 0 ? 'Over Safe' : 'Within Safe'}
                     </div>
                   </div>
                 </div>
@@ -1481,9 +1460,9 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                     <div>
                       <span className="font-semibold text-slate-800">Debt Sizing:</span>
                       <span className="text-slate-700 ml-1">
-                        {debtCapacity.utilizationPct <= 80 
-                          ? `Within safe capacity - ${currencyFmtMM(debtCapacity.maxSustainableDebt - debtCapacity.currentDebtRequest, ccy)} additional headroom available`
-                          : `Exceeds safe capacity - recommend reducing by ${currencyFmtMM(debtCapacity.excessDebt, ccy)}`}
+                        {debtCapacity.currentDebtRequest <= debtCapacity.safeDebt 
+                          ? `Within safe capacity - ${currencyFmtMM(debtCapacity.safeDebt - debtCapacity.currentDebtRequest, ccy)} additional headroom available`
+                          : `Exceeds safe capacity - recommend reducing by ${currencyFmtMM(debtCapacity.excessOverSafe || 0, ccy)}`}
                       </span>
                     </div>
                   </div>
@@ -1566,9 +1545,9 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
                 <div className="flex justify-between items-center pb-2 border-b border-slate-200">
                   <span className="text-slate-600">Excess/(Gap):</span>
                   <span className={`font-bold ${
-                    debtCapacity.excessDebt > 0 ? 'text-red-600' : 'text-emerald-600'
+                    debtCapacity.excessOverSafe > 0 ? 'text-red-600' : 'text-emerald-600'
                   }`}>
-                    {currencyFmtMM(Math.abs(debtCapacity.excessDebt), ccy)}
+                    {currencyFmtMM(debtCapacity.excessOverSafe || 0, ccy)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">

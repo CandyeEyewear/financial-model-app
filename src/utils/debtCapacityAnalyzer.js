@@ -48,6 +48,9 @@ export function calculateDebtCapacity(params, projection) {
   const availableCapacity = Math.max(0, maxSustainableDebt - currentDebtRequest);
   const excessDebt = Math.max(0, debtGap);
   
+  // Also calculate excess over SAFE debt level (for Executive Summary display)
+  const excessOverSafe = Math.max(0, currentDebtRequest - safeDebt);
+  
   // Utilization percentage (100% = at max sustainable, >100% = over capacity)
   const utilizationPct = maxSustainableDebt > 0 ? (currentDebtRequest / maxSustainableDebt) * 100 : 0;
   
@@ -114,6 +117,7 @@ export function calculateDebtCapacity(params, projection) {
     // Gap analysis - FIXED: now properly calculates available capacity
     availableCapacity,  // How much more debt could be supported
     excessDebt,         // How much current debt exceeds max sustainable
+    excessOverSafe,     // How much current debt exceeds SAFE level (for display)
     debtGap,            // Raw difference (positive = over, negative = under)
     
     // Ratios
@@ -212,15 +216,23 @@ export function generateAlternativeStructures(params, projection, debtCapacity) 
   };
   
   // Helper to format change description
-  const formatChange = (debtChange, equityChange) => {
+  // Uses Math.abs to ensure we always show positive values in the change description
+  const formatChange = (debtChange, equityChange, currency = 'USD') => {
     const parts = [];
-    if (Math.abs(debtChange) > 1000) {
+    const absDebtChange = Math.abs(debtChange);
+    const absEquityChange = Math.abs(equityChange);
+    
+    if (absDebtChange > 1000) {
       const action = debtChange < 0 ? 'Reduce' : 'Increase';
-      parts.push(`${action} debt by ${Math.abs(debtChange / 1_000_000).toFixed(1)}M`);
+      // Always use absolute value to avoid negative signs
+      const formattedAmount = (absDebtChange / 1_000_000).toFixed(1);
+      parts.push(`${action} debt by ${formattedAmount}M`);
     }
-    if (Math.abs(equityChange) > 1000) {
+    if (absEquityChange > 1000) {
       const action = equityChange > 0 ? 'increase' : 'decrease';
-      parts.push(`${action} equity by ${Math.abs(equityChange / 1_000_000).toFixed(1)}M`);
+      // Always use absolute value to avoid negative signs
+      const formattedAmount = (absEquityChange / 1_000_000).toFixed(1);
+      parts.push(`${action} equity by ${formattedAmount}M`);
     }
     return parts.length > 0 ? parts.join(', ') : 'No changes required';
   };

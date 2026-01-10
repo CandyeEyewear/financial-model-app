@@ -336,17 +336,65 @@ let retainedEarnings = 0;  // Accumulated retained earnings
 // ============================================================================
 // Support both single debt and multi-tranche structures
 const debtSchedule = (() => {
-  // Explicit multi-tranche mode
-  if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
-    return buildMultiTrancheSchedule(params);
-  }
-
-  // Check if we need to auto-create tranches (both existing AND new)
   const hasOpeningDebt = (params.openingDebt || 0) > 0;
   const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
 
+  // Explicit multi-tranche mode - but also check for standalone debt amounts
+  if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
+    // Start with user-defined tranches
+    let allTranches = [...params.debtTranches];
+
+    // Check if opening debt is already represented in tranches
+    const existingDebtInTranches = params.debtTranches.some(t =>
+      t.name === 'Existing Debt' || t.name === 'Opening Debt' || t.isOpeningDebt
+    );
+
+    // Check if new facility is already represented in tranches
+    const newFacilityInTranches = params.debtTranches.some(t =>
+      t.name === 'New Facility' || t.name === 'Requested Loan' || t.isNewFacility
+    );
+
+    // Add opening debt as a tranche if it exists and isn't already included
+    if (hasOpeningDebt && !existingDebtInTranches) {
+      allTranches.unshift({
+        name: 'Existing Debt',
+        amount: params.openingDebt,
+        rate: params.existingDebtRate || params.interestRate,
+        tenorYears: params.existingDebtTenor || params.debtTenorYears,
+        maturityDate: params.openingDebtMaturityDate,
+        amortizationType: params.existingDebtAmortizationType || 'amortizing',
+        paymentFrequency: params.openingDebtPaymentFrequency || 'Quarterly',
+        interestOnlyYears: 0,
+        seniority: 'Senior',
+        isOpeningDebt: true
+      });
+    }
+
+    // Add new facility as a tranche if it exists and isn't already included
+    if (hasNewFacility && !newFacilityInTranches) {
+      allTranches.push({
+        name: 'New Facility',
+        amount: params.requestedLoanAmount,
+        rate: params.proposedPricing || params.interestRate,
+        tenorYears: params.proposedTenor || params.debtTenorYears,
+        maturityDate: calculateMaturityDate(params.startYear, params.proposedTenor || params.debtTenorYears),
+        amortizationType: params.facilityAmortizationType || 'amortizing',
+        paymentFrequency: params.paymentFrequency || 'Quarterly',
+        interestOnlyYears: params.interestOnlyPeriod || 0,
+        seniority: 'Senior',
+        isNewFacility: true
+      });
+    }
+
+    const mergedParams = {
+      ...params,
+      debtTranches: allTranches
+    };
+    return buildMultiTrancheSchedule(mergedParams);
+  }
+
+  // Auto-create tranches when both existing AND new debt exist
   if (hasOpeningDebt && hasNewFacility) {
-    // Auto-create separate tranches for each debt source
     const autoTranches = {
       ...params,
       hasMultipleTranches: true,
@@ -360,7 +408,8 @@ const debtSchedule = (() => {
           amortizationType: params.existingDebtAmortizationType || 'amortizing',
           paymentFrequency: params.openingDebtPaymentFrequency || 'Quarterly',
           interestOnlyYears: 0,
-          seniority: 'Senior'
+          seniority: 'Senior',
+          isOpeningDebt: true
         },
         {
           name: 'New Facility',
@@ -371,7 +420,8 @@ const debtSchedule = (() => {
           amortizationType: params.facilityAmortizationType || 'amortizing',
           paymentFrequency: params.paymentFrequency || 'Quarterly',
           interestOnlyYears: params.interestOnlyPeriod || 0,
-          seniority: 'Senior'
+          seniority: 'Senior',
+          isNewFacility: true
         }
       ]
     };

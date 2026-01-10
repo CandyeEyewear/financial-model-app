@@ -688,7 +688,7 @@ const triggerAIAnalysis = async () => {
               <div className="flex-1">
                 <h3 className="text-xl font-bold text-yellow-900 mb-3">No Financial Data for Stress Testing</h3>
                 <p className="text-yellow-800 mb-4">
-                  Stress testing requires baseline financial projections. Please enter your company's financial assumptions first.
+                  Stress testing requires baseline financial projections. Please enter the borrower's financial assumptions first.
                 </p>
                 <div className="space-y-3">
                   <div className="flex items-start gap-2 text-sm text-yellow-800">
@@ -730,7 +730,7 @@ const triggerAIAnalysis = async () => {
           </CardHeader>
           <CardContent className="pt-6">
             <p className="text-slate-700 mb-4">
-              Debt stress testing simulates adverse scenarios to assess whether your business can meet debt obligations 
+              Debt stress testing simulates adverse scenarios to assess whether the borrower can meet debt obligations 
               under challenging conditions like revenue declines, margin compression, or rising interest rates.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

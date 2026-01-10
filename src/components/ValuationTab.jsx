@@ -1,9 +1,10 @@
 // components/ValuationTab.jsx
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, DollarSign, Calculator, AlertCircle, Download, Info, CheckCircle, XCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Calculator, AlertCircle, Download, Info, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './Card.jsx';
 import { Button } from './Button.jsx';
 import { currencyFmtMM, numFmt, pctFmt } from '../utils/formatters.js';
+import { runValuationSanityChecks, JAMAICA_DEFAULTS } from '../utils/valuationCalculations.js';
 
 // ============================================================================
 // VALUATION CALCULATIONS (Self-contained for reliability)
@@ -421,6 +422,23 @@ export function ValuationTab({ projections, params, ccy }) {
       }
       
       // =========================================================================
+      // Sanity Checks
+      // =========================================================================
+      const sanityChecks = runValuationSanityChecks({
+        enterpriseValue: dcfResult.enterpriseValue,
+        equityValue: dcfResult.equityValue,
+        pvProjectedFCFs: dcfResult.pvProjectedFCFs,
+        pvTerminalValue: dcfResult.pvTerminal,
+        terminalGrowth: params.terminalGrowth,
+        wacc: effectiveWACC,
+        impliedMultiples,
+        longTermGDPGrowth: JAMAICA_DEFAULTS.longTermGDPGrowth
+      });
+
+      const hasCriticalWarnings = sanityChecks.some(c => c.type === 'critical');
+      const hasWarnings = sanityChecks.length > 0;
+
+      // =========================================================================
       // Return Complete Results
       // =========================================================================
       return {
@@ -438,11 +456,16 @@ export function ValuationTab({ projections, params, ccy }) {
         growthRange,
         modelComparison,
         hasDebt,
-        
+
+        // Sanity Checks
+        sanityChecks,
+        hasCriticalWarnings,
+        hasWarnings,
+
         // Metadata
         fcfType: 'Unlevered Free Cash Flow',
         projectionYears: rows.length,
-        
+
         // Multi-tranche info (if applicable)
         multiTrancheInfo: projections.multiTrancheInfo || null
       };
@@ -773,6 +796,64 @@ export function ValuationTab({ projections, params, ccy }) {
             </Card>
           )}
 
+          {/* Sanity Check Warnings */}
+          {valuationResults?.sanityChecks?.length > 0 && (
+            <Card className={`border-l-4 ${
+              valuationResults.hasCriticalWarnings
+                ? 'border-l-red-600 bg-red-50'
+                : 'border-l-amber-600 bg-amber-50'
+            }`}>
+              <CardHeader className="pb-2">
+                <CardTitle className={`flex items-center gap-2 ${
+                  valuationResults.hasCriticalWarnings ? 'text-red-900' : 'text-amber-900'
+                }`}>
+                  <AlertCircle className="w-5 h-5" />
+                  Valuation Sanity Checks
+                  <span className={`ml-2 text-xs font-bold px-2 py-1 rounded-full ${
+                    valuationResults.hasCriticalWarnings
+                      ? 'bg-red-200 text-red-800'
+                      : 'bg-amber-200 text-amber-800'
+                  }`}>
+                    {valuationResults.sanityChecks.length} {valuationResults.sanityChecks.length === 1 ? 'issue' : 'issues'}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <div className="space-y-3">
+                  {valuationResults.sanityChecks.map((check, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-lg border-l-4 ${
+                        check.type === 'critical'
+                          ? 'bg-red-100 border-red-500'
+                          : check.type === 'warning'
+                          ? 'bg-amber-100 border-amber-500'
+                          : 'bg-blue-100 border-blue-500'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {check.type === 'critical' ? (
+                          <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        )}
+                        <div className="flex-1">
+                          <div className="font-bold text-sm text-slate-900">{check.title}</div>
+                          <p className="text-sm text-slate-700 mt-1">{check.message}</p>
+                          {check.recommendation && (
+                            <p className="text-xs text-slate-600 mt-2 italic">
+                              <strong>Recommendation:</strong> {check.recommendation}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Valuation Inputs */}
           <Card className="border-l-4 border-l-purple-600">
             <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
@@ -1035,9 +1116,12 @@ export function ValuationTab({ projections, params, ccy }) {
                       <div className="flex justify-between items-center py-3 bg-pink-50 px-3 rounded-lg">
                         <span className="text-sm font-bold text-pink-900">Price per Share</span>
                         <span className="text-xl font-bold text-pink-600">
-                          {valuationResults.impliedMultiples.pricePerShare 
-                            ? currencyFmtMM(valuationResults.impliedMultiples.pricePerShare, ccy)
-                            : 'N/A'}
+                          {valuationResults.impliedMultiples.pricePerShare != null && isFinite(valuationResults.impliedMultiples.pricePerShare)
+                            ? `${ccy} ${valuationResults.impliedMultiples.pricePerShare.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              })}`
+                            : '—'}
                         </span>
                       </div>
                       <div className="text-xs text-center text-slate-600 mt-2">

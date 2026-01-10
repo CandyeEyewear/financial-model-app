@@ -61,6 +61,274 @@ const safe = (v, d = 0) => (Number.isFinite(v) ? v : d);
 const clampPct = (v) => Math.max(0, Math.min(100, v));
 const asM = (v) => (Number.isFinite(v) ? (v / 1_000_000) : 0);
 
+// ============================================================================
+// HELPER FUNCTIONS - CRITICAL FIX: Proper debt detection
+// ============================================================================
+
+/**
+ * Detect if there is ANY debt configured (existing or new)
+ * This is THE source of truth for debt detection - checks ALL possible sources
+ *
+ * FIXES BUG #1: Previously only checked params.openingDebt
+ */
+function detectDebtPresence(params, projections) {
+  // Check projections first (most reliable - already calculated)
+  if ((projections?.multiTrancheInfo?.totalDebt || 0) > 0) return true;
+  if ((projections?.finalDebt || 0) > 0) return true;
+
+  // Check params - ALL possible debt sources
+  if (safe(params?.openingDebt, 0) > 0) return true;
+  if (safe(params?.existingDebtAmount, 0) > 0) return true;
+  if (params?.hasExistingDebt === true) return true;
+  if (safe(params?.requestedLoanAmount, 0) > 0) return true;
+
+  // Check debt tranches
+  if (params?.debtTranches?.some(t => (t.amount || 0) > 0)) return true;
+
+  return false;
+}
+
+/**
+ * Get comprehensive debt information from projections or params
+ * PRIORITY: projections.multiTrancheInfo > projections.finalDebt > params
+ *
+ * FIXES BUG #3: Previously only used params.openingDebt
+ */
+function getDebtInfo(projections, params) {
+  // PRIORITY 1: Use multiTrancheInfo from projections (most complete)
+  if (projections?.multiTrancheInfo?.totalDebt > 0) {
+    const info = projections.multiTrancheInfo;
+    const existingTranches = info.tranches?.filter(t =>
+      t.name?.toLowerCase().includes('existing')
+    ) || [];
+    const newTranches = info.tranches?.filter(t =>
+      t.name?.toLowerCase().includes('new') ||
+      t.name?.toLowerCase().includes('facility')
+    ) || [];
+
+    return {
+      totalDebt: info.totalDebt,
+      existingDebt: existingTranches.reduce((sum, t) => sum + (t.amount || 0), 0),
+      newFacility: newTranches.reduce((sum, t) => sum + (t.amount || 0), 0),
+      components: info.tranches || [],
+      blendedRate: info.blendedRate || 0,
+      source: 'Multi-Tranche (From Projection)',
+      isMultiTranche: true
+    };
+  }
+
+  // PRIORITY 2: Use finalDebt from projections
+  if (projections?.finalDebt > 0) {
+    const existing = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
+    const newFacility = safe(params?.requestedLoanAmount) || 0;
+
+    return {
+      totalDebt: projections.finalDebt,
+      existingDebt: existing,
+      newFacility: newFacility,
+      components: buildComponentsFromParams(params),
+      blendedRate: calculateBlendedRate(params),
+      source: 'From Projection',
+      isMultiTranche: false
+    };
+  }
+
+  // PRIORITY 3: Calculate from params (fallback)
+  const existing = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
+  const newFacility = safe(params?.requestedLoanAmount) || 0;
+
+  return {
+    totalDebt: existing + newFacility,
+    existingDebt: existing,
+    newFacility: newFacility,
+    components: buildComponentsFromParams(params),
+    blendedRate: calculateBlendedRate(params),
+    source: 'From Parameters',
+    isMultiTranche: false
+  };
+}
+
+/**
+ * Build debt components from params for display
+ */
+function buildComponentsFromParams(params) {
+  const components = [];
+
+  // Check BOTH openingDebt and existingDebtAmount
+  const existingAmt = safe(params?.openingDebt) || safe(params?.existingDebtAmount);
+  if (existingAmt > 0) {
+    components.push({
+      name: 'Existing Debt',
+      amount: existingAmt,
+      rate: params?.existingDebtRate || params?.interestRate || 0,
+      seniority: 'Senior',
+      maturityDate: params?.openingDebtMaturityDate || 'N/A',
+      source: 'From Parameters'
+    });
+  }
+
+  if (safe(params?.requestedLoanAmount) > 0) {
+    components.push({
+      name: 'New Facility',
+      amount: params.requestedLoanAmount,
+      rate: params?.proposedPricing || params?.interestRate || 0,
+      seniority: 'Senior',
+      maturityDate: calculateMaturityDate(params),
+      source: 'From Parameters'
+    });
+  }
+
+  return components;
+}
+
+/**
+ * Calculate blended interest rate across debt sources
+ */
+function calculateBlendedRate(params) {
+  const existingAmt = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
+  const existingRate = params?.existingDebtRate || params?.interestRate || 0;
+  const newAmt = safe(params?.requestedLoanAmount) || 0;
+  const newRate = params?.proposedPricing || params?.interestRate || 0;
+
+  const total = existingAmt + newAmt;
+  if (total === 0) return 0;
+
+  return (existingAmt * existingRate + newAmt * newRate) / total;
+}
+
+/**
+ * Calculate maturity date from params
+ */
+function calculateMaturityDate(params) {
+  if (!params?.issueDate || !params?.proposedTenor) return 'N/A';
+  try {
+    const start = new Date(params.issueDate);
+    start.setFullYear(start.getFullYear() + safe(params.proposedTenor, 0));
+    return start.toISOString().split('T')[0];
+  } catch {
+    return 'N/A';
+  }
+}
+
+/**
+ * Get credit stats from projections or calculate as fallback
+ * FIXES BUG #6: Previously recalculated instead of using projections.creditStats
+ */
+function getCreditStats(projections, baseProj) {
+  // PRIORITY 1: Use projections.creditStats (already calculated!)
+  if (projections?.creditStats) {
+    return {
+      minDSCR: projections.creditStats.minDSCR || 0,
+      maxDSCR: projections.creditStats.maxDSCR || 0,
+      avgDSCR: projections.creditStats.avgDSCR || 0,
+      minICR: projections.creditStats.minICR || 0,
+      maxICR: projections.creditStats.maxICR || 0,
+      avgICR: projections.creditStats.avgICR || 0,
+      minLeverage: projections.creditStats.minLeverage || 0,
+      maxLeverage: projections.creditStats.maxLeverage || 0,
+      avgLeverage: projections.creditStats.avgLeverage || 0,
+      source: 'From Projection'
+    };
+  }
+
+  // FALLBACK: Calculate from rows
+  const rows = baseProj?.rows || [];
+  if (!rows.length) {
+    return {
+      minDSCR: 0, maxDSCR: 0, avgDSCR: 0,
+      minICR: 0, maxICR: 0, avgICR: 0,
+      minLeverage: 0, maxLeverage: 0, avgLeverage: 0,
+      source: 'No Data'
+    };
+  }
+
+  const dscrValues = rows.map(r => safe(r.dscr)).filter(v => v > 0 && v < 999);
+  const icrValues = rows.map(r => safe(r.icr)).filter(v => v > 0 && v < 999);
+  const levValues = rows.map(r => safe(r.ndToEbitda)).filter(v => v > 0);
+
+  return {
+    minDSCR: dscrValues.length ? Math.min(...dscrValues) : 0,
+    maxDSCR: dscrValues.length ? Math.max(...dscrValues) : 0,
+    avgDSCR: dscrValues.length ? dscrValues.reduce((a, b) => a + b, 0) / dscrValues.length : 0,
+    minICR: icrValues.length ? Math.min(...icrValues) : 0,
+    maxICR: icrValues.length ? Math.max(...icrValues) : 0,
+    avgICR: icrValues.length ? icrValues.reduce((a, b) => a + b, 0) / icrValues.length : 0,
+    minLeverage: levValues.length ? Math.min(...levValues) : 0,
+    maxLeverage: levValues.length ? Math.max(...levValues) : 0,
+    avgLeverage: levValues.length ? levValues.reduce((a, b) => a + b, 0) / levValues.length : 0,
+    source: 'Calculated from Rows'
+  };
+}
+
+/**
+ * Run credit sanity checks and return warnings/errors
+ */
+function runCreditSanityChecks(creditStats, debtInfo, params) {
+  const checks = [];
+
+  // Check 1: DSCR below minimum
+  if (creditStats.minDSCR > 0 && creditStats.minDSCR < safe(params?.minDSCR, 1.2)) {
+    checks.push({
+      type: 'critical',
+      code: 'DSCR_BREACH',
+      title: 'DSCR Covenant Breach',
+      message: `Minimum DSCR of ${creditStats.minDSCR.toFixed(2)}x is below the ${safe(params?.minDSCR, 1.2).toFixed(2)}x covenant.`
+    });
+  } else if (creditStats.minDSCR > 0 && creditStats.minDSCR < safe(params?.minDSCR, 1.2) * 1.1) {
+    checks.push({
+      type: 'warning',
+      code: 'DSCR_TIGHT',
+      title: 'DSCR Near Covenant',
+      message: `Minimum DSCR of ${creditStats.minDSCR.toFixed(2)}x is within 10% of covenant threshold.`
+    });
+  }
+
+  // Check 2: ICR below target
+  if (creditStats.minICR > 0 && creditStats.minICR < safe(params?.targetICR, 2.0)) {
+    checks.push({
+      type: 'critical',
+      code: 'ICR_BREACH',
+      title: 'ICR Covenant Breach',
+      message: `Minimum ICR of ${creditStats.minICR.toFixed(2)}x is below the ${safe(params?.targetICR, 2.0).toFixed(2)}x target.`
+    });
+  }
+
+  // Check 3: Leverage above maximum
+  if (creditStats.maxLeverage > safe(params?.maxNDToEBITDA, 3.5)) {
+    checks.push({
+      type: 'critical',
+      code: 'LEVERAGE_BREACH',
+      title: 'Leverage Covenant Breach',
+      message: `Maximum leverage of ${creditStats.maxLeverage.toFixed(2)}x exceeds the ${safe(params?.maxNDToEBITDA, 3.5).toFixed(2)}x limit.`
+    });
+  }
+
+  // Check 4: High LTV
+  const ltvPct = params?.collateralValue > 0 && debtInfo.totalDebt > 0
+    ? (debtInfo.totalDebt / params.collateralValue) * 100
+    : null;
+  if (ltvPct !== null && ltvPct > 80) {
+    checks.push({
+      type: 'warning',
+      code: 'HIGH_LTV',
+      title: 'High Loan-to-Value',
+      message: `LTV of ${ltvPct.toFixed(1)}% exceeds typical 80% threshold.`
+    });
+  }
+
+  // Check 5: No new facility but existing debt only (info)
+  if (debtInfo.existingDebt > 0 && debtInfo.newFacility === 0) {
+    checks.push({
+      type: 'info',
+      code: 'EXISTING_ONLY',
+      title: 'Existing Debt Analysis Only',
+      message: 'No new facility configured. Metrics reflect existing debt only.'
+    });
+  }
+
+  return checks;
+}
+
 function calculateTrend(arr = []) {
   if (!arr.length) return "stable";
   const first = arr[0];
@@ -71,11 +339,11 @@ function calculateTrend(arr = []) {
   return "stable";
 }
 
-function buildRationale(params, proj, hasExistingDebt) {
+function buildRationale(params, proj, hasAnyDebt, creditStats) {
   const rows = proj?.rows || [];
-  
+
   // If no debt, return minimal rationale
-  if (!hasExistingDebt) {
+  if (!hasAnyDebt) {
     return {
       bullets: [
         {
@@ -88,9 +356,9 @@ function buildRationale(params, proj, hasExistingDebt) {
     };
   }
 
-  const minDSCR = rows.length ? Math.min(...rows.map((r) => safe(r.dscr))) : 0;
-  const minICR = rows.length ? Math.min(...rows.map((r) => safe(r.icr))) : 0;
-  const maxLeverage = rows.length ? Math.max(...rows.map((r) => safe(r.ndToEbitda))) : 0;
+  const minDSCR = creditStats.minDSCR;
+  const minICR = creditStats.minICR;
+  const maxLeverage = creditStats.maxLeverage;
 
   const first = rows[0] || {};
   const last = rows[rows.length - 1] || {};
@@ -149,14 +417,13 @@ function buildRationale(params, proj, hasExistingDebt) {
   return { bullets, summary: { minDSCR, minICR, maxLeverage, ebitdaCAGR } };
 }
 
-function buildCovenants(params, proj, hasExistingDebt) {
-  if (!hasExistingDebt) {
+function buildCovenants(params, proj, hasAnyDebt, creditStats) {
+  if (!hasAnyDebt) {
     return ["Covenant package will be established upon facility disbursement."];
   }
 
-  const rows = proj?.rows || [];
-  const minDSCR = rows.length ? Math.min(...rows.map((r) => safe(r.dscr))) : 0;
-  const maxLev = rows.length ? Math.max(...rows.map((r) => safe(r.ndToEbitda))) : 0;
+  const minDSCR = creditStats.minDSCR;
+  const maxLev = creditStats.maxLeverage;
   const covs = [];
 
   if (params.useBalloonPayment && safe(params.balloonPercentage) > 0) {
@@ -209,8 +476,8 @@ function buildChartData(proj) {
   }));
 }
 
-function buildRadarData(params, summary, hasExistingDebt) {
-  if (!hasExistingDebt) {
+function buildRadarData(params, creditStats, debtInfo, hasAnyDebt) {
+  if (!hasAnyDebt) {
     return [
       { metric: "DSCR", value: 0, fullMark: 100 },
       { metric: "ICR", value: 0, fullMark: 100 },
@@ -221,11 +488,11 @@ function buildRadarData(params, summary, hasExistingDebt) {
   }
 
   const leverageScore = clampPct(
-    (1 - safe(summary.maxLeverage, 0) / safe(params.maxNDToEBITDA, 3.5)) * 100
+    (1 - safe(creditStats.maxLeverage, 0) / safe(params.maxNDToEBITDA, 3.5)) * 100
   );
 
-  const denom = safe(params.openingDebt, 0) + safe(params.requestedLoanAmount, 0);
-  const coverage = denom > 0 ? safe(params.collateralValue, 0) / denom : 0;
+  // CRITICAL FIX: Use debtInfo.totalDebt instead of params.openingDebt
+  const coverage = debtInfo.totalDebt > 0 ? safe(params.collateralValue, 0) / debtInfo.totalDebt : 0;
   const collateralScore = clampPct((coverage / 2.0) * 100);
 
   const exp = (params.managementExperience || "").toLowerCase().trim();
@@ -235,12 +502,12 @@ function buildRadarData(params, summary, hasExistingDebt) {
   return [
     {
       metric: "DSCR",
-      value: clampPct((safe(summary.minDSCR, 0) / safe(params.minDSCR, 1.2)) * 100),
+      value: clampPct((safe(creditStats.minDSCR, 0) / safe(params.minDSCR, 1.2)) * 100),
       fullMark: 100,
     },
     {
       metric: "ICR",
-      value: clampPct((safe(summary.minICR, 0) / safe(params.targetICR, 2.0)) * 100),
+      value: clampPct((safe(creditStats.minICR, 0) / safe(params.targetICR, 2.0)) * 100),
       fullMark: 100,
     },
     {
@@ -302,17 +569,166 @@ function ChartTooltip({ active, payload, label, ccy }) {
   );
 }
 
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+function SanityCheckAlerts({ checks }) {
+  if (!checks?.length) return null;
+
+  const critical = checks.filter(c => c.type === 'critical');
+  const warnings = checks.filter(c => c.type === 'warning');
+  const info = checks.filter(c => c.type === 'info');
+
+  return (
+    <div className="space-y-3">
+      {critical.length > 0 && (
+        <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
+          <div className="flex items-start gap-3">
+            <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-bold text-red-900 mb-2">Covenant Breaches Detected</h3>
+              <ul className="space-y-1">
+                {critical.map((c, i) => (
+                  <li key={i} className="text-sm text-red-800">
+                    <span className="font-semibold">{c.title}:</span> {c.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-r-lg">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-bold text-amber-900 mb-2">Warnings</h3>
+              <ul className="space-y-1">
+                {warnings.map((c, i) => (
+                  <li key={i} className="text-sm text-amber-800">
+                    <span className="font-semibold">{c.title}:</span> {c.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {info.length > 0 && (
+        <div className="p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <ul className="space-y-1">
+                {info.map((c, i) => (
+                  <li key={i} className="text-sm text-blue-800">
+                    <span className="font-semibold">{c.title}:</span> {c.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DebtSourceIndicator({ debtInfo, ccy }) {
+  if (debtInfo.totalDebt === 0) return null;
+
+  const fmtM = (val) => `${ccy} ${(val / 1_000_000).toFixed(1)}M`;
+
+  return (
+    <div className="p-3 bg-slate-100 border border-slate-200 rounded-lg">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-slate-600" />
+          <span className="text-sm font-medium text-slate-700">
+            Total Debt: <span className="font-bold text-slate-900">{fmtM(debtInfo.totalDebt)}</span>
+          </span>
+          <span className="text-xs text-slate-500 bg-slate-200 px-2 py-0.5 rounded">
+            {debtInfo.source}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4 text-xs">
+          {debtInfo.existingDebt > 0 && (
+            <span className="text-amber-700 bg-amber-50 px-2 py-1 rounded">
+              Existing: {fmtM(debtInfo.existingDebt)}
+            </span>
+          )}
+          {debtInfo.newFacility > 0 && (
+            <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded">
+              New Facility: {fmtM(debtInfo.newFacility)}
+            </span>
+          )}
+          {debtInfo.blendedRate > 0 && (
+            <span className="text-slate-600">
+              Blended Rate: {(debtInfo.blendedRate * 100).toFixed(2)}%
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 export function CreditDashboard({ params, projections, ccy = "JMD" }) {
   const containerRef = useRef(null);
   const [expandedSection, setExpandedSection] = useState(null);
   const [showMetricDetails, setShowMetricDetails] = useState(false);
-  
+
   // AI State Management
   const [capitalStructureRecs, setCapitalStructureRecs] = useState(null);
   const [isLoadingCapStructure, setIsLoadingCapStructure] = useState(false);
 
   const baseProj = projections?.base || projections;
-  
+
+  // =========================================================================
+  // CRITICAL FIX #1: Proper debt detection - checks ALL sources
+  // =========================================================================
+  const hasAnyDebt = useMemo(() =>
+    detectDebtPresence(params, baseProj),
+    [params, baseProj]
+  );
+
+  // =========================================================================
+  // CRITICAL FIX #3: Get debt info from projections, not params alone
+  // =========================================================================
+  const debtInfo = useMemo(() =>
+    getDebtInfo(baseProj, params),
+    [baseProj, params]
+  );
+
+  // =========================================================================
+  // CRITICAL FIX #6: Use projections.creditStats instead of recalculating
+  // =========================================================================
+  const creditStats = useMemo(() =>
+    getCreditStats(baseProj, baseProj),
+    [baseProj]
+  );
+
+  // =========================================================================
+  // Sanity Checks
+  // =========================================================================
+  const sanityChecks = useMemo(() =>
+    runCreditSanityChecks(creditStats, debtInfo, params),
+    [creditStats, debtInfo, params]
+  );
+
+  // Check if there's a new facility configured
+  const hasNewFacility = safe(params.requestedLoanAmount, 0) > 0;
+
+  // Loading state
   if (!baseProj || !baseProj.rows || baseProj.rows.length === 0) {
     return (
       <div className="p-8 text-center bg-white rounded-lg shadow-md">
@@ -325,70 +741,42 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
     );
   }
 
-  // Check for existing debt
-  const hasExistingDebt = safe(params.openingDebt, 0) > 0;
-  const hasNewFacility = safe(params.requestedLoanAmount, 0) > 0;
+  // =========================================================================
+  // CRITICAL FIX #5: LTV & Asset Coverage using correct debt figures
+  // =========================================================================
+  const ltvPct = params.collateralValue > 0 && debtInfo.totalDebt > 0
+    ? (debtInfo.totalDebt / params.collateralValue) * 100
+    : null;
 
-  const summary = useMemo(() => {
-    const rows = baseProj.rows || [];
-    if (!rows.length || !hasExistingDebt) {
-      return {
-        minDSCR: 0,
-        minICR: 0,
-        maxLeverage: 0,
-        avgDSCR: 0,
-        avgICR: 0,
-        totalDebtService: 0,
-        annualDebtService: 0,
-        lastEndingDebt: 0,
-      };
-    }
-    
-    const minDSCR = Math.min(...rows.map((r) => safe(r.dscr)));
-    const minICR = Math.min(...rows.map((r) => safe(r.icr)));
-    const maxLeverage = Math.max(...rows.map((r) => safe(r.ndToEbitda)));
-    const avgDSCR = rows.reduce((s, r) => s + safe(r.dscr), 0) / (rows.length || 1);
-    const avgICR = rows.reduce((s, r) => s + safe(r.icr), 0) / (rows.length || 1);
+  const assetCoverage = debtInfo.totalDebt > 0 && params.collateralValue > 0
+    ? params.collateralValue / debtInfo.totalDebt
+    : null;
 
-    const totalDebtService = rows.reduce(
+  // Build summary object for backward compatibility
+  const summary = {
+    minDSCR: creditStats.minDSCR,
+    maxDSCR: creditStats.maxDSCR,
+    avgDSCR: creditStats.avgDSCR,
+    minICR: creditStats.minICR,
+    maxICR: creditStats.maxICR,
+    avgICR: creditStats.avgICR,
+    maxLeverage: creditStats.maxLeverage,
+    avgLeverage: creditStats.avgLeverage,
+    totalDebtService: baseProj.rows?.reduce(
       (s, r) => s + safe(r.principalPayment, 0) + safe(r.interestExpense, 0),
       0
-    );
-    const annualDebtService =
-      safe(rows[0]?.principalPayment, 0) + safe(rows[0]?.interestExpense, 0);
+    ) || 0,
+    annualDebtService: safe(baseProj.rows?.[0]?.principalPayment, 0) + safe(baseProj.rows?.[0]?.interestExpense, 0),
+    lastEndingDebt: safe(baseProj.rows?.[baseProj.rows.length - 1]?.debtBalance ??
+                        baseProj.rows?.[baseProj.rows.length - 1]?.endingDebt, 0),
+  };
 
-    const lastRow = rows[rows.length - 1] || {};
-    const lastEndingDebt = safe(lastRow.debtBalance ?? lastRow.endingDebt, 0);
+  const rationale = buildRationale(params, baseProj, hasAnyDebt, creditStats);
+  const covenants = buildCovenants(params, baseProj, hasAnyDebt, creditStats);
+  const chartData = buildChartData(baseProj);
 
-    return {
-      minDSCR,
-      minICR,
-      maxLeverage,
-      avgDSCR,
-      avgICR,
-      totalDebtService,
-      annualDebtService,
-      lastEndingDebt,
-    };
-  }, [baseProj, hasExistingDebt]);
-
-  const rationale = useMemo(() => buildRationale(params, baseProj, hasExistingDebt), [params, baseProj, hasExistingDebt]);
-  const covenants = useMemo(() => buildCovenants(params, baseProj, hasExistingDebt), [params, baseProj, hasExistingDebt]);
-  const chartData = useMemo(() => buildChartData(baseProj), [baseProj]);
-  const radarData = useMemo(() => buildRadarData(params, summary, hasExistingDebt), [params, summary, hasExistingDebt]);
-
-  const existingDebt = safe(params.openingDebt);
-  const newFacility = safe(params.requestedLoanAmount);
-  const proFormaDebt = existingDebt + newFacility;
-
-  const ltvPct =
-    params.collateralValue > 0 && proFormaDebt > 0
-      ? (proFormaDebt / params.collateralValue) * 100
-      : null;
-  const assetCoverage =
-    proFormaDebt > 0 && params.collateralValue > 0
-      ? params.collateralValue / proFormaDebt
-      : null;
+  // CRITICAL FIX #4: Radar data uses correct debt figures
+  const radarData = buildRadarData(params, creditStats, debtInfo, hasAnyDebt);
 
   const dscrTrend = calculateTrend((baseProj.rows || []).map((r) => safe(r.dscr)));
   const icrTrend = calculateTrend((baseProj.rows || []).map((r) => safe(r.icr)));
@@ -396,9 +784,29 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
 
   const scenarioLabel = projections?.base ? "Base Case" : "Current";
 
-  // AI Capital Structure Generation
+  // =========================================================================
+  // CRITICAL FIX #7: Debt schedule guard - just check if data exists
+  // =========================================================================
+  const debtScheduleData = useMemo(() => {
+    // Just check if data exists - don't use hasAnyDebt as guard
+    if (!baseProj?.debtSchedule?.length) return [];
+
+    return baseProj.debtSchedule.map((yearData, idx) => ({
+      year: params.startYear + idx,
+      principal: safe(yearData.principal),
+      interest: safe(yearData.interest),
+      endingBalance: safe(yearData.endingBalance),
+      tranches: yearData.tranches || []
+    }));
+  }, [baseProj, params.startYear]);
+
+  // Multi-tranche detection
+  const hasMultipleTranches = baseProj?.hasMultipleTranches || false;
+  const multiTrancheInfo = baseProj?.multiTrancheInfo;
+
+  // AI Capital Structure Generation - uses hasAnyDebt instead of old hasExistingDebt
   useEffect(() => {
-    if (!baseProj?.rows?.length || !params || !hasExistingDebt) {
+    if (!baseProj?.rows?.length || !params || !hasAnyDebt) {
       setCapitalStructureRecs(null);
       return;
     }
@@ -417,13 +825,13 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [baseProj, params, ccy, hasExistingDebt]);
+  }, [baseProj, params, ccy, hasAnyDebt]);
 
   useEffect(() => {
     const saved = localStorage.getItem("creditDashboard_expandedSection");
     if (saved) setExpandedSection(saved);
   }, []);
-  
+
   useEffect(() => {
     if (expandedSection) {
       localStorage.setItem("creditDashboard_expandedSection", expandedSection);
@@ -472,21 +880,8 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
     }
   };
 
-  // Build debt schedule visualization data
-  const debtScheduleData = useMemo(() => {
-    if (!baseProj?.debtSchedule || !hasExistingDebt) return [];
-    
-    return baseProj.debtSchedule.map((yearData, idx) => ({
-      year: params.startYear + idx,
-      principal: safe(yearData.principal),
-      interest: safe(yearData.interest),
-      endingBalance: safe(yearData.endingBalance),
-    }));
-  }, [baseProj, params, hasExistingDebt]);
-
-  // Multi-tranche detection
-  const hasMultipleTranches = baseProj?.hasMultipleTranches || false;
-  const multiTrancheInfo = baseProj?.multiTrancheInfo;
+  // CRITICAL FIX #8: Get correct existing debt amount for display
+  const existingDebtDisplay = debtInfo.existingDebt;
 
   return (
     <div className="space-y-6" ref={containerRef}>
@@ -510,33 +905,39 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             Export PDF
           </Button>
           <Button size="sm" onClick={handlePrint} variant="outline">
-            🖨️ Print
+            Print
           </Button>
         </div>
       </div>
 
-      {/* Zero Balance Warning */}
-      {!hasExistingDebt && (
+      {/* Sanity Check Alerts */}
+      <SanityCheckAlerts checks={sanityChecks} />
+
+      {/* Debt Source Indicator */}
+      <DebtSourceIndicator debtInfo={debtInfo} ccy={ccy} />
+
+      {/* Zero Balance Warning - only if truly no debt */}
+      {!hasAnyDebt && (
         <Card className="border-l-4 border-l-amber-600 bg-amber-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <h3 className="font-bold text-amber-900 mb-1">No Existing Debt Configured</h3>
+                <h3 className="font-bold text-amber-900 mb-1">No Debt Configured</h3>
                 <p className="text-sm text-amber-800 mb-3">
-                  Credit ratios (DSCR, ICR, Leverage) require existing debt to calculate. 
-                  Configure Opening Debt in the parameters section to enable full credit analysis.
+                  Credit ratios (DSCR, ICR, Leverage) require debt to calculate.
+                  Configure Opening Debt, Existing Debt Amount, or a New Facility in the parameters section.
                 </p>
                 <div className="text-xs text-amber-700">
-                  <strong>What you can still see:</strong> Company profile, collateral coverage, 
-                  new facility details, and forward-looking projections.
+                  <strong>What you can still see:</strong> Company profile, collateral coverage,
+                  and forward-looking projections.
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
-      
+
       {/* Dashboard Info */}
       <Card className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-l-4 border-l-indigo-600 shadow-sm">
         <CardContent className="p-4">
@@ -569,12 +970,12 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               <div>
                 <h4 className="font-bold text-indigo-900 mb-1.5">Purpose</h4>
                 <p>
-                  Comprehensive credit risk assessment for the proposed lending facility. 
-                  {hasExistingDebt ? (
-                    <>All metrics are based on your <strong className="text-indigo-700">Opening Debt</strong> of {fmtM(params.openingDebt)} 
-                    and projected financial performance over {params.years} years.</>
+                  Comprehensive credit risk assessment for the proposed lending facility.
+                  {hasAnyDebt ? (
+                    <>All metrics are based on <strong className="text-indigo-700">Total Debt</strong> of {fmtM(debtInfo.totalDebt)}
+                    ({debtInfo.source}) and projected financial performance over {params.years} years.</>
                   ) : (
-                    <strong className="text-amber-700"> Configure Opening Debt to enable full covenant analysis.</strong>
+                    <strong className="text-amber-700"> Configure debt parameters to enable full covenant analysis.</strong>
                   )}
                 </p>
               </div>
@@ -583,18 +984,18 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                 <h4 className="font-bold text-indigo-900 mb-1.5">Key Metrics Explained</h4>
                 <div className="space-y-2 bg-white p-3 rounded border border-indigo-100">
                   <div>
-                    <strong className="text-blue-700">DSCR (Debt Service Coverage Ratio):</strong> 
-                    <span className="ml-1">Measures cash flow available to pay debt. Target: ≥ {params.minDSCR.toFixed(2)}x. 
+                    <strong className="text-blue-700">DSCR (Debt Service Coverage Ratio):</strong>
+                    <span className="ml-1">Measures cash flow available to pay debt. Target: ≥ {safe(params.minDSCR, 1.2).toFixed(2)}x.
                     Higher is better (1.5x+ is strong).</span>
                   </div>
                   <div>
-                    <strong className="text-emerald-700">ICR (Interest Coverage Ratio):</strong> 
-                    <span className="ml-1">EBIT divided by interest expense. Target: ≥ {params.targetICR.toFixed(2)}x. 
+                    <strong className="text-emerald-700">ICR (Interest Coverage Ratio):</strong>
+                    <span className="ml-1">EBIT divided by interest expense. Target: ≥ {safe(params.targetICR, 2.0).toFixed(2)}x.
                     Shows ability to service interest payments.</span>
                   </div>
                   <div>
-                    <strong className="text-red-700">Leverage (Net Debt/EBITDA):</strong> 
-                    <span className="ml-1">Total debt burden relative to earnings. Limit: ≤ {params.maxNDToEBITDA.toFixed(2)}x. 
+                    <strong className="text-red-700">Leverage (Net Debt/EBITDA):</strong>
+                    <span className="ml-1">Total debt burden relative to earnings. Limit: ≤ {safe(params.maxNDToEBITDA, 3.5).toFixed(2)}x.
                     Lower is better.</span>
                   </div>
                 </div>
@@ -647,7 +1048,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               <div className="text-center">
                 <div
                   className={`mx-auto w-32 h-32 rounded-full flex flex-col items-center justify-center shadow-lg transition-all duration-500 ${
-                    hasExistingDebt
+                    hasAnyDebt
                       ? getRatingColor(
                           summary.minDSCR >= 2 && summary.minICR >= 3 && summary.maxLeverage <= 2
                             ? "AA"
@@ -663,7 +1064,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                   }`}
                 >
                   <div className="text-4xl font-bold">
-                    {hasExistingDebt
+                    {hasAnyDebt
                       ? Math.round(
                           clampPct(
                             (summary.minDSCR / safe(params.minDSCR, 1.2)) * 40 +
@@ -676,20 +1077,20 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                       : "N/A"}
                   </div>
                   <div className="text-sm opacity-90">
-                    {hasExistingDebt ? "score" : "no data"}
+                    {hasAnyDebt ? "score" : "no data"}
                   </div>
                 </div>
 
                 <div className="mt-4">
                   <div className="text-sm text-slate-600 mb-1">At-a-glance</div>
-                  {hasExistingDebt ? (
+                  {hasAnyDebt ? (
                     <div className="inline-flex items-center px-4 py-2 rounded-full text-xs font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 shadow-md">
                       Min DSCR {summary.minDSCR.toFixed(2)}x • Min ICR{" "}
                       {summary.minICR.toFixed(2)}x • Max Lev {summary.maxLeverage.toFixed(2)}x
                     </div>
                   ) : (
                     <div className="px-4 py-2 rounded-full text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-300">
-                      No existing debt
+                      No debt configured
                     </div>
                   )}
                 </div>
@@ -705,20 +1106,20 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-600">DSCR (min / avg / trend)</span>
                     <span className="font-semibold text-slate-800">
-                      {!hasExistingDebt
-                        ? <span className="italic text-slate-500">No existing debt</span>
+                      {!hasAnyDebt
+                        ? <span className="italic text-slate-500">No debt configured</span>
                         : `${summary.minDSCR.toFixed(2)}x / ${summary.avgDSCR.toFixed(2)}x / ${dscrTrend}`}
                     </span>
                   </div>
                   <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-500 ${
-                        hasExistingDebt
+                        hasAnyDebt
                           ? "bg-gradient-to-r from-blue-500 to-blue-600"
                           : "bg-slate-300"
                       }`}
                       style={{
-                        width: `${hasExistingDebt ? clampPct((summary.minDSCR / safe(params.minDSCR, 1.2)) * 100) : 0}%`,
+                        width: `${hasAnyDebt ? clampPct((summary.minDSCR / safe(params.minDSCR, 1.2)) * 100) : 0}%`,
                       }}
                     />
                   </div>
@@ -728,20 +1129,20 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-600">ICR (min / avg / trend)</span>
                     <span className="font-semibold text-slate-800">
-                      {!hasExistingDebt
-                        ? <span className="italic text-slate-500">No existing debt</span>
+                      {!hasAnyDebt
+                        ? <span className="italic text-slate-500">No debt configured</span>
                         : `${summary.minICR.toFixed(2)}x / ${summary.avgICR.toFixed(2)}x / ${icrTrend}`}
                     </span>
                   </div>
                   <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-500 ${
-                        hasExistingDebt
+                        hasAnyDebt
                           ? "bg-gradient-to-r from-emerald-500 to-emerald-600"
                           : "bg-slate-300"
                       }`}
                       style={{
-                        width: `${hasExistingDebt ? clampPct((summary.minICR / safe(params.targetICR, 2)) * 100) : 0}%`,
+                        width: `${hasAnyDebt ? clampPct((summary.minICR / safe(params.targetICR, 2)) * 100) : 0}%`,
                       }}
                     />
                   </div>
@@ -751,20 +1152,20 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-600">Leverage (max / trend)</span>
                     <span className="font-semibold text-slate-800">
-                      {hasExistingDebt 
+                      {hasAnyDebt
                         ? `${summary.maxLeverage.toFixed(2)}x / ${levTrend}`
-                        : <span className="italic text-slate-500">No existing debt</span>}
+                        : <span className="italic text-slate-500">No debt configured</span>}
                     </span>
                   </div>
                   <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-500 ${
-                        hasExistingDebt
+                        hasAnyDebt
                           ? "bg-gradient-to-r from-red-500 to-red-600"
                           : "bg-slate-300"
                       }`}
                       style={{
-                        width: `${hasExistingDebt ? clampPct((summary.maxLeverage / safe(params.maxNDToEBITDA, 3.5)) * 100) : 0}%`,
+                        width: `${hasAnyDebt ? clampPct((summary.maxLeverage / safe(params.maxNDToEBITDA, 3.5)) * 100) : 0}%`,
                       }}
                     />
                   </div>
@@ -818,11 +1219,11 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
       {/* Section Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-bold text-slate-800">Credit Metrics</h2>
-        {hasExistingDebt && (
+        {hasAnyDebt && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full">
             <div className="w-2 h-2 bg-slate-600 rounded-full"></div>
             <span className="text-xs font-semibold text-slate-700">
-              Based on Opening Debt: {fmtM(params.openingDebt)}
+              Based on Total Debt: {fmtM(debtInfo.totalDebt)}
             </span>
           </div>
         )}
@@ -832,19 +1233,19 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <EnhancedCreditCard
           title="Min DSCR"
-          value={hasExistingDebt ? summary.minDSCR.toFixed(2) + 'x' : 'No existing debt'}
+          value={hasAnyDebt ? summary.minDSCR.toFixed(2) + 'x' : 'No debt'}
           threshold={safe(params.minDSCR, 1.2).toFixed(2) + "x"}
-          status={hasExistingDebt ? (summary.minDSCR >= safe(params.minDSCR, 1.2) ? "compliant" : "breach") : "n/a"}
+          status={hasAnyDebt ? (summary.minDSCR >= safe(params.minDSCR, 1.2) ? "compliant" : "breach") : "n/a"}
           type="dscr"
-          subtitle={hasExistingDebt ? `Avg ${summary.avgDSCR.toFixed(2)}x • ${dscrTrend}` : "Configure opening debt"}
+          subtitle={hasAnyDebt ? `Avg ${summary.avgDSCR.toFixed(2)}x • ${dscrTrend}` : "Configure debt"}
           isOpeningDebt={true}
         />
         <EnhancedCreditCard
           title="Min ICR"
-          value={hasExistingDebt ? summary.minICR.toFixed(2) + 'x' : 'No existing debt'}
+          value={hasAnyDebt ? summary.minICR.toFixed(2) + 'x' : 'No debt'}
           threshold={safe(params.targetICR, 2.0).toFixed(2) + "x"}
           status={
-            hasExistingDebt 
+            hasAnyDebt
               ? (summary.minICR >= safe(params.targetICR, 2.0)
                   ? "compliant"
                   : summary.minICR >= safe(params.targetICR, 2.0) * 0.9
@@ -853,28 +1254,28 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               : "n/a"
           }
           type="icr"
-          subtitle={hasExistingDebt ? `Avg ${summary.avgICR.toFixed(2)}x • ${icrTrend}` : "Configure opening debt"}
+          subtitle={hasAnyDebt ? `Avg ${summary.avgICR.toFixed(2)}x • ${icrTrend}` : "Configure debt"}
           isOpeningDebt={true}
         />
         <EnhancedCreditCard
           title="Max Leverage"
-          value={hasExistingDebt ? summary.maxLeverage.toFixed(2) + "x" : 'No existing debt'}
+          value={hasAnyDebt ? summary.maxLeverage.toFixed(2) + "x" : 'No debt'}
           threshold={safe(params.maxNDToEBITDA, 3.5).toFixed(2) + "x"}
-          status={hasExistingDebt ? (summary.maxLeverage <= safe(params.maxNDToEBITDA, 3.5) ? "compliant" : "breach") : "n/a"}
+          status={hasAnyDebt ? (summary.maxLeverage <= safe(params.maxNDToEBITDA, 3.5) ? "compliant" : "breach") : "n/a"}
           type="leverage"
-          subtitle={hasExistingDebt ? `${levTrend}` : "Configure opening debt"}
+          subtitle={hasAnyDebt ? `${levTrend}` : "Configure debt"}
           isOpeningDebt={true}
         />
 
         <div className="bg-white rounded-lg shadow-md border border-slate-200 p-4">
           <div className="mb-2">
             <span className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded font-semibold">
-              Opening Debt
+              Total Debt
             </span>
           </div>
           <h3 className="text-sm font-semibold text-slate-600 mb-2">Annual Debt Service</h3>
           <div className="text-3xl font-bold text-slate-800 mb-1">
-            {hasExistingDebt && baseProj?.rows && baseProj.rows[0]
+            {hasAnyDebt && baseProj?.rows && baseProj.rows[0]
               ? fmtM(
                   safe(baseProj.rows[0].principalPayment, 0) +
                     safe(baseProj.rows[0].interestExpense, 0)
@@ -882,13 +1283,13 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               : fmtM(0)}
           </div>
           <div className="text-xs text-slate-500">
-            {hasExistingDebt ? "Year 1 annual payment" : "No debt service"}
+            {hasAnyDebt ? "Year 1 annual payment" : "No debt service"}
           </div>
         </div>
       </div>
 
       {/* Drill-down details */}
-      {hasExistingDebt && (
+      {hasAnyDebt && (
         <>
           <div className="flex justify-end">
             <Button
@@ -1014,8 +1415,8 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
         </Card>
       )}
 
-      {/* Debt Schedule Visualization */}
-      {hasExistingDebt && debtScheduleData.length > 0 && (
+      {/* Debt Schedule Visualization - FIXED: uses correct guard */}
+      {debtScheduleData.length > 0 && (
         <Card className="border-l-4 border-l-indigo-600 shadow-sm">
           <CardHeader className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b">
             <CardTitle className="flex items-center gap-2">
@@ -1156,7 +1557,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="flex items-center justify-center">
-              {hasExistingDebt ? (
+              {hasAnyDebt ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <RadarChart data={radarData}>
                     <PolarGrid stroke="#e2e8f0" />
@@ -1174,9 +1575,9 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
                 </ResponsiveContainer>
               ) : (
                 <div className="flex flex-col items-center justify-center h-56 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 text-sm font-medium p-4">
-                  <p>No existing debt – credit ratios not applicable.</p>
+                  <p>No debt configured – credit ratios not applicable.</p>
                   <p className="text-xs mt-1 text-slate-400 text-center">
-                    Once the facility is disbursed, this radar chart will update automatically.
+                    Once debt is configured, this radar chart will update automatically.
                   </p>
                 </div>
               )}
@@ -1185,8 +1586,8 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
             <div className="flex flex-col items-center justify-center w-full">
               <h4 className="font-semibold text-slate-800 mb-4">Metric Performance</h4>
               {radarData.map((item, i) => {
-                const displayValue = hasExistingDebt ? item.value.toFixed(0) : 0;
-                const barColor = hasExistingDebt
+                const displayValue = hasAnyDebt ? item.value.toFixed(0) : 0;
+                const barColor = hasAnyDebt
                   ? item.value >= 80
                     ? "bg-gradient-to-r from-emerald-500 to-emerald-600"
                     : item.value >= 60
@@ -1214,35 +1615,41 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
         </CardContent>
       </Card>
 
-      {/* Opening Debt vs New Facility */}
+      {/* Opening Debt vs New Facility - FIXED: shows correct amounts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-l-4 border-l-amber-600 shadow-sm hover:shadow-md transition-all duration-200">
           <CardHeader className="bg-gradient-to-r from-amber-50 to-yellow-50 border-b">
             <CardTitle className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-amber-600" />
-              Opening Debt
+              Existing Debt
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            {hasExistingDebt ? (
+            {existingDebtDisplay > 0 ? (
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-600">Amount:</span>
-                  <span className="font-semibold">{fmtM(params.openingDebt)}</span>
+                  <span className="font-semibold">{fmtM(existingDebtDisplay)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Rate:</span>
-                  <span className="font-semibold">{pctFmt(params.interestRate)}</span>
+                  <span className="font-semibold">{pctFmt(params.existingDebtRate || params.interestRate)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Maturity:</span>
                   <span className="font-semibold">{params.openingDebtMaturityDate || "—"}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Source:</span>
+                  <span className="text-xs text-slate-500">
+                    {params.openingDebt > 0 ? 'openingDebt' : 'existingDebtAmount'}
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="text-center py-8">
                 <DollarSign className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-500 font-medium">No opening debt configured</p>
+                <p className="text-sm text-slate-500 font-medium">No existing debt configured</p>
                 <p className="text-xs text-slate-400 mt-1">Configure in parameters to enable analysis</p>
               </div>
             )}
@@ -1457,7 +1864,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
       </div>
 
       {/* Credit Metrics Over Time */}
-      {hasExistingDebt && (
+      {hasAnyDebt && (
         <Card className="border-l-4 border-l-purple-600 shadow-sm">
           <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
             <CardTitle className="flex items-center gap-2">
@@ -1536,7 +1943,7 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
       )}
 
       {/* AI-Powered Capital Structure Recommendations */}
-      {hasExistingDebt && (
+      {hasAnyDebt && (
         <div className="mt-8">
           <div className="flex items-center gap-2 mb-6">
             <h2 className="text-2xl font-bold text-slate-800">Capital Structure Recommendations</h2>
@@ -1545,8 +1952,8 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
               <span className="text-xs font-semibold text-indigo-900">AI-Powered Analysis</span>
             </div>
           </div>
-          
-          <CapitalStructurePanel 
+
+          <CapitalStructurePanel
             recommendations={capitalStructureRecs}
             ccy={ccy}
             isLoading={isLoadingCapStructure}

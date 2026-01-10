@@ -157,7 +157,7 @@ function ToastItem({
         px-4 py-3
         rounded-card
         shadow-dropdown
-        min-w-[300px] max-w-[400px]
+        w-[calc(100vw-2rem)] max-w-[400px] sm:min-w-[300px]
         pointer-events-auto
         animate-slide-in-up
       `}

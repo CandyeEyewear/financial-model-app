@@ -401,16 +401,16 @@ function SaveDialog({ show, onClose, onSave, currentName }) {
   };
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="p-6 border-b">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 sm:p-6">
+      <div className="bg-white rounded-lg shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 border-b">
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Save className="w-5 h-5 text-emerald-600" />
             {currentName ? 'Update Scenario' : 'Save Scenario'}
           </h2>
         </div>
         
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Scenario Name *</label>
             <input
@@ -439,7 +439,7 @@ function SaveDialog({ show, onClose, onSave, currentName }) {
           </div>
         </div>
         
-        <div className="p-6 border-t flex justify-end gap-2">
+        <div className="p-4 sm:p-6 border-t flex flex-col sm:flex-row justify-end gap-2">
           <button
             onClick={onClose}
             className="px-4 py-2 border rounded-md hover:bg-slate-50"
@@ -471,16 +471,16 @@ function LoadDialog({ show, onClose, scenarios, onLoad, onDelete, onDuplicate })
   ).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-        <div className="p-6 border-b">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 sm:p-6">
+      <div className="bg-white rounded-lg shadow-xl w-full sm:max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="p-4 sm:p-6 border-b">
           <h2 className="text-xl font-bold flex items-center gap-2">
             <FolderOpen className="w-5 h-5 text-blue-600" />
             Load Scenario
           </h2>
         </div>
         
-        <div className="p-6 flex-1 overflow-auto space-y-4">
+        <div className="p-4 sm:p-6 flex-1 overflow-auto space-y-4">
           {/* Search */}
           <input
             type="text"
@@ -527,7 +527,7 @@ function LoadDialog({ show, onClose, scenarios, onLoad, onDelete, onDuplicate })
                       </div>
                     </div>
                     
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -556,7 +556,7 @@ function LoadDialog({ show, onClose, scenarios, onLoad, onDelete, onDuplicate })
           )}
         </div>
         
-        <div className="p-6 border-t flex justify-end">
+        <div className="p-4 sm:p-6 border-t flex justify-end">
           <button
             onClick={onClose}
             className="px-4 py-2 border rounded-md hover:bg-slate-50"
@@ -574,16 +574,16 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
   if (!show) return null;
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="p-6 border-b">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 sm:p-6">
+      <div className="bg-white rounded-lg shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 border-b">
           <h2 className="text-xl font-bold flex items-center gap-2 text-red-600">
             <AlertTriangle className="w-5 h-5" />
             Clear All Fields?
           </h2>
         </div>
         
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-4">
           <p className="text-slate-700">
             This will reset all input fields to their default values. 
             Any unsaved changes will be lost.
@@ -596,7 +596,7 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
           </div>
         </div>
         
-        <div className="p-6 border-t flex justify-end gap-2">
+        <div className="p-4 sm:p-6 border-t flex flex-col sm:flex-row justify-end gap-2">
           <button
             onClick={onClose}
             className="px-4 py-2 border rounded-md hover:bg-slate-50"
@@ -1716,7 +1716,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       />
 
       {/* Sticky Header - Clean Design */}
-      <div className="sticky top-0 z-40 flex justify-between items-center bg-white px-4 py-3 border-b border-slate-200">
+      <div className="sticky top-0 z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-4 py-3 border-b border-slate-200">
         <div className="flex items-center gap-3">
           {/* Current Scenario Badge */}
           {currentScenarioName && (
@@ -1734,7 +1734,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
           )}
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Compact action buttons */}
           <button
             onClick={() => setShowSaveDialog(true)}
@@ -1760,7 +1760,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
             <span className="hidden sm:inline">Clear</span>
           </button>
 
-          <div className="w-px h-6 bg-slate-200 mx-1" />
+          <div className="hidden sm:block w-px h-6 bg-slate-200 mx-1" />
 
           <button
             onClick={() => setShowInputs(!showInputs)}

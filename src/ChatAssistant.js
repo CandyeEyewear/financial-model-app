@@ -31,7 +31,7 @@ const SUGGESTED_PROMPTS = [
   {
     icon: TrendingUp,
     label: "Covenant Analysis",
-    prompt: "Are there any covenant breaches? What's my headroom on key metrics?"
+    prompt: "Are there any covenant breaches? What is the borrower's headroom on key metrics?"
   },
   {
     icon: Sparkles,
@@ -94,7 +94,7 @@ function ChatAssistant({ modelData }) {
     setError(null);
 
     try {
-      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague, so keep your tone warm, conversational, and natural.
+      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague at a lending institution, so keep your tone warm, conversational, and natural. Always speak from the lender's perspective and do not describe the situation as if you are the borrower.
 
 FINANCIAL MODEL DATA:
 ${modelSummary}
@@ -280,7 +280,7 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
                 <Sparkles className="w-8 h-8 text-white" />
               </div>
               <div className="font-semibold text-slate-800 mb-2">
-                Hey! I'm here to help analyze your deal
+                Hey! I'm here to help analyze this deal
               </div>
               <div className="text-sm text-slate-600 mb-4">
                 Ask me anything about your financial model - I'll give you straight answers in plain English.
@@ -433,7 +433,7 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder={hasModelData ? "Ask me anything about your deal..." : "Configure model to start..."}
+            placeholder={hasModelData ? "Ask me anything about the deal..." : "Configure model to start..."}
             disabled={isLoading || !hasModelData}
             className="flex-1 border border-slate-300 rounded-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm disabled:bg-slate-100 disabled:cursor-not-allowed transition-all"
           />

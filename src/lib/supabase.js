@@ -167,9 +167,20 @@ export const db = {
 
   // Save a new model
   createSavedModel: async (name, description, modelData) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      return { data: null, error: userError };
+    }
+
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return { data: null, error: new Error('Authenticated user not found') };
+    }
+
     const { data, error } = await supabase
       .from('saved_models')
       .insert({
+        user_id: userId,
         name,
         description,
         model_data: modelData
@@ -215,10 +226,19 @@ export const db = {
     
     if (fetchError) return { data: null, error: fetchError };
 
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return { data: null, error: new Error('Authenticated user not found') };
+    }
+
     // Create a copy with a new name
     const { data, error } = await supabase
       .from('saved_models')
       .insert({
+        user_id: userId,
         name: newName,
         description: original.description,
         model_data: original.model_data

@@ -112,7 +112,7 @@ function ProtectedRoute() {
     // Show loading message
     window.dispatchEvent(
       new CustomEvent("ai-summary-ready", {
-        detail: "FinAssist is analyzing your loan metrics...",
+        detail: "FinAssist is analyzing the loan metrics...",
       })
     );
 

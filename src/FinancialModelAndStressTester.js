@@ -36,6 +36,10 @@ import { getBenchmarksForIndustry } from "./utils/industryBenchmarks.js";
 // Hook imports
 import { useDebounce } from "./hooks/debounce.js";
 
+// Auth and database imports
+import { useAuth } from "./contexts/AuthContext";
+import { db } from "./lib/supabase";
+
 // NEW: Phase 1 component imports
 import { SmartPctField } from "./components/SmartFields";
 import { SmartSuggestion, OpeningDebtWarning } from "./components/SmartSuggestions";
@@ -613,7 +617,12 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
 }
 
 export default function FinancialModelAndStressTester({ onDataUpdate, accessToken }) {
+  // Get authentication state for database persistence
+  const { user, isAuthenticated } = useAuth();
+  
   const [ccy, setCcy] = useState("JMD");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingScenarios, setIsLoadingScenarios] = useState(false);
   
   // Main params state - UPDATED STRUCTURE
   const [params, setParams] = useState({
@@ -927,24 +936,66 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       params.hasExistingDebt, params.existingDebtAmount, params.hasMultipleTranches,
       params.existingDebtRate, params.existingDebtTenor, params.existingDebtAmortizationType]);
 
-  // Load scenarios from localStorage on mount
+  // Load scenarios from database (if authenticated) or localStorage on mount
   useEffect(() => {
-    const savedScenarios = localStorage.getItem('finsight_scenarios');
-    if (savedScenarios) {
-      try {
-        setScenarios(JSON.parse(savedScenarios));
-      } catch (error) {
-        console.error('Error loading scenarios:', error);
-        setScenarios([]);
+    const loadScenarios = async () => {
+      setIsLoadingScenarios(true);
+      
+      if (isAuthenticated && user) {
+        // Load from database for authenticated users
+        try {
+          const { data: models, error } = await db.listSavedModels();
+          
+          if (error) {
+            console.error('Error loading scenarios from database:', error);
+            // Fall back to localStorage
+            loadFromLocalStorage();
+          } else if (models) {
+            // Transform database models to scenario format
+            const dbScenarios = models.map(model => ({
+              id: model.id,
+              name: model.name,
+              description: model.description,
+              params: model.model_data?.params || model.model_data || {},
+              tags: model.model_data?.tags || [],
+              createdAt: model.created_at,
+              updatedAt: model.updated_at,
+              isFromDatabase: true
+            }));
+            setScenarios(dbScenarios);
+          }
+        } catch (error) {
+          console.error('Error loading scenarios:', error);
+          loadFromLocalStorage();
+        }
+      } else {
+        // Load from localStorage for non-authenticated users
+        loadFromLocalStorage();
       }
-    }
-    
-    // Load last active scenario ID
-    const lastScenarioId = localStorage.getItem('finsight_last_scenario');
-    if (lastScenarioId) {
-      setCurrentScenarioId(lastScenarioId);
-    }
-  }, []);
+      
+      setIsLoadingScenarios(false);
+    };
+
+    const loadFromLocalStorage = () => {
+      const savedScenarios = localStorage.getItem('finsight_scenarios');
+      if (savedScenarios) {
+        try {
+          setScenarios(JSON.parse(savedScenarios));
+        } catch (error) {
+          console.error('Error loading scenarios from localStorage:', error);
+          setScenarios([]);
+        }
+      }
+      
+      // Load last active scenario ID
+      const lastScenarioId = localStorage.getItem('finsight_last_scenario');
+      if (lastScenarioId) {
+        setCurrentScenarioId(lastScenarioId);
+      }
+    };
+
+    loadScenarios();
+  }, [isAuthenticated, user]);
 
   // Save scenarios to localStorage whenever they change
   useEffect(() => {
@@ -1243,46 +1294,152 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   };
 
   // === SAVE/LOAD FUNCTIONS ===
-  const saveScenario = (name, description = '') => {
+  const saveScenario = async (name, description = '') => {
     const timestamp = new Date().toISOString();
+    setIsSaving(true);
     
-    if (currentScenarioId) {
-      // Update existing scenario
-      setScenarios(prev => prev.map(s => 
-        s.id === currentScenarioId 
-          ? {
-              ...s,
+    try {
+      if (isAuthenticated && user) {
+        // Save to database for authenticated users
+        const modelData = {
+          params: { ...params },
+          tags: [params.industry, params.facilityType].filter(Boolean),
+        };
+        
+        if (currentScenarioId) {
+          // Check if current scenario is from database (UUID format)
+          const isDbScenario = scenarios.find(s => s.id === currentScenarioId)?.isFromDatabase;
+          
+          if (isDbScenario) {
+            // Update existing database model
+            const { data, error } = await db.updateSavedModel(
+              currentScenarioId,
               name,
               description,
-              params: { ...params },
-              updatedAt: timestamp,
+              modelData
+            );
+            
+            if (error) {
+              console.error('Error updating scenario in database:', error);
+              setSuccessMessage('Failed to save scenario');
+              setShowSuccessToast(true);
+              setIsSaving(false);
+              return;
             }
-          : s
-      ));
-      setSuccessMessage(`Scenario "${name}" updated`);
-      setShowSuccessToast(true);
-    } else {
-      // Create new scenario
-      const newScenario = {
-        id: `scenario_${Date.now()}`,
-        name,
-        description,
-        params: { ...params },
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        tags: [params.industry, params.facilityType].filter(Boolean),
-      };
+            
+            // Update local state
+            setScenarios(prev => prev.map(s => 
+              s.id === currentScenarioId 
+                ? {
+                    ...s,
+                    name,
+                    description,
+                    params: { ...params },
+                    updatedAt: data.updated_at,
+                  }
+                : s
+            ));
+            setSuccessMessage(`Scenario "${name}" saved to cloud`);
+          } else {
+            // Migrate local scenario to database
+            const { data, error } = await db.createSavedModel(name, description, modelData);
+            
+            if (error) {
+              console.error('Error saving scenario to database:', error);
+              setSuccessMessage('Failed to save scenario');
+              setShowSuccessToast(true);
+              setIsSaving(false);
+              return;
+            }
+            
+            // Remove old local scenario and add new db scenario
+            setScenarios(prev => [
+              ...prev.filter(s => s.id !== currentScenarioId),
+              {
+                id: data.id,
+                name: data.name,
+                description: data.description,
+                params: modelData.params,
+                tags: modelData.tags,
+                createdAt: data.created_at,
+                updatedAt: data.updated_at,
+                isFromDatabase: true
+              }
+            ]);
+            setCurrentScenarioId(data.id);
+            setSuccessMessage(`Scenario "${name}" saved to cloud`);
+          }
+        } else {
+          // Create new scenario in database
+          const { data, error } = await db.createSavedModel(name, description, modelData);
+          
+          if (error) {
+            console.error('Error creating scenario in database:', error);
+            setSuccessMessage('Failed to save scenario');
+            setShowSuccessToast(true);
+            setIsSaving(false);
+            return;
+          }
+          
+          const newScenario = {
+            id: data.id,
+            name: data.name,
+            description: data.description,
+            params: modelData.params,
+            tags: modelData.tags,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+            isFromDatabase: true
+          };
+          
+          setScenarios(prev => [...prev, newScenario]);
+          setCurrentScenarioId(data.id);
+          setCurrentScenarioName(name);
+          setSuccessMessage(`Scenario "${name}" saved to cloud`);
+        }
+      } else {
+        // Save to localStorage for non-authenticated users
+        if (currentScenarioId) {
+          setScenarios(prev => prev.map(s => 
+            s.id === currentScenarioId 
+              ? {
+                  ...s,
+                  name,
+                  description,
+                  params: { ...params },
+                  updatedAt: timestamp,
+                }
+              : s
+          ));
+          setSuccessMessage(`Scenario "${name}" updated`);
+        } else {
+          const newScenario = {
+            id: `scenario_${Date.now()}`,
+            name,
+            description,
+            params: { ...params },
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            tags: [params.industry, params.facilityType].filter(Boolean),
+          };
+          
+          setScenarios(prev => [...prev, newScenario]);
+          setCurrentScenarioId(newScenario.id);
+          setCurrentScenarioName(name);
+          localStorage.setItem('finsight_last_scenario', newScenario.id);
+          setSuccessMessage(`Scenario "${name}" saved`);
+        }
+      }
       
-      setScenarios(prev => [...prev, newScenario]);
-      setCurrentScenarioId(newScenario.id);
-      setCurrentScenarioName(name);
-      localStorage.setItem('finsight_last_scenario', newScenario.id);
-      
-      setSuccessMessage(`Scenario "${name}" saved`);
       setShowSuccessToast(true);
+    } catch (error) {
+      console.error('Error saving scenario:', error);
+      setSuccessMessage('Failed to save scenario');
+      setShowSuccessToast(true);
+    } finally {
+      setIsSaving(false);
+      setShowSaveDialog(false);
     }
-    
-    setShowSaveDialog(false);
   };
 
   // === LOAD FUNCTION ===
@@ -1316,41 +1473,98 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
   };
 
   // === DELETE FUNCTION ===
-  const deleteScenario = (scenarioId) => {
+  const deleteScenario = async (scenarioId) => {
     const scenario = scenarios.find(s => s.id === scenarioId);
     if (!confirm(`Delete "${scenario?.name}"? This cannot be undone.`)) {
       return;
     }
     
-    setScenarios(prev => prev.filter(s => s.id !== scenarioId));
-    
-    if (scenarioId === currentScenarioId) {
-      setCurrentScenarioId(null);
-      setCurrentScenarioName('');
-      localStorage.removeItem('finsight_last_scenario');
+    try {
+      // Delete from database if it's a database scenario
+      if (isAuthenticated && scenario?.isFromDatabase) {
+        const { error } = await db.deleteSavedModel(scenarioId);
+        
+        if (error) {
+          console.error('Error deleting scenario from database:', error);
+          setSuccessMessage('Failed to delete scenario');
+          setShowSuccessToast(true);
+          return;
+        }
+      }
+      
+      setScenarios(prev => prev.filter(s => s.id !== scenarioId));
+      
+      if (scenarioId === currentScenarioId) {
+        setCurrentScenarioId(null);
+        setCurrentScenarioName('');
+        localStorage.removeItem('finsight_last_scenario');
+      }
+      
+      setSuccessMessage('Scenario deleted successfully');
+      setShowSuccessToast(true);
+    } catch (error) {
+      console.error('Error deleting scenario:', error);
+      setSuccessMessage('Failed to delete scenario');
+      setShowSuccessToast(true);
     }
-    
-    setSuccessMessage('Scenario deleted successfully');
-    setShowSuccessToast(true);
   };
 
   // === DUPLICATE FUNCTION ===
-  const duplicateScenario = (scenarioId) => {
+  const duplicateScenario = async (scenarioId) => {
     const original = scenarios.find(s => s.id === scenarioId);
     if (!original) return;
     
     const timestamp = new Date().toISOString();
-    const duplicate = {
-      ...original,
-      id: `scenario_${Date.now()}`,
-      name: `${original.name} (Copy)`,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
     
-    setScenarios(prev => [...prev, duplicate]);
-    setSuccessMessage(`Created copy of "${original.name}"`);
-    setShowSuccessToast(true);
+    try {
+      if (isAuthenticated && original?.isFromDatabase) {
+        // Duplicate in database
+        const { data, error } = await db.duplicateSavedModel(
+          scenarioId, 
+          `${original.name} (Copy)`
+        );
+        
+        if (error) {
+          console.error('Error duplicating scenario in database:', error);
+          setSuccessMessage('Failed to duplicate scenario');
+          setShowSuccessToast(true);
+          return;
+        }
+        
+        const duplicate = {
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          params: data.model_data?.params || data.model_data || {},
+          tags: data.model_data?.tags || [],
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+          isFromDatabase: true
+        };
+        
+        setScenarios(prev => [...prev, duplicate]);
+        setSuccessMessage(`Created copy of "${original.name}"`);
+      } else {
+        // Duplicate locally
+        const duplicate = {
+          ...original,
+          id: `scenario_${Date.now()}`,
+          name: `${original.name} (Copy)`,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          isFromDatabase: false
+        };
+        
+        setScenarios(prev => [...prev, duplicate]);
+        setSuccessMessage(`Created copy of "${original.name}"`);
+      }
+      
+      setShowSuccessToast(true);
+    } catch (error) {
+      console.error('Error duplicating scenario:', error);
+      setSuccessMessage('Failed to duplicate scenario');
+      setShowSuccessToast(true);
+    }
   };
 
   // === CLEAR ALL FUNCTION ===

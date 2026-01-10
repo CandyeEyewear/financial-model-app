@@ -140,6 +140,93 @@ export const db = {
       user_id: userId
     });
     return { data, error };
+  },
+
+  // ==========================================
+  // SAVED MODELS / SCENARIOS
+  // ==========================================
+
+  // List all saved models for a user
+  listSavedModels: async () => {
+    const { data, error } = await supabase
+      .from('saved_models')
+      .select('id, name, description, created_at, updated_at, model_data')
+      .order('updated_at', { ascending: false });
+    return { data, error };
+  },
+
+  // Get a single saved model by ID
+  getSavedModel: async (modelId) => {
+    const { data, error } = await supabase
+      .from('saved_models')
+      .select('*')
+      .eq('id', modelId)
+      .single();
+    return { data, error };
+  },
+
+  // Save a new model
+  createSavedModel: async (name, description, modelData) => {
+    const { data, error } = await supabase
+      .from('saved_models')
+      .insert({
+        name,
+        description,
+        model_data: modelData
+      })
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // Update an existing model
+  updateSavedModel: async (modelId, name, description, modelData) => {
+    const { data, error } = await supabase
+      .from('saved_models')
+      .update({
+        name,
+        description,
+        model_data: modelData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', modelId)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // Delete a saved model
+  deleteSavedModel: async (modelId) => {
+    const { error } = await supabase
+      .from('saved_models')
+      .delete()
+      .eq('id', modelId);
+    return { error };
+  },
+
+  // Duplicate a saved model
+  duplicateSavedModel: async (modelId, newName) => {
+    // First, get the original model
+    const { data: original, error: fetchError } = await supabase
+      .from('saved_models')
+      .select('*')
+      .eq('id', modelId)
+      .single();
+    
+    if (fetchError) return { data: null, error: fetchError };
+
+    // Create a copy with a new name
+    const { data, error } = await supabase
+      .from('saved_models')
+      .insert({
+        name: newName,
+        description: original.description,
+        model_data: original.model_data
+      })
+      .select()
+      .single();
+    
+    return { data, error };
   }
 };
 

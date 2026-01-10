@@ -1190,7 +1190,7 @@ function TrancheView({ projection, params, ccy }) {
       {/* Multi-Tranche Summary */}
       <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-300">
         <h3 className="text-lg font-bold text-purple-900 mb-3">Multi-Tranche Summary</h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <p className="text-xs text-purple-700 font-semibold mb-1">Total Tranches</p>
             <p className="text-2xl font-bold text-purple-900">

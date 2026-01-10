@@ -330,14 +330,14 @@ export function HistoricalDataTab({
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row justify-between items-center">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
           <div>
             <CardTitle>Historical Financial Data</CardTitle>
             <p className="text-sm text-slate-600 mt-1">
               Enter 2-3 years of historical financial data to establish baseline assumptions
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end">
             {hasDataToExport && (
               <>
                 <Button

@@ -36,12 +36,12 @@ export function DataTable({ projection, ccy, title = "" }) {
   return (
     <div className="space-y-4">
       {title && (
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-lg font-semibold">{title}</h3>
           <Button
             size="sm"
             onClick={() => exportDetailedCSV(projection, title, ccy)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 w-full sm:w-auto"
           >
             <Download className="w-3 h-3 mr-1" />
             Export Table

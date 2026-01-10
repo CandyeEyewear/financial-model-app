@@ -1411,7 +1411,7 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Decision Metrics */}
             <div className="lg:col-span-2 space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="text-center p-4 bg-white rounded-lg border-2 border-slate-200 shadow-sm">
                   <div className="text-xs text-slate-600 mb-2">Debt Capacity Status</div>
                   <div className={`text-3xl font-bold ${

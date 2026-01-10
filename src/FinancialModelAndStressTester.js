@@ -1929,7 +1929,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                     <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
                       <h4 className="text-sm font-bold text-blue-900 mb-2">Quick Calculation</h4>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                         <div>
                           <p className="text-blue-700">Revenue</p>
                           <p className="text-lg font-bold text-blue-900">
@@ -2139,7 +2139,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                     <Calendar className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
                       <h4 className="text-sm font-bold text-emerald-900 mb-2">Estimated Annual Debt Service</h4>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                         <div>
                           <p className="text-emerald-700">Interest Payment</p>
                           <p className="text-lg font-bold text-emerald-900">

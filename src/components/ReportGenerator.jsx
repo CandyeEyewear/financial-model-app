@@ -2256,7 +2256,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
           {/* Fees Section */}
           <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
             <h4 className="font-semibold text-sm mb-4 text-slate-800">Fees & Expenses</h4>
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
                 <Label htmlFor="arrangementFee" className="text-xs font-semibold text-slate-700">Arrangement Fee %</Label>
                 <Input

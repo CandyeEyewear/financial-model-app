@@ -98,7 +98,7 @@ export function ValuationTab({ projections, params, ccy }) {
     };
 
     // ----- SANITY CHECKS -----
-    const sanityChecks = runSanityChecks(projections, params, debtBreakdown, tvPercent);
+    const sanityChecks = runSanityChecks(projections, params, debtBreakdown, tvPercent, ccy);
 
     return {
       // Valuation (from projections)
@@ -323,7 +323,7 @@ function getDebtBreakdown(projections, params) {
 /**
  * Run sanity checks on valuation
  */
-function runSanityChecks(projections, params, debtBreakdown, tvPercent) {
+function runSanityChecks(projections, params, debtBreakdown, tvPercent, ccy) {
   const checks = [];
 
   // Check 1: Terminal Value Dominance

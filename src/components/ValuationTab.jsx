@@ -984,40 +984,46 @@ function SensitivityAnalysis({ data, params, ccy }) {
 
 function ExportSection({ data, exportStatus, onExport }) {
   return (
-    <Card className="border-l-4 border-l-green-600">
+    <Card className="border-l-4 border-l-blue-600">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Download className="w-5 h-5 text-green-600" />
-            <span className="font-semibold text-slate-800">Export Valuation</span>
-            {exportStatus && (
-              <span className={`text-sm ${
-                exportStatus === 'Exported' ? 'text-green-600' :
-                exportStatus === 'Failed' ? 'text-red-600' : 'text-blue-600'
-              }`}>
-                {exportStatus}
-              </span>
-            )}
+            <Download className="w-5 h-5 text-blue-600" />
+            <div>
+              <span className="font-semibold text-slate-800">Export Valuation Analysis</span>
+              {exportStatus && (
+                <span className={`ml-3 text-sm ${
+                  exportStatus === 'Exported' ? 'text-green-600' :
+                  exportStatus === 'Failed' ? 'text-red-600' : 'text-blue-600'
+                }`}>
+                  {exportStatus === 'Exported' ? '✓ Exported successfully!' :
+                   exportStatus === 'Failed' ? '✗ Export failed' : exportStatus}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               size="sm"
+              leftIcon={Download}
               onClick={() => onExport('full')}
-              className="bg-green-600 hover:bg-green-700 text-white"
+              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-md"
             >
-              <Download className="w-4 h-4 mr-2" />
-              Export CSV
+              Full DCF Export
             </Button>
             <Button
               size="sm"
+              leftIcon={Download}
               onClick={() => onExport('sensitivity')}
-              className="bg-purple-600 hover:bg-purple-700 text-white"
+              className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-md"
             >
-              <Download className="w-4 h-4 mr-2" />
-              Sensitivity
+              Sensitivity Matrix
             </Button>
           </div>
         </div>
+        <p className="text-xs text-slate-600 mt-2">
+          Export comprehensive valuation data to CSV for validation and further analysis
+        </p>
       </CardContent>
     </Card>
   );

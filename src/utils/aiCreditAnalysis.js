@@ -1,39 +1,74 @@
 // utils/aiCreditAnalysis.js
-import { analyzeWithDeepSeek } from './deepseekIntegration';
+
+/**
+ * Call AI API for analysis
+ * Replaces deprecated deepseekIntegration
+ */
+async function callAIAPI(prompt, accessToken, options = {}) {
+  if (!accessToken) {
+    throw new Error("Authentication required for AI analysis");
+  }
+
+  const response = await fetch("/api/ai/analyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`
+    },
+    body: JSON.stringify({
+      prompt,
+      systemMessage: options.systemMessage || "You are a senior credit analyst at a top-tier investment bank.",
+      temperature: options.temperature || 0.3,
+      maxTokens: options.maxTokens || 2000
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "";
+}
 
 /**
  * AI-Powered Credit Analysis Engine
- * Uses DeepSeek to provide contextual interpretations
+ * Uses AI API to provide contextual interpretations
  */
-export async function generateCreditInsights(projection, params) {
+export async function generateCreditInsights(projection, params, accessToken) {
   // Prepare structured data for AI
   const analysisContext = {
     creditStats: {
-      avgDSCR: projection.creditStats.avgDSCR,
-      minDSCR: projection.creditStats.minDSCR,
-      avgICR: projection.creditStats.avgICR,
-      minICR: projection.creditStats.minICR,
-      avgLeverage: projection.creditStats.avgLeverage,
-      maxLeverage: projection.creditStats.maxLeverage
+      avgDSCR: projection.creditStats?.avgDSCR || 0,
+      minDSCR: projection.creditStats?.minDSCR || 0,
+      avgICR: projection.creditStats?.avgICR || 0,
+      minICR: projection.creditStats?.minICR || 0,
+      avgLeverage: projection.creditStats?.avgLeverage || 0,
+      maxLeverage: projection.creditStats?.maxLeverage || 0
     },
     breaches: {
-      dscrBreaches: projection.breaches.dscrBreaches,
-      icrBreaches: projection.breaches.icrBreaches,
-      leverageBreaches: projection.breaches.ndBreaches,
+      dscrBreaches: projection.breaches?.dscrBreaches || 0,
+      icrBreaches: projection.breaches?.icrBreaches || 0,
+      leverageBreaches: projection.breaches?.ndBreaches || 0,
       breachYears: [
-        ...projection.breaches.dscrBreachYears,
-        ...projection.breaches.icrBreachYears,
-        ...projection.breaches.leverageBreachYears
+        ...(projection.breaches?.dscrBreachYears || []),
+        ...(projection.breaches?.icrBreachYears || []),
+        ...(projection.breaches?.leverageBreachYears || [])
       ]
     },
     covenants: {
-      minDSCR: params.minDSCR,
-      targetICR: params.targetICR,
-      maxNDToEBITDA: params.maxNDToEBITDA
+      minDSCR: params.minDSCR || 1.2,
+      targetICR: params.targetICR || 2.0,
+      maxNDToEBITDA: params.maxNDToEBITDA || 3.5
     },
-    industry: params.industry,
-    facilityType: params.facilityType,
-    totalDebt: projection.rows[0].grossDebt,
+    industry: params.industry || 'General',
+    facilityType: params.facilityType || params.dealStructure,
+    // Fixed: Check all debt sources
+    totalDebt: projection.rows?.[0]?.grossDebt ||
+               params.openingDebt ||
+               params.existingDebtAmount ||
+               (params.openingDebt || 0) + (params.requestedLoanAmount || 0),
     baseRevenue: params.baseRevenue
   };
 
@@ -76,7 +111,7 @@ ${JSON.stringify(analysisContext, null, 2)}
 `;
 
   try {
-    const aiResponse = await analyzeWithDeepSeek(prompt, {
+    const aiResponse = await callAIAPI(prompt, accessToken, {
       temperature: 0.3, // Lower temperature for analytical precision
       maxTokens: 2000
     });

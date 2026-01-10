@@ -3,9 +3,13 @@
 
 /**
  * Use appropriate rate based on context
+ * Fixed: Now checks both openingDebt AND existingDebtAmount
  */
 const getApplicableRate = (params) => {
-  const hasOpeningDebt = (params.openingDebt || 0) > 0;
+  // Check ALL debt sources
+  const hasOpeningDebt = (params.openingDebt || 0) > 0 ||
+                        (params.existingDebtAmount || 0) > 0 ||
+                        params.hasExistingDebt === true;
   const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
 
   if (hasOpeningDebt && !hasNewFacility) {
@@ -14,7 +18,8 @@ const getApplicableRate = (params) => {
     return params.proposedPricing || params.interestRate || 0.08;
   } else if (hasOpeningDebt && hasNewFacility) {
     // Both exist - calculate weighted average rate
-    const existingAmount = params.openingDebt || 0;
+    // Check BOTH openingDebt AND existingDebtAmount
+    const existingAmount = params.openingDebt || params.existingDebtAmount || 0;
     const newAmount = params.requestedLoanAmount || 0;
     const totalDebt = existingAmount + newAmount;
     if (totalDebt === 0) return params.interestRate || 0.08;
@@ -67,9 +72,17 @@ export function calculateDebtCapacity(params, projection) {
   const aggressiveDebt = ebitda / (annualPaymentFactor * 1.10); // Minimum 1.10x DSCR (aggressive)
   
   // Current debt position - with breakdown
-  const existingDebt = params.openingDebt || 0;
+  // Fixed: Check all debt sources including projection data
+  const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
   const newFacility = params.requestedLoanAmount || 0;
-  const currentDebtRequest = existingDebt + newFacility;
+
+  // Also check projection for actual debt (projection is source of truth if available)
+  const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
+                        projection?.finalDebt ||
+                        projection?.rows?.[0]?.grossDebt || 0;
+
+  // Use projection debt if available and greater than 0, otherwise use params
+  const currentDebtRequest = projectionDebt > 0 ? projectionDebt : (existingDebt + newFacility);
   
   // Calculate available capacity or excess debt
   // Positive = over capacity (excess debt), Negative = under capacity (available room)
@@ -173,7 +186,10 @@ export function calculateDebtCapacity(params, projection) {
       newFacility,
       totalDebt: currentDebtRequest,
       existingDebtPct: currentDebtRequest > 0 ? (existingDebt / currentDebtRequest) * 100 : 0,
-      newFacilityPct: currentDebtRequest > 0 ? (newFacility / currentDebtRequest) * 100 : 0
+      newFacilityPct: currentDebtRequest > 0 ? (newFacility / currentDebtRequest) * 100 : 0,
+      // Track debt source for transparency
+      debtSource: projectionDebt > 0 ? 'projection' : 'params',
+      projectionDebt: projectionDebt
     }
   };
 }
@@ -183,12 +199,18 @@ export function calculateDebtCapacity(params, projection) {
  * Industry-standard approach considering DSCR, leverage, and LTV constraints
  */
 export function generateAlternativeStructures(params, projection, debtCapacity) {
-  const currentDebt = (params.openingDebt || 0) + (params.requestedLoanAmount || 0);
+  // Fixed: Check all debt sources for consistency with calculateDebtCapacity
+  const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
+  const newFacility = params.requestedLoanAmount || 0;
+  const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
+                        projection?.finalDebt ||
+                        projection?.rows?.[0]?.grossDebt || 0;
+  const currentDebt = projectionDebt > 0 ? projectionDebt : (existingDebt + newFacility);
   const currentEquity = params.equityContribution || 0;
   const totalCapital = currentDebt + currentEquity;
   const ebitda = projection?.rows?.[0]?.ebitda || params.baseRevenue * 0.20;
   const collateralValue = params.collateralValue || 0;
-  const rate = params.interestRate || 0.10;
+  const rate = getApplicableRate(params);
   const baseTenor = params.debtTenorYears || 5;
   
   // Helper to calculate payment factor

@@ -3,6 +3,52 @@
 import { currencyFmtMM, numFmt, pctFmt } from "./formatters";
 
 /**
+ * Get total debt from all sources
+ * Priority: projection data > params multi-tranche > params single debt
+ */
+function getTotalDebt(params, projection) {
+  // Priority 1: Projection data (most accurate - reflects actual calculations)
+  if (projection?.multiTrancheInfo?.totalDebt > 0) {
+    return {
+      total: projection.multiTrancheInfo.totalDebt,
+      source: 'projection.multiTrancheInfo',
+      breakdown: projection.multiTrancheInfo.tranches || []
+    };
+  }
+
+  if (projection?.finalDebt > 0) {
+    return {
+      total: projection.finalDebt,
+      source: 'projection.finalDebt',
+      breakdown: []
+    };
+  }
+
+  // Priority 2: Params multi-tranche
+  if (params?.hasMultipleTranches && params?.debtTranches?.length > 0) {
+    const total = params.debtTranches.reduce((sum, t) => sum + (t.amount || 0), 0);
+    return {
+      total,
+      source: 'params.debtTranches',
+      breakdown: params.debtTranches
+    };
+  }
+
+  // Priority 3: Params single debt (check BOTH openingDebt AND existingDebtAmount)
+  const existingDebt = params?.openingDebt || params?.existingDebtAmount || 0;
+  const newFacility = params?.requestedLoanAmount || 0;
+
+  return {
+    total: existingDebt + newFacility,
+    source: 'params (single debt)',
+    breakdown: [
+      { name: 'Existing Debt', amount: existingDebt },
+      { name: 'New Facility', amount: newFacility }
+    ].filter(t => t.amount > 0)
+  };
+}
+
+/**
  * Generate comprehensive, AI-optimized model data summary
  * Structured for maximum clarity and minimal token usage
  */
@@ -11,9 +57,8 @@ export function generateModelDataSummary(modelData) {
     return "No data available";
   }
 
-  const { projections, params, historicalData, valuationResults } = modelData;
-
-   const baseProjection = projections.base;
+  const { projections, params, historicalData, valuationResults, customShocks, stressTestResults } = modelData;
+  const baseProjection = projections.base;
 
   if (!projections || !params) {
     return "ERROR: Incomplete model data. Missing projections or parameters.";
@@ -24,27 +69,37 @@ export function generateModelDataSummary(modelData) {
   // === COMPANY OVERVIEW ===
   sections.push(generateCompanyOverview(params));
 
-  // === TRANSACTION STRUCTURE ===
-  sections.push(generateTransactionStructure(params));
+  // === TRANSACTION STRUCTURE (ENHANCED) ===
+  sections.push(generateTransactionStructure(params, baseProjection));
 
   // === BASE CASE FINANCIALS ===
-  if (projections.base) {
-    sections.push(generateBaseCase(projections.base, params));
+  if (baseProjection) {
+    sections.push(generateBaseCase(baseProjection, params));
   }
 
-// === DCF VALUATION ANALYSIS ===
-if (valuationResults) {
-  sections.push(generateValuationAnalysis(valuationResults, params));
-} 
+  // === DCF VALUATION ANALYSIS (ENHANCED) ===
+  if (valuationResults) {
+    sections.push(generateValuationAnalysis(valuationResults, params));
+  }
+
+  // === STRESS TEST SUMMARY (NEW) ===
+  if (Object.keys(projections).length > 1) {
+    sections.push(generateStressTestSummary(projections, params));
+  }
 
   // === SCENARIO ANALYSIS ===
   if (Object.keys(projections).length > 1) {
     sections.push(generateScenarioComparison(projections, params));
   }
 
-  // === COVENANT ANALYSIS ===
-  if (projections.base) {
-    sections.push(generateCovenantAnalysis(projections.base, params));
+  // === COVENANT ANALYSIS (ENHANCED with breach years) ===
+  if (baseProjection) {
+    sections.push(generateCovenantAnalysis(baseProjection, params));
+  }
+
+  // === CUSTOM SHOCKS (NEW) ===
+  if (customShocks && Object.values(customShocks).some(v => v !== 0)) {
+    sections.push(generateCustomShocksSection(customShocks));
   }
 
   // === HISTORICAL CONTEXT ===
@@ -56,7 +111,10 @@ if (valuationResults) {
   sections.push(generateQualitativeAssessment(params));
 
   // === RISK FACTORS ===
-  sections.push(generateRiskAssessment(params, projections.base));
+  sections.push(generateRiskAssessment(params, baseProjection));
+
+  // === MISSING DATA WARNINGS (NEW) ===
+  sections.push(generateMissingDataWarnings(params, baseProjection));
 
   return sections.filter(s => s).join("\n\n" + "=".repeat(80) + "\n\n");
 }
@@ -75,28 +133,65 @@ function generateCompanyOverview(params) {
   return formatSection("COMPANY OVERVIEW", fields);
 }
 
-function generateTransactionStructure(params) {
+function generateTransactionStructure(params, projection) {
   const ccy = params.currency || "USD";
-  
+  const debtInfo = getTotalDebt(params, projection);
+
   const fields = {
+    // === DEAL OVERVIEW ===
     "Facility Type": params.dealStructure,
-    "Requested Amount": params.requestedLoanAmount ? currencyFmtMM(params.requestedLoanAmount, ccy) : null,
-    "Tenor": params.proposedTenor ? `${params.proposedTenor} years` : null,
-    "Interest Rate": params.proposedPricing ? pctFmt(params.proposedPricing) : null,
+    "Loan Purpose": params.loanPurpose,
+    "Use of Proceeds": params.useOfProceeds,
+
+    // === TOTAL DEBT (from all sources) ===
+    "Total Debt": currencyFmtMM(debtInfo.total, ccy),
+    "Debt Source": debtInfo.source,
+
+    // === EXISTING DEBT ===
+    "Existing Debt": (params.openingDebt || params.existingDebtAmount)
+      ? currencyFmtMM(params.openingDebt || params.existingDebtAmount, ccy)
+      : "None",
+    "Existing Debt Rate": params.existingDebtRate ? pctFmt(params.existingDebtRate) : null,
+    "Existing Debt Maturity": params.openingDebtMaturityDate || null,
+
+    // === NEW FACILITY ===
+    "New Facility Amount": params.requestedLoanAmount
+      ? currencyFmtMM(params.requestedLoanAmount, ccy)
+      : "None",
+    "Proposed Rate": params.proposedPricing ? pctFmt(params.proposedPricing) : null,
+    "Proposed Tenor": params.proposedTenor ? `${params.proposedTenor} years` : null,
+
+    // === MULTI-TRANCHE (if applicable) ===
+    "Multi-Tranche": params.hasMultipleTranches ? "Yes" : "No",
+
+    // === STRUCTURE DETAILS ===
     "Payment Frequency": params.paymentFrequency,
-    "Balloon Payment": params.balloonPercentage > 0 ? `${params.balloonPercentage}% (${currencyFmtMM(params.requestedLoanAmount * params.balloonPercentage / 100, ccy)})` : "None",
     "Day Count Convention": params.dayCountConvention,
     "Interest-Only Period": params.interestOnlyYears ? `${params.interestOnlyYears} years` : "None",
-    "Use of Proceeds": params.useOfProceeds,
-    "Loan Purpose": params.loanPurpose,
+
+    // === BALLOON PAYMENT ===
+    "Balloon Payment": params.useBalloonPayment || params.balloonPercentage > 0
+      ? `${params.balloonPercentage}% (${currencyFmtMM(debtInfo.total * (params.balloonPercentage || 0) / 100, ccy)})`
+      : "None",
+
+    // === CASH POSITION ===
+    "Opening Cash": params.openingCash !== undefined ? currencyFmtMM(params.openingCash, ccy) : "Not specified",
+    "Net Debt": currencyFmtMM(debtInfo.total - (params.openingCash || 0), ccy),
   };
 
+  // Add tranche breakdown if multi-tranche
+  if (debtInfo.breakdown.length > 1) {
+    fields["Tranche Breakdown"] = debtInfo.breakdown
+      .map(t => `${t.name || t.trancheName}: ${currencyFmtMM(t.amount, ccy)}`)
+      .join("; ");
+  }
+
   // Calculate effective all-in rate
-  const effectiveRate = params.dayCountConvention === "Actual/360" 
-    ? params.proposedPricing * (365/360) 
+  const effectiveRate = params.dayCountConvention === "Actual/360"
+    ? params.proposedPricing * (365/360)
     : params.proposedPricing;
-  
-  if (effectiveRate !== params.proposedPricing) {
+
+  if (effectiveRate && effectiveRate !== params.proposedPricing) {
     fields["Effective Rate (Actual/360 adj)"] = pctFmt(effectiveRate);
   }
 
@@ -171,7 +266,7 @@ function generateScenarioComparison(projections, params) {
 function generateCovenantAnalysis(projection, params) {
   const stats = projection.creditStats || {};
   const breaches = projection.breaches || {};
-  
+
   const minDSCR = stats.minDSCR || 0;
   const minICR = stats.minICR || 0;
   const maxLeverage = stats.maxLeverage || 0;
@@ -196,6 +291,38 @@ function generateCovenantAnalysis(projection, params) {
     "ICR Breaches": breaches.icrBreaches || 0,
     "Leverage Breaches": breaches.ndBreaches || 0,
   };
+
+  // Add specific breach year details (NEW)
+  if (breaches.dscrBreachYears?.length > 0) {
+    fields["DSCR Breach Years"] = breaches.dscrBreachYears.join(", ");
+
+    // Add what the DSCR was in each breach year
+    const breachDetails = breaches.dscrBreachYears.map(year => {
+      const row = projection.rows?.find(r => r.year === year);
+      return row ? `Year ${year}: ${numFmt(row.dscr)}x` : `Year ${year}`;
+    });
+    fields["DSCR Breach Details"] = breachDetails.join("; ");
+  }
+
+  if (breaches.icrBreachYears?.length > 0) {
+    fields["ICR Breach Years"] = breaches.icrBreachYears.join(", ");
+
+    const breachDetails = breaches.icrBreachYears.map(year => {
+      const row = projection.rows?.find(r => r.year === year);
+      return row ? `Year ${year}: ${numFmt(row.icr)}x` : `Year ${year}`;
+    });
+    fields["ICR Breach Details"] = breachDetails.join("; ");
+  }
+
+  if (breaches.leverageBreachYears?.length > 0) {
+    fields["Leverage Breach Years"] = breaches.leverageBreachYears.join(", ");
+
+    const breachDetails = breaches.leverageBreachYears.map(year => {
+      const row = projection.rows?.find(r => r.year === year);
+      return row ? `Year ${year}: ${numFmt(row.leverage || row.ndToEbitda)}x` : `Year ${year}`;
+    });
+    fields["Leverage Breach Details"] = breachDetails.join("; ");
+  }
 
   // Add overall credit assessment
   const totalBreaches = (breaches.dscrBreaches || 0) + (breaches.icrBreaches || 0) + (breaches.ndBreaches || 0);
@@ -323,7 +450,7 @@ function formatSection(title, fields) {
 
 function generateValuationAnalysis(valuationResults, params) {
   const ccy = params.currency || "USD";
-  
+
   const fields = {
     "Valuation Method": "Discounted Cash Flow (DCF)",
     "Enterprise Value": currencyFmtMM(valuationResults.enterpriseValue, ccy),
@@ -337,7 +464,29 @@ function generateValuationAnalysis(valuationResults, params) {
   fields["Cost of Equity (CAPM)"] = pctFmt(valuationResults.costOfEquity);
   fields["After-Tax Cost of Debt"] = pctFmt(valuationResults.afterTaxCostOfDebt);
   fields["Net Debt"] = currencyFmtMM(valuationResults.netDebt, ccy);
-  
+
+  // Add shares and price per share (ENHANCED)
+  if (params.sharesOutstanding > 0) {
+    fields["Shares Outstanding"] = numFmt(params.sharesOutstanding, 0);
+
+    const pricePerShare = valuationResults.equityValue / params.sharesOutstanding;
+    fields["Price per Share"] = `${ccy} ${pricePerShare.toFixed(2)}`;
+  } else {
+    fields["Shares Outstanding"] = "NOT SET - Price per share cannot be calculated";
+  }
+
+  // Add opening cash context (ENHANCED)
+  if (params.openingCash !== undefined) {
+    fields["Opening Cash"] = currencyFmtMM(params.openingCash, ccy);
+  } else {
+    fields["Opening Cash"] = "NOT SET - Defaulting to 0 (may affect net debt calculation)";
+  }
+
+  // Add debt breakdown in valuation (ENHANCED)
+  const debtInfo = getTotalDebt(params, null);
+  fields["Total Debt in Valuation"] = currencyFmtMM(debtInfo.total, ccy);
+  fields["Calculated Net Debt"] = currencyFmtMM(debtInfo.total - (params.openingCash || 0), ccy);
+
   const multiples = valuationResults.impliedMultiples;
   if (multiples) {
     if (multiples.evToRevenue) {
@@ -345,7 +494,7 @@ function generateValuationAnalysis(valuationResults, params) {
     }
     if (multiples.evToEBITDA) {
       fields["EV/EBITDA"] = `${numFmt(multiples.evToEBITDA, 1)}x`;
-      
+
       const evEbitda = multiples.evToEBITDA;
       if (evEbitda < 5) {
         fields["EV/EBITDA Assessment"] = "BELOW MARKET - Potentially undervalued or distressed";
@@ -374,15 +523,141 @@ function generateValuationAnalysis(valuationResults, params) {
   if (valuationResults.equityValue < 0) {
     fields["EQUITY WARNING"] = "Equity value is NEGATIVE - debt exceeds business value. Distressed situation.";
   }
-  
-  const tvPercentage = valuationResults.enterpriseValue !== 0 
-    ? (valuationResults.pvOfTerminalValue / valuationResults.enterpriseValue) * 100 
+
+  const tvPercentage = valuationResults.enterpriseValue !== 0
+    ? (valuationResults.pvOfTerminalValue / valuationResults.enterpriseValue) * 100
     : 0;
   fields["Terminal Value % of EV"] = `${numFmt(tvPercentage, 1)}%`;
-  
+
   if (Math.abs(tvPercentage) > 80) {
     fields["TERMINAL VALUE NOTE"] = "Terminal value dominates valuation (>80%). Projection assumptions are critical.";
   }
 
   return formatSection("DCF VALUATION ANALYSIS", fields);
+}
+
+/**
+ * Generate stress test summary for AI context (NEW)
+ */
+function generateStressTestSummary(projections, params) {
+  if (!projections || Object.keys(projections).length <= 1) {
+    return null;
+  }
+
+  const scenarios = Object.entries(projections)
+    .filter(([key]) => key !== 'base')
+    .map(([key, proj]) => {
+      const stats = proj.creditStats || {};
+      const breaches = proj.breaches || {};
+      const totalBreaches = (breaches.dscrBreaches || 0) +
+                           (breaches.icrBreaches || 0) +
+                           (breaches.ndBreaches || 0);
+
+      return {
+        name: key,
+        minDSCR: stats.minDSCR || 0,
+        maxLeverage: stats.maxLeverage || 0,
+        breaches: totalBreaches,
+        irr: proj.irr || 0,
+        equityValue: proj.equityValue || 0
+      };
+    });
+
+  // Find worst case
+  const worstCase = scenarios.reduce((worst, s) =>
+    s.minDSCR < (worst?.minDSCR || Infinity) ? s : worst
+  , null);
+
+  // Count scenarios with breaches
+  const breachCount = scenarios.filter(s => s.breaches > 0).length;
+
+  const fields = {
+    "Scenarios Tested": scenarios.length,
+    "Scenarios with Breaches": `${breachCount} of ${scenarios.length}`,
+    "Worst Case Scenario": worstCase?.name || "N/A",
+    "Worst Case DSCR": worstCase ? numFmt(worstCase.minDSCR) : "N/A",
+    "Worst Case Breaches": worstCase?.breaches || 0,
+  };
+
+  // Add each scenario summary
+  scenarios.forEach(s => {
+    fields[`${s.name} DSCR`] = numFmt(s.minDSCR);
+    fields[`${s.name} Breaches`] = s.breaches;
+  });
+
+  return formatSection("STRESS TEST SUMMARY", fields);
+}
+
+/**
+ * Generate custom shocks section (NEW)
+ */
+function generateCustomShocksSection(customShocks) {
+  const fields = {};
+
+  if (customShocks.growthDelta !== 0) {
+    fields["Revenue Growth Shock"] = pctFmt(customShocks.growthDelta);
+  }
+  if (customShocks.cogsDelta !== 0) {
+    fields["COGS Shock"] = pctFmt(customShocks.cogsDelta);
+  }
+  if (customShocks.opexDelta !== 0) {
+    fields["OpEx Shock"] = pctFmt(customShocks.opexDelta);
+  }
+  if (customShocks.capexDelta !== 0) {
+    fields["CapEx Shock"] = pctFmt(customShocks.capexDelta);
+  }
+  if (customShocks.rateDelta !== 0) {
+    fields["Interest Rate Shock"] = pctFmt(customShocks.rateDelta);
+  }
+  if (customShocks.waccDelta !== 0) {
+    fields["WACC Shock"] = pctFmt(customShocks.waccDelta);
+  }
+  if (customShocks.termGDelta !== 0) {
+    fields["Terminal Growth Shock"] = pctFmt(customShocks.termGDelta);
+  }
+
+  if (Object.keys(fields).length === 0) return null;
+
+  return formatSection("CUSTOM STRESS SCENARIO APPLIED", fields);
+}
+
+/**
+ * Generate warnings about missing/default data (NEW)
+ */
+function generateMissingDataWarnings(params, projection) {
+  const warnings = [];
+
+  if (params.openingCash === undefined || params.openingCash === null) {
+    warnings.push("Opening Cash: NOT SET (defaulting to 0, may affect net debt calculation)");
+  }
+
+  if (!params.sharesOutstanding) {
+    warnings.push("Shares Outstanding: NOT SET (price per share cannot be calculated)");
+  }
+
+  if (!params.collateralValue) {
+    warnings.push("Collateral Value: NOT SET (LTV cannot be calculated)");
+  }
+
+  if (!params.existingDebtAmount && !params.openingDebt && !params.requestedLoanAmount) {
+    warnings.push("No Debt Configured: Model running with zero debt");
+  }
+
+  if (params.openingDebt && params.existingDebtAmount && params.openingDebt !== params.existingDebtAmount) {
+    warnings.push(`Debt Mismatch: openingDebt (${params.openingDebt}) differs from existingDebtAmount (${params.existingDebtAmount})`);
+  }
+
+  if (!params.industry) {
+    warnings.push("Industry: NOT SET (industry benchmarks unavailable)");
+  }
+
+  if (!params.companyLegalName && !params.companyOperatingName) {
+    warnings.push("Company Name: NOT SET");
+  }
+
+  if (warnings.length === 0) return null;
+
+  return formatSection("DATA WARNINGS (AI should flag these to user)",
+    Object.fromEntries(warnings.map((w, i) => [`Warning ${i + 1}`, w]))
+  );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./components/Card";
 import { Button } from "./components/Button";
 import { KPI } from "./components/KPI";
@@ -9,9 +9,10 @@ import { CapitalStructureAnalysis } from "./components/CapitalStructureAnalysis"
 import { CreditDashboard } from "./components/CreditDashboard";
 import { ScenarioComparison } from "./components/ScenarioComparison";
 import { DataTable } from "./components/DataTable";
+import ChatAssistant from "./src/ChatAssistant";
 import { currencyFmtMM, pctFmt, numFmt } from "./utils/formatters";
 import { calculateHistoricalAssumptions } from "./utils/calculations";
-import { Download } from "lucide-react";
+import { Download, MessageSquare } from "lucide-react";
 
 // NOTE: You'll need to import your buildProjection and applyShocks functions from utils/calculations.js
 
@@ -58,6 +59,7 @@ export default function App({ buildProjection, applyShocks }) {
     targetICR: 2.0,
     equityContribution: 50_000_000,
     entryMultiple: 8.0,
+    currency: "JMD",
   });
 
   const [customShocks, setCustomShocks] = useState({
@@ -66,6 +68,8 @@ export default function App({ buildProjection, applyShocks }) {
   });
 
   const [showInputs, setShowInputs] = useState(false);
+  const [activeTab, setActiveTab] = useState("historical");
+  const [showChat, setShowChat] = useState(false);
 
   // Historical data state
   const [historicalData, setHistoricalData] = useState([
@@ -73,6 +77,37 @@ export default function App({ buildProjection, applyShocks }) {
     { year: 2022, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0 },
     { year: 2023, revenue: 0, ebitda: 0, netIncome: 0, totalAssets: 0, workingCapital: 0 },
   ]);
+
+  // Param update handler with debt field synchronization
+  const handleParamUpdate = useCallback((paramName, newValue) => {
+    setParams(prev => {
+      const updated = { ...prev, [paramName]: newValue };
+
+      // Sync debt fields to maintain consistency
+      if (paramName === 'openingDebt') {
+        updated.existingDebtAmount = newValue;
+        updated.hasExistingDebt = newValue > 0;
+      }
+      if (paramName === 'existingDebtAmount') {
+        updated.openingDebt = newValue;
+        updated.hasExistingDebt = newValue > 0;
+      }
+
+      return updated;
+    });
+  }, []);
+
+  // Stress test handler
+  const handleRunStressTest = useCallback((shocks) => {
+    setCustomShocks(prev => ({ ...prev, ...shocks }));
+    // Navigate to custom stress tab to show results
+    setActiveTab('custom');
+  }, []);
+
+  // Tab navigation handler
+  const handleNavigateToTab = useCallback((tab) => {
+    setActiveTab(tab);
+  }, []);
 
   // Apply historical assumptions to model parameters
   const applyHistoricalAssumptions = () => {
@@ -107,6 +142,27 @@ export default function App({ buildProjection, applyShocks }) {
     }
     return result;
   }, [params, customShocks, buildProjection, applyShocks]);
+
+  // Create complete modelData object for AI context
+  const modelData = useMemo(() => ({
+    params: { ...params, currency: ccy },
+    projections,
+    historicalData,
+    customShocks,
+    valuationResults: projections.base ? {
+      enterpriseValue: projections.base.enterpriseValue,
+      equityValue: projections.base.equityValue,
+      pvOfProjectedFCFs: projections.base.pvOfProjectedFCFs,
+      pvOfTerminalValue: projections.base.tvPV,
+      terminalValue: projections.base.tv,
+      wacc: params.wacc,
+      costOfEquity: projections.base.costOfEquity,
+      afterTaxCostOfDebt: projections.base.afterTaxCostOfDebt,
+      netDebt: projections.base.netDebt || params.openingDebt,
+      impliedMultiples: projections.base.impliedMultiples
+    } : null,
+    stressTestResults: Object.keys(projections).length > 1 ? projections : null
+  }), [params, ccy, projections, historicalData, customShocks]);
 
   const exportToCSV = () => {
     const headers = ["Scenario", "Enterprise Value", "Equity Value", "Equity MOIC", "Equity IRR", "Min DSCR", "Max Leverage"];
@@ -152,6 +208,14 @@ export default function App({ buildProjection, applyShocks }) {
           >
             <Download className="w-3 h-3 mr-1" />
             Export Summary
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setShowChat(!showChat)}
+            className={`${showChat ? 'bg-indigo-700' : 'bg-indigo-600'} hover:bg-indigo-700 text-white text-xs px-3 py-2 shadow-md`}
+          >
+            <MessageSquare className="w-3 h-3 mr-1" />
+            {showChat ? 'Hide' : 'AI'} Assistant
           </Button>
         </div>
       </div>
@@ -217,65 +281,115 @@ export default function App({ buildProjection, applyShocks }) {
         </Card>
       )}
 
-      <Tabs defaultValue="historical" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="historical">Historical Data</TabsTrigger>
-          <TabsTrigger value="capital">Capital Structure</TabsTrigger>
-          <TabsTrigger value="dashboard">Credit Dashboard</TabsTrigger>
-          <TabsTrigger value="scenarios">Scenario Analysis</TabsTrigger>
-          <TabsTrigger value="custom">Custom Stress</TabsTrigger>
-          <TabsTrigger value="tables">Data Tables</TabsTrigger>
-        </TabsList>
+      <div className="flex gap-4">
+        {/* Main content area */}
+        <div className={`${showChat ? 'w-2/3' : 'w-full'} transition-all duration-300`}>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="historical">Historical Data</TabsTrigger>
+              <TabsTrigger value="capital">Capital Structure</TabsTrigger>
+              <TabsTrigger value="dashboard">Credit Dashboard</TabsTrigger>
+              <TabsTrigger value="scenarios">Scenario Analysis</TabsTrigger>
+              <TabsTrigger value="custom">Custom Stress</TabsTrigger>
+              <TabsTrigger value="tables">Data Tables</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="historical">
-          <HistoricalDataTab
-            historicalData={historicalData}
-            setHistoricalData={setHistoricalData}
-            onApplyAssumptions={applyHistoricalAssumptions}
-            ccy={ccy}
-          />
-        </TabsContent>
+            <TabsContent value="historical">
+              <HistoricalDataTab
+                historicalData={historicalData}
+                setHistoricalData={setHistoricalData}
+                onApplyAssumptions={applyHistoricalAssumptions}
+                ccy={ccy}
+              />
+            </TabsContent>
 
-        <TabsContent value="capital">
-          <CapitalStructureAnalysis params={params} ccy={ccy} buildProjection={buildProjection} />
-        </TabsContent>
+            <TabsContent value="capital">
+              <CapitalStructureAnalysis params={params} ccy={ccy} buildProjection={buildProjection} />
+            </TabsContent>
 
-        <TabsContent value="dashboard">
-          <CreditDashboard projections={projections} ccy={ccy} />
-        </TabsContent>
+            <TabsContent value="dashboard">
+              <CreditDashboard projections={projections} ccy={ccy} />
+            </TabsContent>
 
-        <TabsContent value="scenarios">
-          <ScenarioComparison projections={projections} ccy={ccy} PRESETS={PRESETS} />
-        </TabsContent>
+            <TabsContent value="scenarios">
+              <ScenarioComparison projections={projections} ccy={ccy} PRESETS={PRESETS} />
+            </TabsContent>
 
-        <TabsContent value="custom">
-          {/* You can implement and add your custom stress test UI here */}
-          <div className="text-slate-500 p-4">Custom Stress Testing UI goes here.</div>
-        </TabsContent>
-
-        <TabsContent value="tables">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Base Case Projection</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DataTable projection={projections.base} ccy={ccy} title="Base Case" />
-              </CardContent>
-            </Card>
-            {projections.custom && (
+            <TabsContent value="custom">
+              {/* Custom stress test UI */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Custom Stress Projection</CardTitle>
+                  <CardTitle>Custom Stress Test</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable projection={projections.custom} ccy={ccy} title="Custom Stress" />
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <PctField
+                      label="Revenue Growth Δ"
+                      value={customShocks.growthDelta}
+                      onChange={(v) => setCustomShocks(prev => ({ ...prev, growthDelta: v }))}
+                    />
+                    <PctField
+                      label="COGS Δ"
+                      value={customShocks.cogsDelta}
+                      onChange={(v) => setCustomShocks(prev => ({ ...prev, cogsDelta: v }))}
+                    />
+                    <PctField
+                      label="OpEx Δ"
+                      value={customShocks.opexDelta}
+                      onChange={(v) => setCustomShocks(prev => ({ ...prev, opexDelta: v }))}
+                    />
+                    <PctField
+                      label="Interest Rate Δ"
+                      value={customShocks.rateDelta}
+                      onChange={(v) => setCustomShocks(prev => ({ ...prev, rateDelta: v }))}
+                    />
+                  </div>
+                  {projections.custom && (
+                    <DataTable projection={projections.custom} ccy={ccy} title="Custom Stress Results" />
+                  )}
                 </CardContent>
               </Card>
-            )}
+            </TabsContent>
+
+            <TabsContent value="tables">
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Base Case Projection</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <DataTable projection={projections.base} ccy={ccy} title="Base Case" />
+                  </CardContent>
+                </Card>
+                {projections.custom && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Custom Stress Projection</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <DataTable projection={projections.custom} ccy={ccy} title="Custom Stress" />
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* AI Chat Panel */}
+        {showChat && (
+          <div className="w-1/3 transition-all duration-300">
+            <Card className="h-[calc(100vh-280px)] sticky top-4">
+              <ChatAssistant
+                modelData={modelData}
+                onParamUpdate={handleParamUpdate}
+                onRunStressTest={handleRunStressTest}
+                onNavigateToTab={handleNavigateToTab}
+              />
+            </Card>
           </div>
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 }

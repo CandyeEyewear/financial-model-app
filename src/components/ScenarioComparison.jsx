@@ -63,41 +63,70 @@ const PRESETS = {
 // ============================================================================
 
 /**
- * Check if projection has meaningful debt
+ * Check if projection has ANY debt configured
+ * Checks multiple sources for reliability
  */
-function hasDebt(projection) {
-  if (!projection || !projection.rows || projection.rows.length === 0) return false;
-  
-  // Check if any year has debt balance > 0
-  const hasPositiveDebt = projection.rows.some(row => 
-    (row.grossDebt || 0) > 0 || 
+function hasDebt(projection, params = null) {
+  if (!projection) return false;
+
+  // Check 1: multiTrancheInfo (most reliable from buildProjection.js)
+  if ((projection.multiTrancheInfo?.totalDebt || 0) > 0) return true;
+
+  // Check 2: finalDebt from projection
+  if ((projection.finalDebt || 0) > 0) return true;
+
+  // Check 3: Row-level debt balances
+  if (projection.rows?.some(row =>
+    (row.grossDebt || 0) > 0 ||
     (row.debtBalance || 0) > 0 ||
-    (row.endingBalance || 0) > 0
-  );
-  
-  // Check if total debt repaid or interest paid > 0
-  const hasDebtActivity = (projection.totalDebtRepaid || 0) > 0 || 
-                          (projection.totalInterestPaid || 0) > 0;
-  
-  return hasPositiveDebt || hasDebtActivity;
+    (row.endingBalance || 0) > 0 ||
+    (row.netDebt || 0) > 0
+  )) return true;
+
+  // Check 4: Debt activity indicators
+  if ((projection.totalDebtRepaid || 0) > 0 ||
+      (projection.totalInterestPaid || 0) > 0) return true;
+
+  // Check 5: Params fallback (if provided)
+  if (params) {
+    if ((params.openingDebt || 0) > 0) return true;
+    if ((params.existingDebtAmount || 0) > 0) return true;
+    if ((params.requestedLoanAmount || 0) > 0) return true;
+    if (params.hasExistingDebt === true) return true;
+    if (params.debtTranches?.some(t => (t.amount || 0) > 0)) return true;
+  }
+
+  return false;
 }
 
 /**
- * Get total opening debt from params (handles multi-tranche)
+ * Get total debt from projection (preferred) or params (fallback)
+ * This uses what buildProjection.js already calculated
  */
-function getTotalOpeningDebt(params) {
+function getTotalDebt(projection, params) {
+  // PRIORITY 1: Use multiTrancheInfo from projection (most accurate)
+  if (projection?.multiTrancheInfo?.totalDebt > 0) {
+    return projection.multiTrancheInfo.totalDebt;
+  }
+
+  // PRIORITY 2: Use finalDebt from projection
+  if (projection?.finalDebt > 0) {
+    return projection.finalDebt;
+  }
+
+  // PRIORITY 3: Calculate from params (fallback only)
   if (!params) return 0;
-  
-  // Multi-tranche case
+
+  // Multi-tranche from params
   if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
     return params.debtTranches.reduce((sum, tranche) => sum + (tranche.amount || 0), 0);
   }
-  
-  // Single debt case - combine opening debt + new facility
-  const openingDebt = params.openingDebt || 0;
+
+  // Single debt - check ALL possible field names
+  const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
   const newFacility = params.requestedLoanAmount || 0;
-  
-  return openingDebt + newFacility;
+
+  return existingDebt + newFacility;
 }
 
 /**
@@ -105,13 +134,16 @@ function getTotalOpeningDebt(params) {
  */
 function calculateCashFlowVolatility(cashFlows) {
   if (!cashFlows || cashFlows.length < 2) return 0;
-  
-  const mean = cashFlows.reduce((sum, val) => sum + val, 0) / cashFlows.length;
+
+  const validFlows = cashFlows.filter(v => Number.isFinite(v));
+  if (validFlows.length < 2) return 0;
+
+  const mean = validFlows.reduce((sum, val) => sum + val, 0) / validFlows.length;
   if (mean === 0) return 0;
-  
-  const variance = cashFlows.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / cashFlows.length;
+
+  const variance = validFlows.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / validFlows.length;
   const stdDev = Math.sqrt(variance);
-  
+
   return stdDev / Math.abs(mean); // Coefficient of variation
 }
 
@@ -129,44 +161,55 @@ function calculateDebtServiceCapacity(projection) {
 }
 
 /**
- * Calculate resilience score (0-100) based on multiple factors
+ * Calculate resilience score RELATIVE to user's covenant thresholds
+ * Score reflects how much buffer exists above/below covenants
  */
-function calculateResilienceScore(metrics) {
+function calculateResilienceScore(metrics, params = {}) {
+  // Get user's thresholds (with sensible defaults)
+  const dscrThreshold = params.minDSCR || 1.25;
+  const icrThreshold = params.targetICR || 2.0;
+  const leverageThreshold = params.maxNDToEBITDA || 4.0;
+
   let score = 100;
-  
-  // DSCR component (35% weight) - Most important for debt service
-  const dscrScore = metrics.minDSCR >= 2.0 ? 35 : 
-                   metrics.minDSCR >= 1.5 ? 28 :
-                   metrics.minDSCR >= 1.2 ? 20 : 
-                   metrics.minDSCR >= 1.0 ? 12 : 5;
+
+  // DSCR component (35% weight) - relative to threshold
+  const dscrRatio = dscrThreshold > 0 ? metrics.minDSCR / dscrThreshold : 1;
+  const dscrScore = dscrRatio >= 1.6 ? 35 :   // 60%+ above threshold = excellent
+                   dscrRatio >= 1.3 ? 28 :    // 30%+ above threshold = good
+                   dscrRatio >= 1.0 ? 20 :    // At or above threshold = acceptable
+                   dscrRatio >= 0.85 ? 12 :   // 15% below threshold = concerning
+                   5;                          // Significantly below = poor
   score = score - 35 + dscrScore;
-  
-  // Leverage component (25% weight)
-  const leverageScore = metrics.maxLeverage <= 2.5 ? 25 :
-                       metrics.maxLeverage <= 3.5 ? 20 :
-                       metrics.maxLeverage <= 4.5 ? 15 :
-                       metrics.maxLeverage <= 6.0 ? 10 : 5;
+
+  // Leverage component (25% weight) - relative to threshold
+  const leverageRatio = leverageThreshold > 0 ? metrics.maxLeverage / leverageThreshold : 1;
+  const leverageScore = leverageRatio <= 0.6 ? 25 :   // 40%+ below limit = excellent
+                       leverageRatio <= 0.8 ? 20 :    // 20%+ below limit = good
+                       leverageRatio <= 1.0 ? 15 :    // At or below limit = acceptable
+                       leverageRatio <= 1.15 ? 10 :   // 15% above limit = concerning
+                       5;                              // Significantly above = poor
   score = score - 25 + leverageScore;
-  
-  // Covenant breach component (20% weight)
+
+  // Covenant breach component (20% weight) - absolute
   const breachScore = metrics.breaches === 0 ? 20 :
                      metrics.breaches === 1 ? 14 :
                      metrics.breaches === 2 ? 8 : 3;
   score = score - 20 + breachScore;
-  
-  // Cash flow volatility component (10% weight)
+
+  // Cash flow volatility component (10% weight) - absolute
   const volScore = metrics.cashFlowVolatility < 0.15 ? 10 :
                   metrics.cashFlowVolatility < 0.30 ? 7 :
                   metrics.cashFlowVolatility < 0.50 ? 4 : 2;
   score = score - 10 + volScore;
-  
-  // ICR component (10% weight)
-  const icrScore = metrics.minICR >= 3.0 ? 10 :
-                  metrics.minICR >= 2.5 ? 8 :
-                  metrics.minICR >= 2.0 ? 6 :
-                  metrics.minICR >= 1.5 ? 4 : 2;
+
+  // ICR component (10% weight) - relative to threshold
+  const icrRatio = icrThreshold > 0 ? metrics.minICR / icrThreshold : 1;
+  const icrScore = icrRatio >= 1.5 ? 10 :
+                  icrRatio >= 1.25 ? 8 :
+                  icrRatio >= 1.0 ? 6 :
+                  icrRatio >= 0.8 ? 4 : 2;
   score = score - 10 + icrScore;
-  
+
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
@@ -329,26 +372,27 @@ function generateScenarioInsight(data) {
  */
 function calculateBalloonMetrics(projection, facilityParams) {
   if (!facilityParams || !projection) return null;
-  
+
   const balloonPercentage = facilityParams.balloonPercentage || 0;
   const useBalloon = facilityParams.useBalloonPayment || balloonPercentage > 0;
-  
+
   if (!useBalloon) return null;
-  
-  const principalAmount = getTotalOpeningDebt(facilityParams);
+
+  // USE PROJECTION DATA for principal (not params)
+  const principalAmount = getTotalDebt(projection, facilityParams);
   const balloonAmount = principalAmount * (balloonPercentage / 100);
-  
-  // Get cash at maturity
+
+  // Get cash at maturity from projection
   const finalYear = projection.rows?.[projection.rows.length - 1];
-  const cashAtMaturity = finalYear?.cash || 0;
-  
+  const cashAtMaturity = finalYear?.cash || finalYear?.endingCash || 0;
+
   // Calculate coverage
   const balloonCoverage = balloonAmount > 0 ? cashAtMaturity / balloonAmount : Infinity;
-  
+
   // Determine refinancing risk
   let refinancingRisk = 'None';
   let riskColor = COLORS.success.chart;
-  
+
   if (balloonAmount > 0) {
     if (balloonCoverage < 0.8) {
       refinancingRisk = 'Critical';
@@ -364,7 +408,7 @@ function calculateBalloonMetrics(projection, facilityParams) {
       riskColor = COLORS.success.chart;
     }
   }
-  
+
   return {
     hasBalloon: true,
     balloonAmount,
@@ -373,7 +417,9 @@ function calculateBalloonMetrics(projection, facilityParams) {
     balloonCoverage,
     refinancingRisk,
     riskColor,
-    maturityYear: projection.rows?.length || 0
+    maturityYear: projection.rows?.length || 0,
+    // Add source tracking
+    principalSource: projection.multiTrancheInfo?.totalDebt ? 'From Projection' : 'From Parameters'
   };
 }
 
@@ -382,8 +428,8 @@ function calculateBalloonMetrics(projection, facilityParams) {
 // ============================================================================
 
 function calculateEnhancedMetrics(facilityParams, projection, scenarioKey) {
-  // If no debt, return minimal data structure
-  if (!hasDebt(projection)) {
+  // Check for debt using enhanced function (pass params for fallback checks)
+  if (!hasDebt(projection, facilityParams)) {
     return {
       scenario: PRESETS[scenarioKey]?.label || scenarioKey,
       hasDebt: false,
@@ -434,7 +480,7 @@ function calculateEnhancedMetrics(facilityParams, projection, scenarioKey) {
   // Balloon payment analysis
   const balloonMetrics = calculateBalloonMetrics(projection, facilityParams);
   
-  // Calculate resilience score
+  // Calculate resilience score (pass facilityParams for relative thresholds)
   const resilienceScore = calculateResilienceScore({
     minDSCR,
     minICR,
@@ -442,7 +488,7 @@ function calculateEnhancedMetrics(facilityParams, projection, scenarioKey) {
     breaches: totalBreaches,
     cashFlowVolatility,
     debtServiceCapacity
-  });
+  }, facilityParams);
   
   // Generate insights
   const scenarioInsight = generateScenarioInsight({

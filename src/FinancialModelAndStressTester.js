@@ -663,6 +663,9 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     existingDebtRate: 0.12,                  // ⭐ NEW FIELD
     existingDebtTenor: 5,                    // ⭐ NEW FIELD
     existingDebtAmortizationType: 'amortizing', // ⭐ NEW FIELD
+
+    // OPENING BALANCE SHEET
+    openingCash: 0,                          // ⭐ Opening cash balance for Net Debt calculation
     
     // COVENANTS
     minDSCR: 1.2,
@@ -803,6 +806,7 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
     existingDebtRate: 0.12,
     existingDebtTenor: 5,
     existingDebtAmortizationType: 'amortizing',
+    openingCash: 0,
     minDSCR: 1.2,
     maxNDToEBITDA: 3.5,
     targetICR: 2.0,
@@ -2410,6 +2414,37 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
                 )}
               </CardContent>
             )}
+          </Card>
+
+          {/* ============================================ */}
+          {/* OPENING BALANCE SHEET */}
+          {/* ============================================ */}
+          <Card className="border-l-2 border-l-teal-400">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wallet className="w-4 h-4 text-teal-600" />
+                Opening Balance Sheet
+              </CardTitle>
+              <p className="text-xs text-slate-500 mt-1">
+                Initial cash balance affects Net Debt calculation
+              </p>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <MoneyField
+                  label="Opening Cash Balance"
+                  value={draftParams.openingCash}
+                  onChange={(v) => setDraftParams({...draftParams, openingCash: v})}
+                  ccy={ccy}
+                />
+                <div className="flex items-end">
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded text-xs text-teal-700">
+                    <strong>Why this matters:</strong> Net Debt = Gross Debt - Cash.
+                    If you have opening cash, your leverage ratios will be more accurate.
+                  </div>
+                </div>
+              </div>
+            </CardContent>
           </Card>
 
           {/* ============================================ */}

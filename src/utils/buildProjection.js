@@ -322,7 +322,7 @@ export function buildProjection(params) {
 let accumulatedPPE = 0;  // Property, Plant & Equipment (gross)
 let accumulatedDepreciation = 0;  // Accumulated depreciation (contra-asset)
 let prevWorkingCapital = 0;  // Previous year working capital
-let cumulativeCash = 0;  // Cash and cash equivalents (IAS 7)
+let cumulativeCash = params.openingCash || 0;  // Cash and cash equivalents (IAS 7) - starts with opening balance
 let retainedEarnings = 0;  // Accumulated retained earnings
 
 // ============================================================================

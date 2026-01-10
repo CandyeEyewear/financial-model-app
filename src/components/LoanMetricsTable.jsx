@@ -489,13 +489,19 @@ export default function LoanMetricsTable({ projection, params, ccy }) {
     const totalPrincipal = projection.rows.reduce((sum, r) => sum + r.principalPayment, 0);
     const totalDebtService = totalInterest + totalPrincipal;
     const avgDebtBalance = projection.rows.reduce((sum, r) => sum + r.debtBalance, 0) / projection.rows.length;
-    
+
+    // Calculate true opening balance: Year 1 ending balance + Year 1 principal payment
+    // This gives us the balance BEFORE any principal was paid
+    const year1EndingBalance = projection.rows[0]?.debtBalance || 0;
+    const year1PrincipalPayment = projection.rows[0]?.principalPayment || 0;
+    const trueOpeningBalance = year1EndingBalance + year1PrincipalPayment;
+
     return {
       totalInterest,
       totalPrincipal,
       totalDebtService,
       avgDebtBalance,
-      openingBalance: projection.rows[0].debtBalance,
+      openingBalance: trueOpeningBalance,
       closingBalance: projection.rows[projection.rows.length - 1].debtBalance,
       totalRepaid: totalPrincipal
     };

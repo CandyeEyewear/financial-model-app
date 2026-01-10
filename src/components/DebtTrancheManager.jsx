@@ -32,14 +32,14 @@ export function DebtTrancheManager({ tranches, onChange, ccy }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-slate-600 flex items-center gap-1">
           <Info className="w-3 h-3" />
           Each tranche will be calculated separately and aggregated for covenant testing
         </p>
         <Button 
           onClick={addTranche}
-          className="text-xs px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-md flex items-center gap-1"
+          className="text-xs px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-md flex items-center justify-center gap-1 w-full sm:w-auto"
         >
           <Plus className="w-3 h-3" /> Add Tranche
         </Button>
@@ -67,7 +67,7 @@ export function DebtTrancheManager({ tranches, onChange, ccy }) {
             </div>
 
             {/* Row 1: Amount, Rate, Tenor */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Amount ({ccy})</Label>
                 <Input
@@ -99,7 +99,7 @@ export function DebtTrancheManager({ tranches, onChange, ccy }) {
             </div>
 
             {/* Row 2: Maturity, Amortization Type, Seniority */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Maturity Date</Label>
                 <Input

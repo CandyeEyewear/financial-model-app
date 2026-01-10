@@ -732,7 +732,7 @@ export function ValuationTab({ projections, params, ccy }) {
                   <Info className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                   <div className="flex-1">
                     <h4 className="font-bold text-amber-900 mb-2">Valuation Comparison</h4>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                       <div>
                         <div className="text-amber-700 font-semibold">Model EV</div>
                         <div className="text-lg font-bold text-amber-900">

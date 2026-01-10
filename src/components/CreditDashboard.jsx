@@ -325,8 +325,16 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
     );
   }
 
-  // Check for existing debt
-  const hasExistingDebt = safe(params.openingDebt, 0) > 0;
+  // Check for existing debt - must check ALL possible debt sources:
+  // 1. Single opening debt (openingDebt > 0)
+  // 2. Multi-tranche mode with tranches configured
+  // 3. Projection data that includes multi-tranche info
+  // Note: When hasMultipleTranches is true, openingDebt is set to 0 by the sync logic,
+  // so we must also check the tranches array and projection data directly.
+  const hasExistingDebt =
+    safe(params.openingDebt, 0) > 0 ||
+    (params.hasMultipleTranches && params.debtTranches?.some(t => t.amount > 0)) ||
+    (baseProj?.hasMultipleTranches && safe(baseProj?.multiTrancheInfo?.totalDebt, 0) > 0);
   const hasNewFacility = safe(params.requestedLoanAmount, 0) > 0;
 
   const summary = useMemo(() => {

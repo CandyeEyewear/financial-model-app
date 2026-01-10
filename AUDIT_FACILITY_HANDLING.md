@@ -10,8 +10,8 @@
 
 | Category | Count |
 |----------|-------|
-| **Total Issues Found** | 18 |
-| 🔴 **Critical** | 3 |
+| **Total Issues Found** | 19 |
+| 🔴 **Critical** | 4 |
 | ❌ **Major** | 6 |
 | ⚠️ **Minor** | 9 |
 | ✅ **Working Correctly** | 12 |
@@ -25,6 +25,7 @@
 | 1 | `buildProjection.js:42` | **OR operator bug in principal calculation** - Comment says "FIX: Combine opening debt + new facility" but code uses `params.openingDebt \|\| params.requestedLoanAmount` which only uses ONE, not both | When user has BOTH existing debt AND new facility, only existing debt is used if it's non-zero. **Calculations are WRONG.** | Change to additive logic: `(params.openingDebt \|\| 0) + (params.requestedLoanAmount \|\| 0)` |
 | 2 | `buildProjection.js:336` | **Unreachable code path** - After auto-creating tranches (lines 288-334), line 336 has orphaned single-debt logic that can never execute | The `return buildAmortizationSchedule(params)` on line 336 is never reached because the conditional on line 288 already returns. This is dead code that confuses maintenance. | Remove line 336 or restructure the IIFE logic properly |
 | 3 | `validation.js:120-151` | **No validation for existing facilities** - `validateFacilityTerms()` only validates NEW facility fields (`requestedLoanAmount`, `proposedPricing`, `proposedTenor`) | Existing debt with invalid values (0% rate, 0 tenor, negative amount) passes validation silently, leading to NaN/Infinity in calculations | Add `validateExistingDebtTerms()` function that validates `existingDebtAmount`, `existingDebtRate`, `existingDebtTenor` |
+| 4 | `CreditDashboard.jsx:329` | **Multi-tranche debt not detected** - `hasExistingDebt` only checks `params.openingDebt > 0`, but when `hasMultipleTranches` is true, `openingDebt` is set to 0 by the sync logic | **Entire CreditDashboard shows "No Existing Debt" and N/A for all metrics when using multi-tranche mode**, even though user has properly configured debt. Dashboard is completely useless for multi-tranche users. | Check all debt sources: `params.openingDebt > 0 \|\| (params.hasMultipleTranches && params.debtTranches?.some(t => t.amount > 0))` |
 
 ---
 
@@ -140,6 +141,34 @@ const principal = openingDebtAmount + newFacilityAmount;
 
 **Note:** The better fix is already partially implemented in the auto-tranche creation (lines 288-334). The real fix should ensure this path is ALWAYS taken when both debts exist.
 
+### Fix #4: CreditDashboard.jsx:329 - Detect Multi-Tranche Debt
+
+**Current (BROKEN):**
+```javascript
+// Line 329
+const hasExistingDebt = safe(params.openingDebt, 0) > 0;
+```
+
+**Problem:** When `hasMultipleTranches` is true, the sync logic sets `openingDebt = 0`:
+```javascript
+// FinancialModelAndStressTester.js:927
+openingDebt: prev.hasMultipleTranches ? 0 : (prev.hasExistingDebt ? prev.existingDebtAmount : 0),
+```
+
+**Fixed:**
+```javascript
+// Check all possible debt sources
+const hasExistingDebt =
+  safe(params.openingDebt, 0) > 0 ||
+  (params.hasMultipleTranches && params.debtTranches?.some(t => t.amount > 0)) ||
+  (baseProj?.hasMultipleTranches && safe(baseProj?.multiTrancheInfo?.totalDebt, 0) > 0);
+```
+
+This ensures the dashboard works correctly whether debt is configured via:
+- Single opening debt (`openingDebt > 0`)
+- Multi-tranche mode with tranches (`hasMultipleTranches && debtTranches`)
+- Projection data that includes multi-tranche info
+
 ### Fix #3: Add Existing Debt Validation
 
 **Add to validation.js:**
@@ -199,15 +228,16 @@ export function validateExistingDebtTerms(params) {
 | Priority | File | Change | Why It Matters |
 |----------|------|--------|----------------|
 | 1 | `buildProjection.js:42` | Fix OR to addition for combining facilities | **CRITICAL**: Wrong debt calculations when both exist |
-| 2 | `validation.js` | Add `validateExistingDebtTerms()` function | Prevents NaN/Infinity from invalid existing debt |
-| 3 | `buildProjection.js:336` | Remove unreachable code | Code clarity and maintainability |
-| 4 | `buildProjection.js:55` | Use `params.existingDebtRate` when appropriate | Correct rate for existing debt calculations |
-| 5 | `debtCapacityAnalyzer.js:23` | Use existing debt rate for capacity analysis | Correct capacity assessment |
-| 6 | `DebtTrancheManager.jsx:145-147` | Account for interest-only in preview | Accurate Year 1 debt service display |
-| 7 | `BlendedDebtMetrics.jsx:15-20` | Account for interest-only in estimate | Accurate blended metrics |
-| 8 | `FinancialModelAndStressTester.js:754` | Dynamic default maturity date | Appropriate defaults for users |
-| 9 | `DebtTrancheManager.jsx:9-21` | Add tranche validation | Prevent invalid tranches |
-| 10 | `buildProjection.js:16-27` | Implement day count convention | Accurate interest calculations for bankers |
+| 2 | `CreditDashboard.jsx:329` | Fix `hasExistingDebt` to detect multi-tranche debt | **CRITICAL**: Dashboard completely broken for multi-tranche users |
+| 3 | `validation.js` | Add `validateExistingDebtTerms()` function | Prevents NaN/Infinity from invalid existing debt |
+| 4 | `buildProjection.js:336` | Remove unreachable code | Code clarity and maintainability |
+| 5 | `buildProjection.js:55` | Use `params.existingDebtRate` when appropriate | Correct rate for existing debt calculations |
+| 6 | `debtCapacityAnalyzer.js:23` | Use existing debt rate for capacity analysis | Correct capacity assessment |
+| 7 | `DebtTrancheManager.jsx:145-147` | Account for interest-only in preview | Accurate Year 1 debt service display |
+| 8 | `BlendedDebtMetrics.jsx:15-20` | Account for interest-only in estimate | Accurate blended metrics |
+| 9 | `FinancialModelAndStressTester.js:754` | Dynamic default maturity date | Appropriate defaults for users |
+| 10 | `DebtTrancheManager.jsx:9-21` | Add tranche validation | Prevent invalid tranches |
+| 11 | `buildProjection.js:16-27` | Implement day count convention | Accurate interest calculations for bankers |
 
 ---
 
@@ -231,10 +261,11 @@ export function validateExistingDebtTerms(params) {
 
 ## Conclusion
 
-The FinSight application has a **solid foundation** for handling new vs existing facilities, with clear UI separation and comprehensive multi-tranche support. However, **three critical calculation bugs** exist that can produce incorrect financial projections:
+The FinSight application has a **solid foundation** for handling new vs existing facilities, with clear UI separation and comprehensive multi-tranche support. However, **four critical bugs** exist that can produce incorrect financial projections or render entire features useless:
 
 1. **The OR operator bug** is the most severe - it silently uses only one debt source when both exist
-2. **Missing validation** for existing debt allows invalid inputs to corrupt calculations
-3. **Dead code** after auto-tranche creation creates maintenance confusion
+2. **CreditDashboard multi-tranche blindness** - the entire dashboard shows "No Existing Debt" for multi-tranche users because it only checks `openingDebt` which is set to 0 when multi-tranche is enabled
+3. **Missing validation** for existing debt allows invalid inputs to corrupt calculations
+4. **Dead code** after auto-tranche creation creates maintenance confusion
 
-The recommended fixes prioritize calculation accuracy first, then validation, then code quality improvements. With these fixes, the application will provide accurate financial modeling for bankers and analysts working with complex debt structures.
+The recommended fixes prioritize calculation accuracy and feature correctness first, then validation, then code quality improvements. With these fixes, the application will provide accurate financial modeling for bankers and analysts working with complex debt structures.

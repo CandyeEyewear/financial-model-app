@@ -4,6 +4,12 @@ import { generateModelDataSummary } from "./utils/ModelDataSummary";
 import { AITextRendererCompact } from "./components/AITextRenderer";
 import { currencyFmtMM } from "./utils/formatters";
 import {
+  executeToolCall,
+  parseToolCalls,
+  hasToolCalls,
+  cleanMessageContent
+} from "./utils/aiToolExecutor";
+import {
   Send, Bot, User, AlertCircle, RefreshCw, Trash2,
   Download, Copy, Check, Sparkles, TrendingUp, Wrench
 } from "lucide-react";
@@ -22,63 +28,14 @@ const AI_TOOLS = [
   {
     type: "function",
     function: {
-      name: "update_param",
-      description: "Update a model parameter. Use this when the user asks to change assumptions like debt amounts, rates, growth, etc.",
-      parameters: {
-        type: "object",
-        properties: {
-          param_name: {
-            type: "string",
-            description: "The parameter to update (e.g., 'openingDebt', 'growth', 'wacc', 'requestedLoanAmount', 'interestRate', 'cogsPct', 'opexPct')"
-          },
-          new_value: {
-            type: "number",
-            description: "The new value to set (use decimal for percentages, e.g., 0.10 for 10%)"
-          },
-          reason: {
-            type: "string",
-            description: "Brief explanation of why this change is being made"
-          }
-        },
-        required: ["param_name", "new_value", "reason"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "run_stress_test",
-      description: "Run a stress test with specific shocks to analyze downside scenarios",
-      parameters: {
-        type: "object",
-        properties: {
-          growthDelta: {
-            type: "number",
-            description: "Revenue growth shock as decimal (e.g., -0.10 for -10% revenue growth reduction)"
-          },
-          cogsDelta: {
-            type: "number",
-            description: "COGS increase shock as decimal (e.g., 0.05 for +5% COGS increase)"
-          },
-          rateDelta: {
-            type: "number",
-            description: "Interest rate shock as decimal (e.g., 0.02 for +2% rate increase)"
-          }
-        }
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
       name: "calculate_optimal_debt",
-      description: "Calculate the optimal debt level for a given target DSCR",
+      description: "Calculate the maximum debt amount that maintains a target DSCR (Debt Service Coverage Ratio). Use when user asks about debt capacity, optimal debt, or max borrowing.",
       parameters: {
         type: "object",
         properties: {
           targetDSCR: {
             type: "number",
-            description: "Target DSCR ratio (e.g., 1.35 for 1.35x coverage)"
+            description: "Target DSCR ratio (e.g., 1.3 for 1.3x coverage)"
           }
         },
         required: ["targetDSCR"]
@@ -88,18 +45,98 @@ const AI_TOOLS = [
   {
     type: "function",
     function: {
+      name: "run_stress_test",
+      description: "Run a stress test scenario with custom shocks to revenue, costs, or interest rates. Use when user asks 'what if' questions about adverse scenarios.",
+      parameters: {
+        type: "object",
+        properties: {
+          revenueShock: {
+            type: "number",
+            description: "Revenue decline as decimal (e.g., -0.15 for -15%)"
+          },
+          growthDelta: {
+            type: "number",
+            description: "Alternative name for revenue shock (e.g., -0.15 for -15%)"
+          },
+          costShock: {
+            type: "number",
+            description: "Cost increase as decimal (e.g., 0.10 for +10%)"
+          },
+          cogsDelta: {
+            type: "number",
+            description: "Alternative name for cost shock (e.g., 0.10 for +10%)"
+          },
+          rateShock: {
+            type: "number",
+            description: "Interest rate increase as decimal (e.g., 0.02 for +2%)"
+          },
+          rateDelta: {
+            type: "number",
+            description: "Alternative name for rate shock (e.g., 0.02 for +2%)"
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_model_parameter",
+      description: "Update a financial model parameter. Use when user asks to change, set, or adjust model inputs.",
+      parameters: {
+        type: "object",
+        properties: {
+          param_name: {
+            type: "string",
+            description: "Parameter to update. Valid options: requestedLoanAmount, openingDebt, existingDebtAmount, interestRate, debtTenorYears, revenueGrowth, growth, ebitdaMargin, taxRate, wacc, terminalGrowth, baseRevenue, cogsPct, opexPct, capexPct"
+          },
+          new_value: {
+            type: "number",
+            description: "New value for the parameter (use decimals for percentages, e.g., 0.12 for 12%)"
+          },
+          reason: {
+            type: "string",
+            description: "Brief explanation of why this change is recommended"
+          }
+        },
+        required: ["param_name", "new_value"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "navigate_to_tab",
-      description: "Navigate to a specific analysis tab in the application",
+      description: "Navigate to a specific analysis tab. Use when user wants to see a particular view or analysis.",
       parameters: {
         type: "object",
         properties: {
           tab: {
             type: "string",
             enum: ["historical", "capital", "dashboard", "scenarios", "custom", "tables"],
-            description: "The tab to navigate to"
+            description: "Tab to navigate to"
           }
         },
         required: ["tab"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_covenant_headroom",
+      description: "Analyze how much buffer exists before covenant breaches occur. Use when user asks about covenant risk, headroom, or breach risk.",
+      parameters: {
+        type: "object",
+        properties: {
+          covenantType: {
+            type: "string",
+            enum: ["dscr", "icr", "leverage", "all"],
+            description: "Covenant to analyze"
+          }
+        },
+        required: ["covenantType"]
       }
     }
   }
@@ -139,70 +176,6 @@ function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateTo
   const inputRef = useRef(null);
 
   const { session, getUsageInfo, canMakeAIQuery } = useAuth();
-
-  // Handle tool execution
-  const executeToolCall = async (toolName, toolParams) => {
-    const ccy = modelData?.params?.currency || 'USD';
-
-    switch (toolName) {
-      case 'update_param':
-        if (onParamUpdate) {
-          onParamUpdate(toolParams.param_name, toolParams.new_value);
-          return `Updated ${toolParams.param_name} to ${toolParams.new_value}. ${toolParams.reason}`;
-        }
-        return "Parameter update not available in current context.";
-
-      case 'run_stress_test':
-        if (onRunStressTest) {
-          const shocks = {
-            growthDelta: toolParams.growthDelta || 0,
-            cogsDelta: toolParams.cogsDelta || 0,
-            rateDelta: toolParams.rateDelta || 0
-          };
-          onRunStressTest(shocks);
-          const shockDescriptions = [];
-          if (shocks.growthDelta) shockDescriptions.push(`Revenue: ${(shocks.growthDelta * 100).toFixed(1)}%`);
-          if (shocks.cogsDelta) shockDescriptions.push(`COGS: +${(shocks.cogsDelta * 100).toFixed(1)}%`);
-          if (shocks.rateDelta) shockDescriptions.push(`Rate: +${(shocks.rateDelta * 100).toFixed(1)}%`);
-          return `Stress test applied with: ${shockDescriptions.join(', ')}. Check the Custom Stress tab for results.`;
-        }
-        return "Stress test not available in current context.";
-
-      case 'calculate_optimal_debt':
-        // Calculate optimal debt inline
-        const ebitda = modelData?.projections?.base?.rows?.[0]?.ebitda || 0;
-        const rate = modelData?.params?.interestRate || 0.10;
-        const tenor = modelData?.params?.debtTenorYears || 5;
-
-        if (ebitda <= 0) {
-          return "Cannot calculate optimal debt: EBITDA is not available.";
-        }
-
-        // PMT factor formula
-        const paymentFactor = (rate * Math.pow(1 + rate, tenor)) / (Math.pow(1 + rate, tenor) - 1);
-        const optimalDebt = ebitda / (paymentFactor * toolParams.targetDSCR);
-
-        return `At ${toolParams.targetDSCR}x DSCR target, optimal debt capacity is ${currencyFmtMM(optimalDebt, ccy)}. This assumes ${(rate * 100).toFixed(1)}% rate over ${tenor} years with EBITDA of ${currencyFmtMM(ebitda, ccy)}.`;
-
-      case 'navigate_to_tab':
-        if (onNavigateToTab) {
-          onNavigateToTab(toolParams.tab);
-          const tabNames = {
-            'historical': 'Historical Data',
-            'capital': 'Capital Structure',
-            'dashboard': 'Credit Dashboard',
-            'scenarios': 'Scenario Analysis',
-            'custom': 'Custom Stress',
-            'tables': 'Data Tables'
-          };
-          return `Navigated to ${tabNames[toolParams.tab] || toolParams.tab} tab.`;
-        }
-        return "Navigation not available in current context.";
-
-      default:
-        return `Unknown tool: ${toolName}`;
-    }
-  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -251,18 +224,29 @@ function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateTo
       const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague at a lending institution.
 
 CAPABILITIES:
-You can not only analyze data but also TAKE ACTIONS using these tools:
-- update_param: Change model parameters (debt amounts, rates, growth assumptions, etc.)
-- run_stress_test: Execute stress scenarios with specific shocks
-- calculate_optimal_debt: Compute optimal debt level for a target DSCR
-- navigate_to_tab: Navigate to specific analysis views
+You can both ANALYZE data and TAKE ACTIONS using these tools:
 
-When the user asks to CHANGE something (not just analyze), use the appropriate tool.
-Examples:
-- "Set the debt to 50M" → use update_param with param_name="openingDebt", new_value=50000000
-- "What if revenue drops 20%?" → use run_stress_test with growthDelta=-0.20
-- "What's the max debt we can support at 1.3x DSCR?" → use calculate_optimal_debt with targetDSCR=1.3
-- "Show me the credit dashboard" → use navigate_to_tab with tab="dashboard"
+1. **calculate_optimal_debt** - Calculate maximum debt for a target DSCR
+   Use when: User asks about debt capacity, optimal debt, max borrowing
+
+2. **run_stress_test** - Run stress scenarios with custom shocks
+   Use when: User asks "what if" questions about adverse scenarios
+
+3. **update_model_parameter** - Change model inputs
+   Use when: User asks to set, change, or adjust values
+
+4. **navigate_to_tab** - Switch to a specific analysis view
+   Use when: User wants to see a particular analysis
+
+5. **analyze_covenant_headroom** - Analyze covenant breach risk
+   Use when: User asks about covenant risk or compliance
+
+WHEN TO USE TOOLS:
+- "What's the max debt we can take?" → use calculate_optimal_debt
+- "Set the interest rate to 12%" → use update_model_parameter
+- "What if revenue drops 20%?" → use run_stress_test
+- "Show me the valuation" → use navigate_to_tab
+- "How close are we to breaching covenants?" → use analyze_covenant_headroom
 
 FINANCIAL MODEL DATA:
 ${modelSummary}
@@ -314,31 +298,61 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
       const toolCalls = data.choices?.[0]?.message?.tool_calls;
 
       if (toolCalls && toolCalls.length > 0) {
+        // Build context for tool execution
+        const context = {
+          modelData,
+          onParamUpdate,
+          onRunStressTest,
+          onNavigateToTab,
+          currency: modelData?.params?.currency || 'JMD'
+        };
+
         // Execute each tool call
         const toolResults = await Promise.all(
           toolCalls.map(async (call) => {
             try {
-              const params = JSON.parse(call.function.arguments);
-              const result = await executeToolCall(call.function.name, params);
-              return { tool: call.function.name, result, success: true };
+              const params = typeof call.function.arguments === 'string'
+                ? JSON.parse(call.function.arguments)
+                : call.function.arguments;
+              const result = await executeToolCall(call.function.name, params, context);
+              return { tool: call.function.name, ...result };
             } catch (e) {
-              return { tool: call.function.name, result: `Error: ${e.message}`, success: false };
+              console.error('Tool execution error:', e);
+              return {
+                tool: call.function.name,
+                success: false,
+                message: `Error: ${e.message}`,
+                data: null
+              };
             }
           })
         );
 
-        // Build response with tool results
-        const aiMessage = data.choices?.[0]?.message?.content || "";
-        const toolSummary = toolResults.map(r =>
-          r.success ? `✓ ${r.result}` : `✗ ${r.result}`
-        ).join("\n");
+        // Get any text content from AI (before/after tool calls)
+        const aiTextContent = data.choices?.[0]?.message?.content || "";
+
+        // Build the final message
+        let finalMessage = '';
+
+        if (aiTextContent) {
+          finalMessage += aiTextContent + '\n\n';
+        }
+
+        // Add tool results
+        toolResults.forEach(result => {
+          if (result.success) {
+            finalMessage += result.message + '\n\n';
+          } else {
+            finalMessage += `⚠️ ${result.tool} failed: ${result.message}\n\n`;
+          }
+        });
 
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: aiMessage ? `${aiMessage}\n\n${toolSummary}` : toolSummary,
+          content: finalMessage.trim(),
           timestamp: new Date().toISOString(),
           usage: data.userUsage,
-          toolCalls: toolResults
+          toolResults
         }]);
       } else {
         // Normal response without tool calls

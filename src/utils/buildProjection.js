@@ -234,6 +234,7 @@ function buildMultiTrancheSchedule(params) {
     // buildAmortizationSchedule adds openingDebt + requestedLoanAmount
     const trancheParams = {
       ...params,
+      hasExistingDebt: true, // CRITICAL: Must be true so buildAmortizationSchedule processes openingDebt
       openingDebt: tranche.amount,
       requestedLoanAmount: 0, // Clear to prevent double-counting with tranche.amount
       interestRate: tranche.rate,
@@ -540,10 +541,14 @@ function calculateMaturityDate(startYear, tenorYears) {
     // Cash and cash equivalents (IAS 7: Cash Flow Statement)
     const operatingCashFlow = ebitda - tax - wcDelta;
     const freeCashFlowBeforeDebt = operatingCashFlow - capex;
-    
+
     // Cash balance (accumulated, net of dividends/distributions)
-    // Assuming 10% of positive net income retained as cash, 90% distributed
-    const cashRetention = netIncome > 0 ? netIncome * 0.10 : netIncome;
+    // Cash retention rate can be:
+    // 1. Explicitly set via params.cashRetentionRate
+    // 2. Calculated from historicals (passed through params)
+    // 3. Default to 10% if not provided
+    const cashRetentionRate = params.cashRetentionRate ?? 0.10;
+    const cashRetention = netIncome > 0 ? netIncome * cashRetentionRate : netIncome;
     cumulativeCash = Math.max(0, cumulativeCash + cashRetention);
     
     // Retained earnings (IAS 1: Equity component)
@@ -597,7 +602,8 @@ function calculateMaturityDate(startYear, tenorYears) {
     const cashFromInvesting = -capex;
     
     // Financing activities
-    const dividends = netIncome > 0 ? netIncome * 0.90 : 0;
+    // Dividends are the complement of cash retention (1 - retention rate)
+    const dividends = netIncome > 0 ? netIncome * (1 - cashRetentionRate) : 0;
     const cashFromFinancing = -principalPayment - dividends;
     
     // Free Cash Flow (non-GAAP but standard in valuation)

@@ -1,16 +1,23 @@
 // src/utils/debtCapacityAnalyzer.js
 // Lender-focused debt capacity and structure optimization
 
+import {
+  getEffectiveExistingDebt,
+  getNewFacilityAmount,
+  getTotalDebtFromParams
+} from './debtHelpers';
+
 /**
  * Use appropriate rate based on context
- * Fixed: Now checks both openingDebt AND existingDebtAmount
+ * FIXED: Now respects hasExistingDebt toggle
  */
 const getApplicableRate = (params) => {
-  // Check ALL debt sources
-  const hasOpeningDebt = (params.openingDebt || 0) > 0 ||
-                        (params.existingDebtAmount || 0) > 0 ||
-                        params.hasExistingDebt === true;
-  const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
+  // CRITICAL: Use toggle-aware helpers
+  const effectiveExistingDebt = getEffectiveExistingDebt(params);
+  const newFacility = getNewFacilityAmount(params);
+
+  const hasOpeningDebt = effectiveExistingDebt > 0;
+  const hasNewFacility = newFacility > 0;
 
   if (hasOpeningDebt && !hasNewFacility) {
     return params.existingDebtRate || params.interestRate || 0.08;
@@ -18,16 +25,13 @@ const getApplicableRate = (params) => {
     return params.proposedPricing || params.interestRate || 0.08;
   } else if (hasOpeningDebt && hasNewFacility) {
     // Both exist - calculate weighted average rate
-    // Check BOTH openingDebt AND existingDebtAmount
-    const existingAmount = params.openingDebt || params.existingDebtAmount || 0;
-    const newAmount = params.requestedLoanAmount || 0;
-    const totalDebt = existingAmount + newAmount;
+    const totalDebt = effectiveExistingDebt + newFacility;
     if (totalDebt === 0) return params.interestRate || 0.08;
 
     const existingRate = params.existingDebtRate || params.interestRate || 0.08;
     const newRate = params.proposedPricing || params.interestRate || 0.08;
 
-    return (existingAmount * existingRate + newAmount * newRate) / totalDebt;
+    return (effectiveExistingDebt * existingRate + newFacility * newRate) / totalDebt;
   }
 
   return params.interestRate || 0.08;
@@ -72,29 +76,22 @@ export function calculateDebtCapacity(params, projection) {
   const aggressiveDebt = ebitda / (annualPaymentFactor * 1.10); // Minimum 1.10x DSCR (aggressive)
   
   // Current debt position - with breakdown
-  // CRITICAL FIX: Handle multi-tranche debt properly
+  // CRITICAL FIX: Respect hasExistingDebt toggle and separate new facility from total
 
-  // Step 1: Get EXISTING debt (all tranches) from projection OR params
-  // Projection has the full picture of all existing tranches
-  const existingDebtFromProjection = projection?.multiTrancheInfo?.totalDebt ||
-                                      projection?.rows?.[0]?.grossDebt || 0;
-  const existingDebtFromParams = params.openingDebt || params.existingDebtAmount || 0;
-
-  // Use projection for existing debt if available (handles multi-tranche), else use params
-  const existingDebt = existingDebtFromProjection > 0 ? existingDebtFromProjection : existingDebtFromParams;
+  // Step 1: Get EFFECTIVE existing debt (respects toggle)
+  // Use toggle-aware helper - if toggle is OFF, this returns 0
+  const effectiveExistingDebt = getEffectiveExistingDebt(params);
 
   // Step 2: Get NEW facility from params (user input)
-  const newFacility = params.requestedLoanAmount || 0;
+  // This is what "Current Request" should display - ONLY the new facility
+  const newFacility = getNewFacilityAmount(params);
 
-  // Step 3: Check if projection's debt already includes the new facility
-  // If projection.finalDebt exists and is GREATER than multiTrancheInfo, it likely includes new facility
-  const projectionFinalDebt = projection?.finalDebt || 0;
-  const newFacilityAlreadyInProjection = (projectionFinalDebt > existingDebt) && (newFacility > 0);
+  // Step 3: Calculate TOTAL debt for ratio calculations
+  // Total = Effective Existing + New Facility
+  const currentDebtRequest = effectiveExistingDebt + newFacility;
 
-  // Step 4: Calculate current debt request
-  const currentDebtRequest = newFacilityAlreadyInProjection
-    ? projectionFinalDebt  // Projection already has existing + new
-    : existingDebt + newFacility;  // Add new facility to existing
+  // Store raw values for debugging/transparency
+  const rawExistingDebt = params.openingDebt || params.existingDebtAmount || 0;
   
   // Calculate available capacity or excess debt
   // Positive = over capacity (excess debt), Negative = under capacity (available room)
@@ -161,30 +158,33 @@ export function calculateDebtCapacity(params, projection) {
     // Core metrics
     ebitda,
     totalAssets,
-    
+
     // Debt capacity levels
     maxSustainableDebt,
     safeDebt,
     aggressiveDebt,
-    currentDebtRequest,
-    
+    currentDebtRequest,      // TOTAL debt (existing + new) for ratio calculations
+
+    // NEW FIELD: This is what "Current Request" should display - ONLY the new facility
+    newFacilityRequest: newFacility,
+
     // Gap analysis - FIXED: now properly calculates available capacity
     availableCapacity,  // How much more debt could be supported
     excessDebt,         // How much current debt exceeds max sustainable
     excessOverSafe,     // How much current debt exceeds SAFE level (for display)
     debtGap,            // Raw difference (positive = over, negative = under)
-    
+
     // Ratios
     utilizationPct,
     impliedDSCR,
     leverage,
     ltv,
-    
+
     // Recommendation
     recommendation,
     riskLevel,
     riskFactors,
-    
+
     // Calculation inputs
     targetDSCR,
     targetDSCRWithBuffer,
@@ -192,17 +192,19 @@ export function calculateDebtCapacity(params, projection) {
     annualDebtService,
     collateralValue,
 
-    // Debt breakdown (existing vs new)
+    // Debt breakdown (existing vs new) - RESPECTS toggle
     debtBreakdown: {
-      existingDebt,  // All existing tranches
-      newFacility,   // New facility request
+      existingDebt: effectiveExistingDebt,  // Effective existing (0 if toggle OFF)
+      rawExistingDebt,                       // Raw value for debugging
+      newFacility,                           // New facility request ("Current Request")
       totalDebt: currentDebtRequest,
-      existingDebtPct: currentDebtRequest > 0 ? (existingDebt / currentDebtRequest) * 100 : 0,
+      existingDebtPct: currentDebtRequest > 0 ? (effectiveExistingDebt / currentDebtRequest) * 100 : 0,
       newFacilityPct: currentDebtRequest > 0 ? (newFacility / currentDebtRequest) * 100 : 0,
+      // Toggle status
+      hasExistingDebtToggle: params.hasExistingDebt === true,
+      existingDebtIgnored: params.hasExistingDebt !== true && rawExistingDebt > 0,
       // Track debt source for transparency
-      debtSource: newFacilityAlreadyInProjection ? 'projection' : 'calculated',
-      existingDebtSource: existingDebtFromProjection > 0 ? 'projection' : 'params',
-      projectionFinalDebt: projectionFinalDebt,
+      debtSource: 'calculated',
       multiTrancheTotal: projection?.multiTrancheInfo?.totalDebt || 0
     }
   };
@@ -213,25 +215,16 @@ export function calculateDebtCapacity(params, projection) {
  * Industry-standard approach considering DSCR, leverage, and LTV constraints
  */
 export function generateAlternativeStructures(params, projection, debtCapacity) {
-  // CRITICAL FIX: Same multi-tranche logic as calculateDebtCapacity
+  // CRITICAL FIX: Respect hasExistingDebt toggle using helpers
 
-  // Get EXISTING debt (all tranches) from projection OR params
-  const existingDebtFromProjection = projection?.multiTrancheInfo?.totalDebt ||
-                                      projection?.rows?.[0]?.grossDebt || 0;
-  const existingDebtFromParams = params.openingDebt || params.existingDebtAmount || 0;
-  const existingDebt = existingDebtFromProjection > 0 ? existingDebtFromProjection : existingDebtFromParams;
+  // Get EFFECTIVE existing debt (respects toggle)
+  const existingDebt = getEffectiveExistingDebt(params);
 
   // Get NEW facility from params
-  const newFacility = params.requestedLoanAmount || 0;
+  const newFacility = getNewFacilityAmount(params);
 
-  // Check if projection already includes new facility
-  const projectionFinalDebt = projection?.finalDebt || 0;
-  const newFacilityAlreadyInProjection = (projectionFinalDebt > existingDebt) && (newFacility > 0);
-
-  // Calculate current debt
-  const currentDebt = newFacilityAlreadyInProjection
-    ? projectionFinalDebt
-    : existingDebt + newFacility;
+  // Calculate current TOTAL debt
+  const currentDebt = existingDebt + newFacility;
   const currentEquity = params.equityContribution || 0;
   const totalCapital = currentDebt + currentEquity;
   const ebitda = projection?.rows?.[0]?.ebitda || params.baseRevenue * 0.20;

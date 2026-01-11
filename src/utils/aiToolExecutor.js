@@ -4,6 +4,12 @@
  */
 
 import { currencyFmt, currencyFmtMM, pctFmt, numFmt } from './formatters';
+import {
+  getEffectiveExistingDebt,
+  getNewFacilityAmount,
+  getTotalDebtFromParams as getTotalDebtHelper,
+  getDebtSummary
+} from './debtHelpers';
 
 /**
  * Parse monetary value from various formats
@@ -1427,27 +1433,11 @@ ${recommendationSection}`;
 
 /**
  * Helper: Get total debt from all sources
- * This addresses the debt detection bug by checking all possible debt fields
+ * Uses centralized toggle-aware helper from debtHelpers.js
  */
 function getTotalDebt(params) {
-  const requestedLoan = params.requestedLoanAmount || 0;
-
-  // CRITICAL: Respect hasExistingDebt toggle - if OFF, ignore existing debt fields
-  const openingDebt = (params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0;
-  const existingDebt = (params.hasExistingDebt === true) ? (params.existingDebtAmount || 0) : 0;
-
-  // Check for multi-tranche info
-  const multiTrancheTotal = params.multiTrancheInfo?.totalDebt || 0;
-
-  // Use the highest applicable value
-  // - If multi-tranche exists, use it (most comprehensive)
-  // - Otherwise sum opening/existing + requested
-  if (multiTrancheTotal > 0) {
-    return multiTrancheTotal;
-  }
-
-  const existingTotal = Math.max(openingDebt, existingDebt);
-  return existingTotal + requestedLoan;
+  // Use the centralized toggle-aware helper
+  return getTotalDebtHelper(params);
 }
 
 /**

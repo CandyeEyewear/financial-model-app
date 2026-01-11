@@ -371,11 +371,11 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
             {/* Left: Capacity Metrics */}
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                {/* Current Request */}
+                {/* Current Request - FIXED: Now shows ONLY new facility, not total debt */}
                 <div className="p-4 bg-gradient-to-br from-slate-500 to-slate-600 rounded-lg shadow-md text-white transform transition-all duration-200 hover:scale-105">
                   <div className="text-xs opacity-90 mb-1">Current Request</div>
-                  <div className="text-lg sm:text-xl md:text-2xl font-bold">{currencyFmtMM(debtCapacity.currentDebtRequest, ccy)}</div>
-                  <div className="text-xs opacity-80 mt-1">As Proposed</div>
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold">{currencyFmtMM(debtCapacity.newFacilityRequest || debtCapacity.debtBreakdown?.newFacility || 0, ccy)}</div>
+                  <div className="text-xs opacity-80 mt-1">New Facility Only</div>
                 </div>
 
                 {/* Maximum Sustainable */}
@@ -1537,11 +1537,20 @@ export default function CapitalStructureAnalysis({ projection, params, ccy = "JM
               {/* Quick Stats */}
               <div className="p-4 bg-white rounded-lg border-2 border-slate-200 shadow-sm space-y-3 text-sm">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                  <span className="text-slate-600">Requested Amount:</span>
+                  <span className="text-slate-600">New Facility Request:</span>
                   <span className="font-bold text-slate-800">
-                    {currencyFmtMM(debtCapacity.currentDebtRequest, ccy)}
+                    {currencyFmtMM(debtCapacity.newFacilityRequest || debtCapacity.debtBreakdown?.newFacility || 0, ccy)}
                   </span>
                 </div>
+                {/* Show total debt if existing debt is active */}
+                {debtCapacity.debtBreakdown?.existingDebt > 0 && (
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                    <span className="text-slate-600">Total Debt (incl. existing):</span>
+                    <span className="font-bold text-slate-800">
+                      {currencyFmtMM(debtCapacity.currentDebtRequest, ccy)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pb-2 border-b border-slate-200">
                   <span className="text-slate-600">Safe Debt Level:</span>
                   <span className="font-bold text-emerald-600">

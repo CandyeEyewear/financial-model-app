@@ -313,11 +313,12 @@ export function PricingPage() {
         platform: "custom",
         token: data.token,
         amount: data.amount,
-        currency: "USD",
+        currency: data.currency || "USD",
         order_id: data.orderId,
         email_address: user?.email || "",
         customer_name: userProfile?.name || user?.email?.split("@")[0] || "",
-        recurring: "false",
+        recurring: data.recurring ? "true" : "false",
+        subscription_id: data.subscriptionId || "",
       };
 
       Object.entries(fields).forEach(([key, value]) => {

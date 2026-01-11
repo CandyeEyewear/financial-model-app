@@ -19,10 +19,12 @@ CREATE TABLE IF NOT EXISTS public.users (
   reports_this_month INTEGER DEFAULT 0,
   last_reset_date TIMESTAMPTZ DEFAULT NOW(),
   
-  -- Subscription details (for Stripe integration)
-  subscription_status TEXT DEFAULT 'trialing' CHECK (subscription_status IN ('active', 'canceled', 'past_due', 'trialing')),
+  -- Subscription details (for payment integration)
+  subscription_status TEXT DEFAULT 'trialing' CHECK (subscription_status IN ('active', 'canceled', 'past_due', 'trialing', 'pending_payment')),
   stripe_customer_id TEXT,
   stripe_subscription_id TEXT,
+  ezee_subscription_id TEXT,
+  ezee_transaction_number TEXT,
   current_period_end TIMESTAMPTZ,
   
   -- Timestamps
@@ -295,6 +297,177 @@ CREATE TRIGGER limit_chat_messages
   AFTER INSERT ON public.ai_chat_messages
   FOR EACH ROW
   EXECUTE FUNCTION public.enforce_chat_message_limit();
+
+-- ==========================================
+-- eZEEPAYMENTS SUBSCRIPTION AND PAYMENT TABLES
+-- ==========================================
+
+-- Create subscriptions table for eZeePayments recurring billing
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  tier_id TEXT NOT NULL CHECK (tier_id IN ('professional', 'business', 'enterprise')),
+
+  -- eZeePayments specific fields
+  ezee_subscription_id TEXT UNIQUE NOT NULL,
+  ezee_transaction_number TEXT,
+
+  -- Subscription details
+  amount DECIMAL(10, 2) NOT NULL,
+  currency TEXT DEFAULT 'USD' CHECK (currency IN ('USD', 'JMD')),
+  frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly', 'annually')),
+  status TEXT DEFAULT 'pending_payment' CHECK (status IN ('pending_payment', 'active', 'canceled', 'ended', 'past_due')),
+
+  -- Dates
+  start_date TIMESTAMPTZ,
+  end_date TIMESTAMPTZ,
+  last_payment_at TIMESTAMPTZ,
+  next_billing_date TIMESTAMPTZ,
+
+  -- Metadata
+  description TEXT,
+
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for subscriptions
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON public.subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_ezee_id ON public.subscriptions(ezee_subscription_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON public.subscriptions(status);
+
+-- Enable RLS on subscriptions
+ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Policies for subscriptions
+CREATE POLICY "Users can view own subscriptions" ON public.subscriptions
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own subscriptions" ON public.subscriptions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own subscriptions" ON public.subscriptions
+  FOR UPDATE USING (auth.uid() = user_id);
+
+-- Service role can update any subscription (for webhooks)
+CREATE POLICY "Service can update subscriptions" ON public.subscriptions
+  FOR UPDATE USING (true);
+
+-- Trigger for subscriptions updated_at
+DROP TRIGGER IF EXISTS subscriptions_updated_at ON public.subscriptions;
+CREATE TRIGGER subscriptions_updated_at
+  BEFORE UPDATE ON public.subscriptions
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- Create payments table for tracking individual payment transactions
+CREATE TABLE IF NOT EXISTS public.payments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  subscription_id UUID REFERENCES public.subscriptions(id) ON DELETE SET NULL,
+
+  -- Order and transaction details
+  order_id TEXT UNIQUE NOT NULL,
+  transaction_number TEXT,
+
+  -- Payment details
+  amount DECIMAL(10, 2) NOT NULL,
+  currency TEXT DEFAULT 'USD' CHECK (currency IN ('USD', 'JMD')),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'refunded')),
+
+  -- eZeePayments response
+  response_code TEXT,
+  response_description TEXT,
+
+  -- Dates
+  processed_at TIMESTAMPTZ,
+
+  -- Metadata
+  customer_email TEXT,
+  customer_name TEXT,
+  description TEXT,
+
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for payments
+CREATE INDEX IF NOT EXISTS idx_payments_user ON public.payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_order ON public.payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_transaction ON public.payments(transaction_number);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON public.payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_subscription ON public.payments(subscription_id);
+
+-- Enable RLS on payments
+ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
+
+-- Policies for payments
+CREATE POLICY "Users can view own payments" ON public.payments
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own payments" ON public.payments
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Service role can update any payment (for webhooks)
+CREATE POLICY "Service can update payments" ON public.payments
+  FOR UPDATE USING (true);
+
+CREATE POLICY "Service can insert payments" ON public.payments
+  FOR INSERT WITH CHECK (true);
+
+-- Trigger for payments updated_at
+DROP TRIGGER IF EXISTS payments_updated_at ON public.payments;
+CREATE TRIGGER payments_updated_at
+  BEFORE UPDATE ON public.payments
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- Function to upgrade user tier after successful payment
+CREATE OR REPLACE FUNCTION public.upgrade_user_tier_on_payment()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Only upgrade if payment is successful
+  IF NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status != 'completed') THEN
+    -- Get subscription details
+    DECLARE
+      sub_tier TEXT;
+    BEGIN
+      SELECT tier_id INTO sub_tier
+      FROM public.subscriptions
+      WHERE id = NEW.subscription_id;
+
+      -- Update user tier and subscription status
+      IF sub_tier IS NOT NULL THEN
+        UPDATE public.users
+        SET
+          tier = sub_tier,
+          subscription_status = 'active',
+          ezee_subscription_id = (SELECT ezee_subscription_id FROM public.subscriptions WHERE id = NEW.subscription_id),
+          ezee_transaction_number = NEW.transaction_number,
+          current_period_end = NOW() + INTERVAL '1 month'
+        WHERE id = NEW.user_id;
+
+        -- Update subscription status
+        UPDATE public.subscriptions
+        SET
+          status = 'active',
+          start_date = COALESCE(start_date, NOW()),
+          last_payment_at = NOW(),
+          ezee_transaction_number = NEW.transaction_number
+        WHERE id = NEW.subscription_id;
+      END IF;
+    END;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to upgrade user tier after payment
+DROP TRIGGER IF EXISTS upgrade_tier_on_payment ON public.payments;
+CREATE TRIGGER upgrade_tier_on_payment
+  AFTER UPDATE ON public.payments
+  FOR EACH ROW EXECUTE FUNCTION public.upgrade_user_tier_on_payment();
 
 -- Grant permissions
 GRANT USAGE ON SCHEMA public TO anon, authenticated;

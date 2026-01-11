@@ -30,6 +30,10 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Admin state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminRole, setAdminRole] = useState(null); // 'super_admin', 'admin', 'support', 'billing'
+
   // Plan limits for AI queries
   const PLAN_LIMITS = {
     free: 10,
@@ -118,6 +122,33 @@ export const AuthProvider = ({ children }) => {
   };
 
   /**
+   * Check if user is admin
+   */
+  const checkAdminStatus = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('admin_users')
+        .select('role')
+        .eq('user_id', userId)
+        .is('is_active', true)
+        .single();
+
+      if (data && !error) {
+        setIsAdmin(true);
+        setAdminRole(data.role);
+        log.info(`Admin access granted: ${data.role}`);
+      } else {
+        setIsAdmin(false);
+        setAdminRole(null);
+      }
+    } catch (err) {
+      log.error('Admin check failed:', err);
+      setIsAdmin(false);
+      setAdminRole(null);
+    }
+  };
+
+  /**
    * Sign up with email and password
    */
   const signUp = async (email, password, metadata = {}) => {
@@ -169,6 +200,8 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setUserProfile(null);
     setSession(null);
+    setIsAdmin(false);
+    setAdminRole(null);
     return { error: null };
   };
 
@@ -215,6 +248,8 @@ export const AuthProvider = ({ children }) => {
           }).catch(err => {
             log.error('Profile fetch error during init', err);
           });
+          // Check admin status in background
+          checkAdminStatus(currentSession.user.id);
         } else if (mounted) {
           setIsLoading(false);
         }
@@ -231,9 +266,9 @@ export const AuthProvider = ({ children }) => {
     // Listen for auth state changes
     const { data: { subscription } } = auth.onAuthStateChange(async (event, currentSession) => {
       log.debug(`Auth state changed: ${event}`);
-      
+
       if (!mounted) return;
-      
+
       setSession(currentSession);
       setUser(currentSession?.user || null);
       // Always set loading to false first to prevent infinite loading
@@ -248,8 +283,13 @@ export const AuthProvider = ({ children }) => {
         }).catch(err => {
           log.error('Profile fetch error during auth change', err);
         });
+        // Check admin status
+        checkAdminStatus(currentSession.user.id);
       } else {
+        // User logged out - reset admin state
         setUserProfile(null);
+        setIsAdmin(false);
+        setAdminRole(null);
       }
     });
 
@@ -273,7 +313,11 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     canMakeAIQuery,
     getUsageInfo,
-    PLAN_LIMITS
+    PLAN_LIMITS,
+    // Admin properties
+    isAdmin,
+    adminRole,
+    isSuperAdmin: adminRole === 'super_admin',
   };
 
   return (

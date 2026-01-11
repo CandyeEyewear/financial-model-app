@@ -113,17 +113,17 @@ const AI_TOOLS = [
     type: "function",
     function: {
       name: "navigate_to_tab",
-      description: "Navigate to a specific analysis tab. Use when user wants to see a particular view or analysis.",
+      description: "Navigate to a specific analysis tab in the app. Use the exact tab IDs listed.",
       parameters: {
         type: "object",
         properties: {
-          tab: {
+          tabId: {
             type: "string",
-            enum: ["historical", "capital", "dashboard", "scenarios", "custom", "tables"],
-            description: "Tab to navigate to"
+            description: "Tab to navigate to. MUST be one of: 'dashboard', 'capital', 'valuation', 'scenarios', 'debt-stress', 'custom', 'sensitivity', 'reports', 'historical', 'tables'",
+            enum: ["dashboard", "capital", "valuation", "scenarios", "debt-stress", "custom", "sensitivity", "reports", "historical", "tables"]
           }
         },
-        required: ["tab"]
+        required: ["tabId"]
       }
     }
   },
@@ -208,10 +208,17 @@ function ChatAssistant({ modelData, dealId, onParamUpdate, onRunStressTest, onNa
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [followThroughDepth, setFollowThroughDepth] = useState(0);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const modelDataRef = useRef(modelData);
 
   const { session, getUsageInfo, canMakeAIQuery } = useAuth();
+
+  // Keep modelDataRef in sync
+  useEffect(() => {
+    modelDataRef.current = modelData;
+  }, [modelData]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -300,83 +307,71 @@ function ChatAssistant({ modelData, dealId, onParamUpdate, onRunStressTest, onNa
     setInput("");
     setIsLoading(true);
     setError(null);
+    setFollowThroughDepth(0); // Reset for new conversation turn
 
     try {
       // Enhanced system message with tool awareness
-      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague at a lending institution.
+      const systemMessage = `You are FinAssist, an expert financial analyst assistant.
 
-CAPABILITIES:
-You can both ANALYZE data and TAKE ACTIONS using these tools:
+## TOOLS AVAILABLE
+- calculate_optimal_debt: Calculate max debt for target DSCR
+- run_stress_test: Run stress scenarios
+- update_model_parameter: Change model inputs
+- navigate_to_tab: Navigate to analysis tabs (use exact IDs: dashboard, capital, valuation, scenarios, debt-stress, sensitivity, reports, historical, tables, custom)
+- analyze_covenant_headroom: Check covenant compliance
 
-1. **calculate_optimal_debt** - Calculate maximum debt for a target DSCR
-   Use when: User asks about debt capacity, optimal debt, max borrowing
+## CRITICAL BEHAVIOR RULES
 
-2. **run_stress_test** - Run stress scenarios with custom shocks
-   Use when: User asks "what if" questions about adverse scenarios
+1. **TAB NAVIGATION**: Use exact tab IDs:
+   - For valuation questions → use "valuation" (NOT "capital")
+   - For credit/overview questions → use "dashboard"
+   - For debt structure questions → use "capital"
+   - For stress testing → use "debt-stress" or "custom"
+   - For scenario analysis → use "scenarios"
 
-3. **update_model_parameter** - Change model inputs
-   Use when: User asks to set, change, or adjust values
+2. **ALWAYS PROVIDE SUBSTANCE**:
+   - When user asks for "thoughts", "opinion", "verdict", "analysis" → give actual analysis
+   - NEVER just execute a tool and stop
+   - After any tool, immediately continue with your analysis
 
-4. **navigate_to_tab** - Switch to a specific analysis view
-   Use when: User wants to see a particular analysis
+3. **EXAMPLE OF CORRECT BEHAVIOR**:
+   User: "What are your thoughts on the valuation?"
 
-5. **analyze_covenant_headroom** - Analyze covenant breach risk
-   Use when: User asks about covenant risk or compliance
+   WRONG:
+   "Let me navigate..." [tool] "📍 Navigating..." [END]
 
-WHEN TO USE TOOLS:
-- "What's the max debt we can take?" → use calculate_optimal_debt
-- "Set the interest rate to 12%" → use update_model_parameter
-- "What if revenue drops 20%?" → use run_stress_test
-- "Show me the valuation" → use navigate_to_tab
-- "How close are we to breaching covenants?" → use analyze_covenant_headroom
+   RIGHT:
+   "Let me look at the valuation. [tool executes]
 
-CRITICAL: TOOL VALUE FORMATTING
+   Looking at the numbers:
+   - Enterprise Value of J$353M seems reasonable at 6.5x EBITDA
+   - However, Equity Value of J$366M appears incorrect - it should be lower than EV
+   - The IRR of 0% suggests a calculation issue...
+
+   My assessment: The valuation methodology is sound but there may be
+   calculation errors in the equity bridge. I'd recommend..."
+
+## CRITICAL: TOOL VALUE FORMATTING
 When using update_model_parameter:
 - For monetary values (debt, revenue, cash): Send full numbers OR shorthand with M/B
   Examples: 100000000 OR "100M" OR "$100M" (all work!)
 - For percentages (rates, growth, margins): Send as decimal (0.12 for 12%)
   Examples: 0.12 for 12%, 0.05 for 5%
-- The system will parse "$100M", "100m", "100 million" correctly
 
-CRITICAL: ALWAYS FOLLOW THROUGH AFTER TOOL CALLS
-When you use a tool to modify the model (update_model_parameter, run_stress_test):
-1. Execute the tool
-2. IMMEDIATELY AFTER tool execution, provide analysis of the impact
-3. Answer the user's original question with specific insights
-
-NEVER just execute a tool and stop. Always follow through with analysis.
-
-Example of CORRECT behavior:
-User: "Set debt to $100M, how does this work out?"
-You: [Execute update_model_parameter with new_value: 100000000]
-You: "I've updated the debt to J$100M. Let me analyze the impact:
-
-Looking at the updated model, this debt level creates some challenges. The Year 1 DSCR drops to 0.85x, which breaches the 1.25x covenant minimum. The company's EBITDA of around J$25M can only support about J$60M in debt at current terms.
-
-I'd recommend either reducing the facility to J$60M or extending the tenor from 5 to 7 years to bring annual debt service down. Want me to run those scenarios?"
-
-FINANCIAL MODEL DATA:
+## FINANCIAL MODEL DATA
 ${modelSummary}
 
-HOW TO COMMUNICATE:
+## HOW TO COMMUNICATE
 - Talk like you're chatting with a colleague over coffee, not writing a formal report
 - Use natural, flowing sentences instead of bullet points or lists
 - NO hashtags, NO markdown symbols (**, ##, ###), NO excessive formatting
 - Write in paragraphs, like you're explaining something to a friend
 - Use "I think", "I'd recommend", "In my view" to sound more human
-- Feel free to use conversational phrases like "Here's the thing", "What I'm seeing here", "To be honest"
 - When citing numbers, weave them naturally into your explanation
 - Be direct and honest, but warm in your delivery
 
-WHAT TO FOCUS ON:
-- Use the actual numbers and data from the model above
-- Give specific, actionable insights based on what you see
-- Point out both strengths and concerns in a balanced way
-- If you spot risks, explain them clearly but don't be alarmist
-- If you see DATA WARNINGS, proactively mention them to the user
-- Make recommendations that are practical and easy to understand
-
-Remember: You're a trusted advisor who can both analyze AND take action. Keep it natural, helpful, and human.`;
+## CURRENCY
+Use Jamaican Dollar (J$) formatting.`;
 
       const response = await fetch("/api/ai/analyze", {
         method: "POST",
@@ -415,25 +410,24 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
         };
 
         // Execute each tool call
-        const toolResults = await Promise.all(
-          toolCalls.map(async (call) => {
-            try {
-              const params = typeof call.function.arguments === 'string'
-                ? JSON.parse(call.function.arguments)
-                : call.function.arguments;
-              const result = await executeToolCall(call.function.name, params, context);
-              return { tool: call.function.name, ...result };
-            } catch (e) {
-              console.error('Tool execution error:', e);
-              return {
-                tool: call.function.name,
-                success: false,
-                message: `Error: ${e.message}`,
-                data: null
-              };
-            }
-          })
-        );
+        const toolResults = [];
+        for (const call of toolCalls) {
+          try {
+            const params = typeof call.function.arguments === 'string'
+              ? JSON.parse(call.function.arguments)
+              : call.function.arguments;
+            const result = await executeToolCall(call.function.name, params, context);
+            toolResults.push({ tool: call.function.name, ...result });
+          } catch (e) {
+            console.error('Tool execution error:', e);
+            toolResults.push({
+              tool: call.function.name,
+              success: false,
+              message: `Error: ${e.message}`,
+              data: null
+            });
+          }
+        }
 
         // Get any text content from AI (before/after tool calls)
         const aiTextContent = data.choices?.[0]?.message?.content || "";
@@ -459,8 +453,22 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
           content: finalMessage.trim(),
           timestamp: new Date().toISOString(),
           usage: data.userUsage,
-          toolResults
+          toolResults,
+          isToolResult: true
         });
+
+        // CHECK IF FOLLOW-THROUGH IS NEEDED
+        const needsFollowThrough = toolResults.some(r => r.needsFollowThrough === true);
+
+        if (needsFollowThrough) {
+          // Collect follow-through prompts
+          const followThroughPrompts = toolResults
+            .filter(r => r.needsFollowThrough && r.followThroughPrompt)
+            .map(r => r.followThroughPrompt);
+
+          // Trigger follow-through
+          await triggerFollowThrough(messageText, followThroughPrompts, toolResults);
+        }
       } else {
         // Normal response without tool calls
         const aiMessage = data.choices?.[0]?.message?.content || "No response from AI service.";
@@ -485,6 +493,185 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
+    }
+  };
+
+  /**
+   * Trigger a follow-through response from the AI
+   */
+  const triggerFollowThrough = async (originalQuery, followThroughPrompts, toolResults) => {
+    const MAX_FOLLOW_THROUGH_DEPTH = 1;
+
+    // Prevent infinite loops
+    if (followThroughDepth >= MAX_FOLLOW_THROUGH_DEPTH) {
+      console.log('Max follow-through depth reached, stopping');
+      return;
+    }
+
+    setFollowThroughDepth(prev => prev + 1);
+
+    // Check if any parameter updates happened - they need more time to propagate
+    const hasParamUpdate = toolResults.some(r => r.tool === 'update_model_parameter');
+    const hasStressTest = toolResults.some(r => r.tool === 'run_stress_test');
+
+    // Delay to let state update - longer for param updates and stress tests
+    // Using 2500ms to ensure projections fully recalculate
+    const delay = (hasParamUpdate || hasStressTest) ? 2500 : 300;
+    console.log(`Waiting ${delay}ms for state updates and projection recalculation before follow-through...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    setIsLoading(true);
+
+    try {
+      // Refresh model data summary
+      const freshSummary = generateModelDataSummary ? generateModelDataSummary(modelDataRef.current) : '';
+
+      // Build explicit update context if parameters were changed
+      let updateContext = '';
+      if (hasParamUpdate) {
+        const paramUpdates = toolResults
+          .filter(r => r.tool === 'update_model_parameter' && r.data)
+          .map(r => {
+            console.log(`Follow-through: Parameter ${r.data.paramName} should now be ${r.data.newValue}`);
+            return `- ${r.data.paramName} was updated to ${r.data.newValue}`;
+          })
+          .join('\n');
+
+        // Calculate and log EXPECTED total debt explicitly
+        const currentParams = modelDataRef.current?.params || {};
+        // CRITICAL: Respect hasExistingDebt toggle - if OFF, treat existing debt as 0
+        const existingDebt = (currentParams.hasExistingDebt === true)
+          ? (currentParams.openingDebt || currentParams.existingDebtAmount || 0)
+          : 0;
+        const newFacility = currentParams.requestedLoanAmount || 0;
+        const totalDebt = existingDebt + newFacility;
+
+        // Log current model data for debugging
+        console.log('Follow-through modelData.params:', {
+          requestedLoanAmount: currentParams.requestedLoanAmount,
+          openingDebt: currentParams.openingDebt,
+          existingDebtAmount: currentParams.existingDebtAmount,
+          CALCULATED_TOTAL_DEBT: totalDebt
+        });
+
+        // Log what's in projections
+        if (modelDataRef.current?.projections) {
+          console.log('Follow-through projections:', {
+            finalDebt: modelDataRef.current.projections.base?.finalDebt,
+            multiTrancheTotal: modelDataRef.current.projections.base?.multiTrancheInfo?.totalDebt
+          });
+        }
+
+        if (paramUpdates) {
+          updateContext = `\n\nPARAMETERS JUST UPDATED:\n${paramUpdates}
+
+DEBT BREAKDOWN (use these exact figures):
+- Existing Debt: J$${(existingDebt / 1000000).toFixed(1)}M
+- New Facility: J$${(newFacility / 1000000).toFixed(1)}M
+- TOTAL DEBT: J$${(totalDebt / 1000000).toFixed(1)}M
+
+CRITICAL: When analyzing the deal, use BOTH the existing debt (J$${(existingDebt / 1000000).toFixed(1)}M) AND the new facility (J$${(newFacility / 1000000).toFixed(1)}M). The total debt is J$${(totalDebt / 1000000).toFixed(1)}M. Do NOT use only one of these values - always consider the complete debt structure.`;
+        }
+      }
+
+      // Build the follow-through prompt
+      const followThroughMessage = `CONTEXT: The user originally asked: "${originalQuery}"
+
+I just executed tool(s) and need to provide my analysis.
+
+${followThroughPrompts.join('\n')}${updateContext}
+
+CURRENT MODEL DATA:
+${freshSummary}
+
+INSTRUCTION: Provide substantive analysis responding to the user's original question. Be specific with numbers. Do NOT just say "I've navigated" or "the model is updated" - actually give the analysis/verdict/thoughts they asked for.`;
+
+      // Build system message for follow-through
+      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague at a lending institution.
+
+FINANCIAL MODEL DATA:
+${freshSummary}
+
+HOW TO COMMUNICATE:
+- Talk like you're chatting with a colleague over coffee, not writing a formal report
+- Use natural, flowing sentences instead of bullet points or lists
+- NO hashtags, NO markdown symbols (**, ##, ###), NO excessive formatting
+- Write in paragraphs, like you're explaining something to a friend
+- Use "I think", "I'd recommend", "In my view" to sound more human
+- Feel free to use conversational phrases like "Here's the thing", "What I'm seeing here", "To be honest"
+- When citing numbers, weave them naturally into your explanation
+- Be direct and honest, but warm in your delivery
+
+WHAT TO FOCUS ON:
+- Use the actual numbers and data from the model above
+- Give specific, actionable insights based on what you see
+- Point out both strengths and concerns in a balanced way
+- If you spot risks, explain them clearly but don't be alarmist
+- Make recommendations that are practical and easy to understand
+
+Remember: Keep it natural, helpful, and human.`;
+
+      // Make API call for follow-through
+      const response = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: followThroughMessage,
+          systemMessage,
+          messages: messages.slice(-4).map(m => ({
+            role: m.role,
+            content: m.content
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Check if this response also has tool calls (avoid infinite loop)
+      if (hasToolCalls(data)) {
+        // AI wants to call another tool - let it, but don't follow-through again
+        const content = cleanMessageContent(data.choices?.[0]?.message?.content || '');
+        if (content) {
+          await addMessage({
+            role: 'assistant',
+            content,
+            timestamp: new Date().toISOString(),
+            usage: data.userUsage
+          });
+        }
+      } else {
+        // Normal response - add to chat
+        const analysisContent = data.choices?.[0]?.message?.content || '';
+        if (analysisContent) {
+          await addMessage({
+            role: 'assistant',
+            content: analysisContent,
+            timestamp: new Date().toISOString(),
+            usage: data.userUsage,
+            isFollowThrough: true
+          });
+        }
+      }
+
+    } catch (error) {
+      console.error('Follow-through error:', error);
+      // On error, add a fallback message
+      await addMessage({
+        role: 'assistant',
+        content: "I've completed the action. What would you like me to analyze next?",
+        isError: true
+      });
+    } finally {
+      setIsLoading(false);
+      // Reset depth after a delay (for next user message)
+      setTimeout(() => setFollowThroughDepth(0), 1000);
     }
   };
 

@@ -894,6 +894,19 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
           updated.openingDebt = newValue;
         }
 
+        // CRITICAL: When setting new facility amount, ensure pricing and tenor are set
+        if (paramName === 'requestedLoanAmount' && newValue > 0) {
+          // Set defaults if not already specified
+          if (!updated.proposedPricing || updated.proposedPricing === 0) {
+            updated.proposedPricing = 0.12; // 12% default rate
+            console.log('[FinancialModel] Auto-set proposedPricing to 12%');
+          }
+          if (!updated.proposedTenor || updated.proposedTenor === 0) {
+            updated.proposedTenor = 5; // 5 year default tenor
+            console.log('[FinancialModel] Auto-set proposedTenor to 5 years');
+          }
+        }
+
         return updated;
       });
 
@@ -906,6 +919,16 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
         }
         if (paramName === 'existingDebtAmount') {
           updated.openingDebt = newValue;
+        }
+
+        // CRITICAL: When setting new facility amount, ensure pricing and tenor are set
+        if (paramName === 'requestedLoanAmount' && newValue > 0) {
+          if (!updated.proposedPricing || updated.proposedPricing === 0) {
+            updated.proposedPricing = 0.12;
+          }
+          if (!updated.proposedTenor || updated.proposedTenor === 0) {
+            updated.proposedTenor = 5;
+          }
         }
 
         return updated;
@@ -1000,26 +1023,64 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
   };
 
   // Auto-sync new facility terms to legacy fields for buildProjection compatibility
+  // CRITICAL: Only sync when there's NO existing debt to avoid overwriting existing debt parameters
   useEffect(() => {
-    setParams(prev => ({
-      ...prev,
-      // Sync new facility → legacy fields
-      interestRate: prev.proposedPricing,
-      debtTenorYears: prev.proposedTenor,
-      interestOnlyYears: prev.interestOnlyPeriod,
-      
-      // Sync existing debt → opening debt (if not using multi-tranche)
-      openingDebt: prev.hasMultipleTranches ? 0 : (prev.hasExistingDebt ? prev.existingDebtAmount : 0),
-      
-      // ✅ NEW: Also sync existing debt rate, tenor, and amortization type
-      // These are used by buildProjection when creating the Opening Debt tranche
-      existingDebtRate: prev.existingDebtRate,
-      existingDebtTenor: prev.existingDebtTenor,
-      existingDebtAmortizationType: prev.existingDebtAmortizationType,
-    }));
-  }, [params.proposedPricing, params.proposedTenor, params.interestOnlyPeriod, 
+    setParams(prev => {
+      // CRITICAL: Check hasExistingDebt FLAG first, not just field values
+      // If toggle is OFF, ignore existing debt fields even if they have values
+      const hasExisting = prev.hasExistingDebt === true && ((prev.openingDebt || 0) > 0 || (prev.existingDebtAmount || 0) > 0);
+      const hasNew = (prev.requestedLoanAmount || 0) > 0;
+
+      // CASE 1: Only new facility (no existing debt) - sync new facility to legacy fields
+      if (hasNew && !hasExisting) {
+        return {
+          ...prev,
+          interestRate: prev.proposedPricing,
+          debtTenorYears: prev.proposedTenor,
+          interestOnlyYears: prev.interestOnlyPeriod,
+        };
+      }
+
+      // CASE 2: Only existing debt (no new facility) - keep existing debt in openingDebt
+      if (hasExisting && !hasNew) {
+        return {
+          ...prev,
+          openingDebt: prev.hasMultipleTranches ? 0 : prev.existingDebtAmount,
+        };
+      }
+
+      // CASE 3: BOTH existing and new facility - DON'T overwrite anything
+      // buildProjection will auto-create multi-tranche structure
+      // Each tranche uses its own rate/tenor (existingDebtRate/proposedPricing, etc.)
+      return prev;
+    });
+  }, [params.proposedPricing, params.proposedTenor, params.interestOnlyPeriod,
       params.hasExistingDebt, params.existingDebtAmount, params.hasMultipleTranches,
+      params.requestedLoanAmount, params.openingDebt,
       params.existingDebtRate, params.existingDebtTenor, params.existingDebtAmortizationType]);
+
+  // CRITICAL: Auto-set defaults for new facility when loaded from saved data
+  // This runs ONCE on mount to fix saved data that's missing defaults
+  useEffect(() => {
+    setParams(prev => {
+      const hasNew = (prev.requestedLoanAmount || 0) > 0;
+      const needsDefaults = hasNew && (
+        !prev.proposedPricing || prev.proposedPricing === 0 ||
+        !prev.proposedTenor || prev.proposedTenor === 0
+      );
+
+      if (needsDefaults) {
+        console.log('[FinancialModel] Auto-setting defaults for loaded data: proposedPricing=12%, proposedTenor=5yr');
+        return {
+          ...prev,
+          proposedPricing: prev.proposedPricing || 0.12,
+          proposedTenor: prev.proposedTenor || 5,
+        };
+      }
+
+      return prev;
+    });
+  }, []); // Run once on mount
 
   // Load scenarios from database (if authenticated) or localStorage on mount
   useEffect(() => {

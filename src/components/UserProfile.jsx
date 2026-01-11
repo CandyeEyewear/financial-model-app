@@ -27,7 +27,9 @@ import {
   Shield,
   ArrowLeft,
   Loader2,
+  Users,
 } from "lucide-react";
+import { TeamManagement } from "./TeamManagement";
 
 /**
  * Tier configuration for display
@@ -157,7 +159,10 @@ export function UserProfile() {
     PLAN_LIMITS,
     isAdmin,
     adminRole,
-    isSuperAdmin
+    isSuperAdmin,
+    canManageTeams,
+    teams,
+    pendingInvites,
   } = useAuth();
   
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -390,6 +395,11 @@ export function UserProfile() {
             tooltip="Account creation date"
           />
         </KPIGrid>
+
+        {/* Team Management - Show for Business/Enterprise OR users with team invites/memberships */}
+        {(canManageTeams() || pendingInvites?.length > 0 || teams?.memberTeams?.length > 0) && (
+          <TeamManagement />
+        )}
 
         {/* Subscription Details (for paid users) */}
         {tier !== "free" && userProfile?.subscription_status === "active" && (

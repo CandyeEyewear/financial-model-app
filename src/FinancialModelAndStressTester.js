@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Download, FileText, DollarSign, Landmark, BarChart3, Shield, Building, TrendingUp, CheckCircle2, Calendar, Info, Save, FolderOpen, Trash2, Copy, X, AlertTriangle, Zap, Wallet, CreditCard, Clock, Lightbulb, RefreshCw, Layers, ChevronRight, Sliders } from "lucide-react";
 
 // Component imports
@@ -810,14 +810,14 @@ const loadSavedHistoricalData = () => {
   return getDefaultHistoricalData();
 };
 
-export default function FinancialModelAndStressTester({ onDataUpdate, accessToken }) {
+const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken }, ref) => {
   // Get authentication state for database persistence
   const { user, isAuthenticated } = useAuth();
-  
+
   const [ccy, setCcy] = useState("JMD");
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingScenarios, setIsLoadingScenarios] = useState(false);
-  
+
   // Main params state - loads from localStorage if available
   const [params, setParams] = useState(loadSavedParams);
 
@@ -871,6 +871,67 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
 
   // Add this new state
   const [activeTab, setActiveTab] = useState("capital-structure");
+
+  // ==========================================
+  // EXPOSE METHODS VIA REF FOR CHATASSISTANT
+  // ==========================================
+  useImperativeHandle(ref, () => ({
+    /**
+     * Update a model parameter
+     * @param {string} paramName - The parameter to update
+     * @param {number} newValue - The new value
+     */
+    updateParam: (paramName, newValue) => {
+      console.log(`[FinancialModel] Updating param: ${paramName} = ${newValue}`);
+      setParams(prev => {
+        const updated = { ...prev, [paramName]: newValue };
+
+        // Sync related debt fields to maintain consistency
+        if (paramName === 'openingDebt') {
+          updated.existingDebtAmount = newValue;
+        }
+        if (paramName === 'existingDebtAmount') {
+          updated.openingDebt = newValue;
+        }
+
+        return updated;
+      });
+
+      // Also update draft params to prevent debounce issues
+      setDraftParams(prev => {
+        const updated = { ...prev, [paramName]: newValue };
+
+        if (paramName === 'openingDebt') {
+          updated.existingDebtAmount = newValue;
+        }
+        if (paramName === 'existingDebtAmount') {
+          updated.openingDebt = newValue;
+        }
+
+        return updated;
+      });
+    },
+
+    /**
+     * Run a stress test with custom shocks
+     * @param {object} shocks - Object with growthDelta, cogsDelta, rateDelta, etc.
+     */
+    runStressTest: (shocks) => {
+      console.log('[FinancialModel] Running stress test with shocks:', shocks);
+      setCustomShocks(shocks);
+      setDraftCustomShocks(shocks);
+      setActiveTab('custom-stress');
+    },
+
+    /**
+     * Navigate to a specific tab
+     * @param {string} tabId - The tab ID to navigate to
+     */
+    navigateToTab: (tabId) => {
+      console.log(`[FinancialModel] Navigating to tab: ${tabId}`);
+      setActiveTab(tabId);
+    },
+  }));
 
   // ==========================================
   // LOCAL STORAGE PERSISTENCE - Save on change
@@ -1820,26 +1881,36 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Equity MOIC</div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-semibold text-slate-900">
-              {Number.isFinite(projections.base.moic) && projections.base.moic < 999
+              {Number.isFinite(projections.base.moic) && projections.base.moic > 0 && projections.base.moic < 999
                 ? `${numFmt(projections.base.moic)}x`
-                : '–'}
+                : 'N/A'}
             </span>
-            {projections.base.moic > 2 && (
+            {Number.isFinite(projections.base.moic) && projections.base.moic > 2 && (
               <TrendingUp className="w-4 h-4 text-emerald-500" />
             )}
           </div>
+          {!Number.isFinite(projections.base.moic) || projections.base.moic === null ? (
+            <div className="text-xs text-slate-500 mt-1">Set Equity Contribution to calculate</div>
+          ) : null}
         </div>
-        
+
         <div className="bg-white rounded-lg border border-slate-200 p-4">
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Equity IRR</div>
           <div className="flex items-baseline gap-2">
-            <span className={`text-2xl font-semibold ${projections.base.irr > 0.15 ? 'text-emerald-600' : 'text-slate-900'}`}>
-              {pctFmt(projections.base.irr)}
+            <span className={`text-2xl font-semibold ${
+              Number.isFinite(projections.base.irr) && projections.base.irr > 0.15 ? 'text-emerald-600' : 'text-slate-900'
+            }`}>
+              {Number.isFinite(projections.base.irr) && projections.base.irr !== null
+                ? pctFmt(projections.base.irr)
+                : 'N/A'}
             </span>
-            {projections.base.irr > 0.15 && (
+            {Number.isFinite(projections.base.irr) && projections.base.irr > 0.15 && (
               <TrendingUp className="w-4 h-4 text-emerald-500" />
             )}
           </div>
+          {!Number.isFinite(projections.base.irr) || projections.base.irr === null ? (
+            <div className="text-xs text-slate-500 mt-1">Set Equity Contribution to calculate</div>
+          ) : null}
         </div>
       </div>
 
@@ -3251,4 +3322,8 @@ export default function FinancialModelAndStressTester({ onDataUpdate, accessToke
       />
     </div>
   );
-}
+});
+
+FinancialModelAndStressTester.displayName = 'FinancialModelAndStressTester';
+
+export default FinancialModelAndStressTester;

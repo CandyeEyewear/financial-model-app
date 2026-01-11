@@ -96,6 +96,53 @@ function ProtectedRoute() {
   const [projectionData, setProjectionData] = useState(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // Ref to access FinancialModelAndStressTester methods
+  const modelRef = useRef(null);
+
+  // ==========================================
+  // CALLBACKS FOR CHATASSISTANT
+  // ==========================================
+
+  /**
+   * Handle parameter updates from AI assistant
+   * @param {string} paramName - The parameter to update
+   * @param {number} newValue - The new value
+   */
+  const handleParamUpdate = useCallback((paramName, newValue) => {
+    console.log(`[App] AI updating param: ${paramName} = ${newValue}`);
+    if (modelRef.current) {
+      modelRef.current.updateParam(paramName, newValue);
+    } else {
+      console.warn('[App] modelRef.current is null - cannot update param');
+    }
+  }, []);
+
+  /**
+   * Handle stress test requests from AI assistant
+   * @param {object} shocks - Shock parameters
+   */
+  const handleRunStressTest = useCallback((shocks) => {
+    console.log('[App] AI running stress test with shocks:', shocks);
+    if (modelRef.current) {
+      modelRef.current.runStressTest(shocks);
+    } else {
+      console.warn('[App] modelRef.current is null - cannot run stress test');
+    }
+  }, []);
+
+  /**
+   * Handle tab navigation requests from AI assistant
+   * @param {string} tabId - Tab to navigate to
+   */
+  const handleNavigateToTab = useCallback((tabId) => {
+    console.log(`[App] AI navigating to tab: ${tabId}`);
+    if (modelRef.current) {
+      modelRef.current.navigateToTab(tabId);
+    } else {
+      console.warn('[App] modelRef.current is null - cannot navigate to tab');
+    }
+  }, []);
+
   // AI Analysis handler
   const handleAIAnalysis = useCallback(async (event) => {
     const { summary } = event.detail || {};
@@ -281,8 +328,9 @@ Provide your analysis:
 
       {/* Main Content */}
       <main className="flex-1">
-        <FinancialModelAndStressTester 
-          onDataUpdate={setProjectionData} 
+        <FinancialModelAndStressTester
+          ref={modelRef}
+          onDataUpdate={setProjectionData}
           accessToken={session?.access_token}
         />
       </main>
@@ -368,7 +416,12 @@ Provide your analysis:
             
             {/* Chat Content */}
             <div className="flex-1 overflow-hidden">
-              <ChatAssistant modelData={projectionData} />
+              <ChatAssistant
+                modelData={projectionData}
+                onParamUpdate={handleParamUpdate}
+                onRunStressTest={handleRunStressTest}
+                onNavigateToTab={handleNavigateToTab}
+              />
             </div>
           </aside>
         </>

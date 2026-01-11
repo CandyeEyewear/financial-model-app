@@ -82,6 +82,8 @@ export default function App({ buildProjection, applyShocks }) {
 
   // Param update handler with debt field synchronization
   const handleParamUpdate = useCallback((paramName, newValue) => {
+    console.log(`[App] Updating param: ${paramName} = ${newValue}`);
+
     setParams(prev => {
       const updated = { ...prev, [paramName]: newValue };
 
@@ -95,6 +97,15 @@ export default function App({ buildProjection, applyShocks }) {
         updated.hasExistingDebt = newValue > 0;
       }
 
+      // Sync requested loan amount with new facility amount
+      if (paramName === 'requestedLoanAmount') {
+        updated.newFacilityAmount = newValue;
+      }
+      if (paramName === 'newFacilityAmount') {
+        updated.requestedLoanAmount = newValue;
+      }
+
+      console.log('[App] Updated params:', updated);
       return updated;
     });
   }, []);

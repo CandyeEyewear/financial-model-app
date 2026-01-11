@@ -130,7 +130,7 @@ export const AuthProvider = ({ children }) => {
         .from('admin_users')
         .select('role')
         .eq('user_id', userId)
-        .eq('is_active', true)
+        .is('is_active', true)
         .single();
 
       if (data && !error) {

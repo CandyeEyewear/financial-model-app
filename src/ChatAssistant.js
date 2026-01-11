@@ -139,6 +139,35 @@ const AI_TOOLS = [
         required: ["covenantType"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "restructure_deal",
+      description: "Comprehensive deal restructuring analysis with multiple options, comparison matrix, and credit committee recommendation. Use when user asks 'How would you restructure this deal?', 'What are our restructuring options?', 'How can we fix covenant breaches?', or similar questions about deal restructuring or covenant violations.",
+      parameters: {
+        type: "object",
+        properties: {
+          targetMinDSCR: {
+            type: "number",
+            description: "Target minimum DSCR across all years (default: 1.30)"
+          },
+          includeEquityOption: {
+            type: "boolean",
+            description: "Whether to include equity injection option (default: true)"
+          },
+          maxTenorYears: {
+            type: "number",
+            description: "Maximum tenor extension to consider in years (default: 10)"
+          },
+          minAcceptableRate: {
+            type: "number",
+            description: "Minimum acceptable interest rate as decimal (default: 0.08 for 8%)"
+          }
+        },
+        required: []
+      }
+    }
   }
 ];
 

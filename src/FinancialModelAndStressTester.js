@@ -715,6 +715,11 @@ const getDefaultParams = () => ({
   // OPENING BALANCE SHEET
   openingCash: 0,
 
+  // CASH MANAGEMENT
+  // Cash retention rate: portion of net income retained as cash (vs distributed as dividends)
+  // Can be calculated from historicals or manually set (0.10 = 10%)
+  cashRetentionRate: 0.10,
+
   // COVENANTS
   minDSCR: 1.2,
   maxNDToEBITDA: 3.5,
@@ -1222,6 +1227,7 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
 
   // Sync draft params with actual params when debounced
   useEffect(() => {
+    console.log('Syncing debouncedParams to params, requestedLoanAmount:', debouncedParams.requestedLoanAmount);
     setParams(debouncedParams);
   }, [debouncedParams]);
 
@@ -1343,6 +1349,11 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
           opexPct:    prev.opexPct    === AUTO_CALC_CONSTANTS.DEFAULT_OPEX_PCT + 0.05 ? assumptions.opexPct : prev.opexPct,
           wcPctOfRev: prev.wcPctOfRev === AUTO_CALC_CONSTANTS.DEFAULT_WC_PCT_OF_REV ? assumptions.wcPctOfRev : prev.wcPctOfRev,
           capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
+
+          // Apply cash retention rate from historicals if still at default
+          cashRetentionRate: prev.cashRetentionRate === 0.10 && assumptions.cashRetentionRate !== undefined
+            ? assumptions.cashRetentionRate
+            : prev.cashRetentionRate,
 
           // Apply total assets from historical data
           totalAssets: prev.totalAssets === 0 && mostRecentYear?.totalAssets > 0
@@ -1894,6 +1905,12 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
   // Helper to check if we have valid historical data for auto-population
   const hasValidHistoricalData = historicalData.some(d => d.revenue > 0);
 
+  // Calculate historical assumptions for display (e.g., cash retention rate hint)
+  const historicalAssumptions = useMemo(() => {
+    if (!hasValidHistoricalData) return null;
+    return calculateHistoricalAssumptions(historicalData);
+  }, [historicalData, hasValidHistoricalData]);
+
   if (!projections || !projections.base) {
     return (
       <div className="p-4 bg-red-50 border border-red-300 rounded">
@@ -2199,10 +2216,13 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
                   Core Terms
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <MoneyField 
-                    label="Loan Amount" 
-                    value={draftParams.requestedLoanAmount} 
-                    onChange={(v) => setDraftParams({...draftParams, requestedLoanAmount: v})} 
+                  <MoneyField
+                    label="Loan Amount"
+                    value={draftParams.requestedLoanAmount}
+                    onChange={(v) => {
+                      console.log('Loan Amount changed to:', v);
+                      setDraftParams({...draftParams, requestedLoanAmount: v});
+                    }}
                     ccy={ccy}
                   />
                   <PctField 
@@ -2646,6 +2666,25 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
                   <div className="p-3 bg-teal-50 border border-teal-200 rounded text-xs text-teal-700">
                     <strong>Why this matters:</strong> Net Debt = Gross Debt - Cash.
                     If you have opening cash, your leverage ratios will be more accurate.
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <PctField
+                  label="Cash Retention Rate"
+                  value={draftParams.cashRetentionRate}
+                  onChange={(v) => setDraftParams({...draftParams, cashRetentionRate: v})}
+                  min={0}
+                  max={100}
+                />
+                <div className="flex items-end">
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded text-xs text-teal-700">
+                    <strong>Cash retention:</strong> Portion of net income retained as cash vs. distributed as dividends.
+                    {historicalAssumptions?.cashRetentionRate !== undefined && (
+                      <span className="block mt-1 text-blue-600">
+                        Historical avg: {(historicalAssumptions.cashRetentionRate * 100).toFixed(1)}%
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

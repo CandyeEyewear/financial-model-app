@@ -77,7 +77,17 @@ function buildAmortizationSchedule(params) {
   const existingDebtAmount = (params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0;
   const newFacilityAmount = params.requestedLoanAmount || 0;
   const principal = existingDebtAmount + newFacilityAmount;
-  
+
+  // DEBUG: Log debt calculation inputs
+  console.log('buildAmortizationSchedule:', {
+    hasExistingDebt: params.hasExistingDebt,
+    openingDebt: params.openingDebt,
+    requestedLoanAmount: params.requestedLoanAmount,
+    existingDebtAmount,
+    newFacilityAmount,
+    principal
+  });
+
   // No debt - return empty schedule
   if (principal === 0) {
     return Array(params.years).fill({
@@ -234,6 +244,7 @@ function buildMultiTrancheSchedule(params) {
     // buildAmortizationSchedule adds openingDebt + requestedLoanAmount
     const trancheParams = {
       ...params,
+      hasExistingDebt: true, // CRITICAL: Must be true so buildAmortizationSchedule processes openingDebt
       openingDebt: tranche.amount,
       requestedLoanAmount: 0, // Clear to prevent double-counting with tranche.amount
       interestRate: tranche.rate,
@@ -358,6 +369,15 @@ const debtSchedule = (() => {
   // CRITICAL: Respect hasExistingDebt toggle
   const hasOpeningDebt = (params.hasExistingDebt === true) && (params.openingDebt || 0) > 0;
   const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
+
+  // DEBUG: Log debt schedule path selection
+  console.log('debtSchedule path selection:', {
+    hasOpeningDebt,
+    hasNewFacility,
+    hasMultipleTranches: params.hasMultipleTranches,
+    debtTranchesLength: params.debtTranches?.length,
+    requestedLoanAmount: params.requestedLoanAmount
+  });
 
   // Explicit multi-tranche mode - but also check for standalone debt amounts
   if (params.hasMultipleTranches && params.debtTranches?.length > 0) {
@@ -540,10 +560,14 @@ function calculateMaturityDate(startYear, tenorYears) {
     // Cash and cash equivalents (IAS 7: Cash Flow Statement)
     const operatingCashFlow = ebitda - tax - wcDelta;
     const freeCashFlowBeforeDebt = operatingCashFlow - capex;
-    
+
     // Cash balance (accumulated, net of dividends/distributions)
-    // Assuming 10% of positive net income retained as cash, 90% distributed
-    const cashRetention = netIncome > 0 ? netIncome * 0.10 : netIncome;
+    // Cash retention rate can be:
+    // 1. Explicitly set via params.cashRetentionRate
+    // 2. Calculated from historicals (passed through params)
+    // 3. Default to 10% if not provided
+    const cashRetentionRate = params.cashRetentionRate ?? 0.10;
+    const cashRetention = netIncome > 0 ? netIncome * cashRetentionRate : netIncome;
     cumulativeCash = Math.max(0, cumulativeCash + cashRetention);
     
     // Retained earnings (IAS 1: Equity component)
@@ -597,7 +621,8 @@ function calculateMaturityDate(startYear, tenorYears) {
     const cashFromInvesting = -capex;
     
     // Financing activities
-    const dividends = netIncome > 0 ? netIncome * 0.90 : 0;
+    // Dividends are the complement of cash retention (1 - retention rate)
+    const dividends = netIncome > 0 ? netIncome * (1 - cashRetentionRate) : 0;
     const cashFromFinancing = -principalPayment - dividends;
     
     // Free Cash Flow (non-GAAP but standard in valuation)
@@ -757,11 +782,17 @@ function calculateMaturityDate(startYear, tenorYears) {
   
   // Enterprise Value
   const enterpriseValue = pvProjectedCashFlows + pvTerminal;
-  
-  // Equity Value
+
+  // Equity Value - use INITIAL debt/cash for "value today" calculation
+  // (not final debt/cash, which represents exit value)
+  const initialDebt = ((params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0) +
+                      (params.requestedLoanAmount || 0);
+  const initialCash = params.openingCash || 0;
+  const equityValue = enterpriseValue - initialDebt + initialCash;
+
+  // Also keep final values for reference (exit value perspective)
   const finalDebt = rows[rows.length - 1].grossDebt;
   const finalCash = rows[rows.length - 1].cash;
-  const equityValue = enterpriseValue - finalDebt + finalCash;
   
   // ============================================================================
   // INVESTMENT RETURNS (Using proper IRR calculation)
@@ -853,6 +884,11 @@ function calculateMaturityDate(startYear, tenorYears) {
     // Debt analysis
     totalDebtRepaid: debtSchedule.reduce((sum, year) => sum + year.principal, 0),
     totalInterestPaid: debtSchedule.reduce((sum, year) => sum + year.interest, 0),
+    // Initial values (for "value today" equity bridge)
+    initialDebt,
+    initialCash,
+    initialNetDebt: initialDebt - initialCash,
+    // Final values (for exit value perspective)
     finalCash,
     finalDebt,
     finalNetDebt: finalDebt - finalCash,

@@ -72,6 +72,28 @@ export function calculateHistoricalAssumptions(historicalData) {
   // Calculate average revenue across all years
   const avgRevenue = sorted.reduce((sum, d) => sum + d.revenue, 0) / sorted.length;
 
+  // Calculate cash retention rate from historical data
+  // Cash retention = (change in cash) / (net income) when net income > 0
+  const cashRetentionRates = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prevYear = sorted[i - 1];
+    const currYear = sorted[i];
+
+    // Need both years to have cash data and current year to have positive net income
+    if (currYear.cash !== undefined && prevYear.cash !== undefined && currYear.netIncome > 0) {
+      const cashChange = currYear.cash - prevYear.cash;
+      const retentionRate = cashChange / currYear.netIncome;
+      // Only include reasonable retention rates (0% to 100%)
+      if (retentionRate >= 0 && retentionRate <= 1) {
+        cashRetentionRates.push(retentionRate);
+      }
+    }
+  }
+
+  const avgCashRetentionRate = cashRetentionRates.length > 0
+    ? cashRetentionRates.reduce((s, r) => s + r, 0) / cashRetentionRates.length
+    : 0.10; // Default to 10% if no data
+
   return {
     // Use most recent year's revenue as the base (more representative for projections)
     baseRevenue: mostRecentYear.revenue,
@@ -84,11 +106,13 @@ export function calculateHistoricalAssumptions(historicalData) {
     capexPct: avgCapexPct,
     avgNetMargin,
     avgEbitdaMargin,
+    cashRetentionRate: avgCashRetentionRate,
     dataQuality: {
       years: sorted.length,
       hasCapex: sorted.some(d => d.capex),
       hasPPE: sorted.some(d => d.ppe),
       hasDepreciation: sorted.some(d => d.depreciation),
+      hasCashData: cashRetentionRates.length > 0,
     },
   };
 }

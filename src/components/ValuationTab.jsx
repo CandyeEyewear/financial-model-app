@@ -79,7 +79,8 @@ export function ValuationTab({ projections, params, ccy }) {
     const terminalValue = projections.terminalValue;
     const pvProjectedFCFs = projections.pvProjectedCashFlows;
     const pvTerminal = projections.pvTerminal;
-    const netDebt = projections.finalNetDebt;
+    // Use INITIAL net debt for "equity value today" calculation
+    const netDebt = projections.initialNetDebt ?? projections.finalNetDebt;
 
     // ----- SHARES & PRICE PER SHARE -----
     const sharesOutstanding = options.sharesOverride ?? params.sharesOutstanding ?? 0;
@@ -115,8 +116,9 @@ export function ValuationTab({ projections, params, ccy }) {
       blendedRate: debtBreakdown.blendedRate,
       netDebt,
 
-      // Cash
+      // Cash (use initial/opening cash for equity bridge, not final accumulated cash)
       cash: cashData,
+      initialCash: projections.initialCash ?? (params.openingCash || 0),
       finalCash: projections.finalCash,
 
       // Shares & Price
@@ -263,13 +265,20 @@ function getDebtBreakdown(projections, params) {
     };
   }
 
-  // PRIORITY 2: Use finalDebt from projections
-  if (projections.finalDebt > 0) {
-    // Build components from params for display, but use projection total
+  // Get initial debt from year 1 (more relevant for valuation display than final debt)
+  // Final debt may be 0 if loan is fully amortized, but we still want to show the debt structure
+  const initialDebt = projections.rows?.[0]?.debtBalance || projections.rows?.[0]?.grossDebt || 0;
+  const hasAnyDebt = initialDebt > 0 || projections.finalDebt > 0 ||
+                     (params.requestedLoanAmount || 0) > 0 ||
+                     ((params.hasExistingDebt === true) && (params.openingDebt || 0) > 0);
+
+  // PRIORITY 2: Use debt from projections or params
+  if (hasAnyDebt) {
+    // Build components from params for display
     const components = [];
 
-    // Check both openingDebt and existingDebtAmount (they should be synced, but fallback to either)
-    const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
+    // Check existing debt (only if toggle is ON)
+    const existingDebt = (params.hasExistingDebt === true) ? (params.openingDebt || params.existingDebtAmount || 0) : 0;
     if (existingDebt > 0) {
       components.push({
         name: 'Existing Debt',
@@ -292,15 +301,8 @@ function getDebtBreakdown(projections, params) {
 
     const totalFromComponents = components.reduce((sum, c) => sum + c.amount, 0);
 
-    // Warn if mismatch
-    if (Math.abs(totalFromComponents - projections.finalDebt) > 1000) {
-      console.warn('ValuationTab: Debt mismatch', {
-        fromComponents: totalFromComponents,
-        fromProjection: projections.finalDebt
-      });
-    }
-
-    const totalDebt = projections.finalDebt; // Trust projection
+    // Use initial debt for display (what the company starts with), not final debt
+    const totalDebt = totalFromComponents > 0 ? totalFromComponents : initialDebt;
     const blendedRate = totalDebt > 0
       ? components.reduce((sum, c) => sum + (c.amount / totalDebt) * c.rate, 0)
       : 0;
@@ -635,10 +637,10 @@ function CapitalStructureSection({ data, ccy }) {
                   {data.cash.isMissing && (
                     <span className="ml-2 text-xs text-amber-600 font-medium">(Not provided)</span>
                   )}
-                  <div className="text-xs text-slate-400">{data.cash.source}</div>
+                  <div className="text-xs text-slate-400">Opening Cash (for equity today)</div>
                 </div>
                 <span className="font-semibold text-green-600">
-                  ({currencyFmtMM(data.finalCash, ccy)})
+                  ({currencyFmtMM(data.initialCash, ccy)})
                 </span>
               </div>
 

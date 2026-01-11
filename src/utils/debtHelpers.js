@@ -40,13 +40,11 @@ export function getTotalDebtFromParams(params) {
   }
 
   // Single debt - check ALL possible field names
-  // Note: Must use parentheses to avoid operator precedence bugs
-  const existingDebt = (params.openingDebt || 0) + (params.existingDebtAmount || 0);
+  // CRITICAL: Respect hasExistingDebt toggle - if OFF, ignore existing debt fields
+  const finalExistingDebt = (params.hasExistingDebt === true)
+    ? (params.openingDebt > 0 ? params.openingDebt : (params.existingDebtAmount || 0))
+    : 0;
   const newFacility = params.requestedLoanAmount || 0;
-
-  // If openingDebt and existingDebtAmount are the same field (just named differently),
-  // prefer openingDebt
-  const finalExistingDebt = params.openingDebt > 0 ? params.openingDebt : (params.existingDebtAmount || 0);
 
   return finalExistingDebt + newFacility;
 }

@@ -539,7 +539,10 @@ Use Jamaican Dollar (J$) formatting.`;
 
         // Calculate and log EXPECTED total debt explicitly
         const currentParams = modelDataRef.current?.params || {};
-        const existingDebt = currentParams.openingDebt || currentParams.existingDebtAmount || 0;
+        // CRITICAL: Respect hasExistingDebt toggle - if OFF, treat existing debt as 0
+        const existingDebt = (currentParams.hasExistingDebt === true)
+          ? (currentParams.openingDebt || currentParams.existingDebtAmount || 0)
+          : 0;
         const newFacility = currentParams.requestedLoanAmount || 0;
         const totalDebt = existingDebt + newFacility;
 

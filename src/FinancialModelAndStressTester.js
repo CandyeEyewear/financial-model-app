@@ -1026,7 +1026,9 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
   // CRITICAL: Only sync when there's NO existing debt to avoid overwriting existing debt parameters
   useEffect(() => {
     setParams(prev => {
-      const hasExisting = (prev.openingDebt || 0) > 0 || (prev.existingDebtAmount || 0) > 0;
+      // CRITICAL: Check hasExistingDebt FLAG first, not just field values
+      // If toggle is OFF, ignore existing debt fields even if they have values
+      const hasExisting = prev.hasExistingDebt === true && ((prev.openingDebt || 0) > 0 || (prev.existingDebtAmount || 0) > 0);
       const hasNew = (prev.requestedLoanAmount || 0) > 0;
 
       // CASE 1: Only new facility (no existing debt) - sync new facility to legacy fields
@@ -1056,6 +1058,29 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
       params.hasExistingDebt, params.existingDebtAmount, params.hasMultipleTranches,
       params.requestedLoanAmount, params.openingDebt,
       params.existingDebtRate, params.existingDebtTenor, params.existingDebtAmortizationType]);
+
+  // CRITICAL: Auto-set defaults for new facility when loaded from saved data
+  // This runs ONCE on mount to fix saved data that's missing defaults
+  useEffect(() => {
+    setParams(prev => {
+      const hasNew = (prev.requestedLoanAmount || 0) > 0;
+      const needsDefaults = hasNew && (
+        !prev.proposedPricing || prev.proposedPricing === 0 ||
+        !prev.proposedTenor || prev.proposedTenor === 0
+      );
+
+      if (needsDefaults) {
+        console.log('[FinancialModel] Auto-setting defaults for loaded data: proposedPricing=12%, proposedTenor=5yr');
+        return {
+          ...prev,
+          proposedPricing: prev.proposedPricing || 0.12,
+          proposedTenor: prev.proposedTenor || 5,
+        };
+      }
+
+      return prev;
+    });
+  }, []); // Run once on mount
 
   // Load scenarios from database (if authenticated) or localStorage on mount
   useEffect(() => {

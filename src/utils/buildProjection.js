@@ -72,9 +72,9 @@ function getPaymentsPerYear(frequency) {
  */
 function buildAmortizationSchedule(params) {
   const schedule = [];
-  
-  // Combine both debt sources - they are additive, not alternatives
-  const existingDebtAmount = params.openingDebt || 0;
+
+  // CRITICAL: Respect hasExistingDebt toggle - if OFF, ignore existing debt fields
+  const existingDebtAmount = (params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0;
   const newFacilityAmount = params.requestedLoanAmount || 0;
   const principal = existingDebtAmount + newFacilityAmount;
   
@@ -336,7 +336,8 @@ let retainedEarnings = 0;  // Accumulated retained earnings
 // ============================================================================
 // Support both single debt and multi-tranche structures
 const debtSchedule = (() => {
-  const hasOpeningDebt = (params.openingDebt || 0) > 0;
+  // CRITICAL: Respect hasExistingDebt toggle
+  const hasOpeningDebt = (params.hasExistingDebt === true) && (params.openingDebt || 0) > 0;
   const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
 
   // Explicit multi-tranche mode - but also check for standalone debt amounts

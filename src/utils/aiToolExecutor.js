@@ -1431,8 +1431,10 @@ ${recommendationSection}`;
  */
 function getTotalDebt(params) {
   const requestedLoan = params.requestedLoanAmount || 0;
-  const openingDebt = params.openingDebt || 0;
-  const existingDebt = params.existingDebtAmount || 0;
+
+  // CRITICAL: Respect hasExistingDebt toggle - if OFF, ignore existing debt fields
+  const openingDebt = (params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0;
+  const existingDebt = (params.hasExistingDebt === true) ? (params.existingDebtAmount || 0) : 0;
 
   // Check for multi-tranche info
   const multiTrancheTotal = params.multiTrancheInfo?.totalDebt || 0;

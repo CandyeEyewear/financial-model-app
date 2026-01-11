@@ -2,9 +2,10 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
 import { generateModelDataSummary } from "./utils/ModelDataSummary";
 import { AITextRendererCompact } from "./components/AITextRenderer";
-import { 
-  Send, Bot, User, AlertCircle, RefreshCw, Trash2, 
-  Download, Copy, Check, Sparkles, TrendingUp 
+import { currencyFmtMM } from "./utils/formatters";
+import {
+  Send, Bot, User, AlertCircle, RefreshCw, Trash2,
+  Download, Copy, Check, Sparkles, TrendingUp, Wrench
 } from "lucide-react";
 
 // Color palette
@@ -15,6 +16,94 @@ const COLORS = {
   warning: 'amber-600',
   danger: 'red-600',
 };
+
+// Tool definitions for AI function calling
+const AI_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "update_param",
+      description: "Update a model parameter. Use this when the user asks to change assumptions like debt amounts, rates, growth, etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          param_name: {
+            type: "string",
+            description: "The parameter to update (e.g., 'openingDebt', 'growth', 'wacc', 'requestedLoanAmount', 'interestRate', 'cogsPct', 'opexPct')"
+          },
+          new_value: {
+            type: "number",
+            description: "The new value to set (use decimal for percentages, e.g., 0.10 for 10%)"
+          },
+          reason: {
+            type: "string",
+            description: "Brief explanation of why this change is being made"
+          }
+        },
+        required: ["param_name", "new_value", "reason"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_stress_test",
+      description: "Run a stress test with specific shocks to analyze downside scenarios",
+      parameters: {
+        type: "object",
+        properties: {
+          growthDelta: {
+            type: "number",
+            description: "Revenue growth shock as decimal (e.g., -0.10 for -10% revenue growth reduction)"
+          },
+          cogsDelta: {
+            type: "number",
+            description: "COGS increase shock as decimal (e.g., 0.05 for +5% COGS increase)"
+          },
+          rateDelta: {
+            type: "number",
+            description: "Interest rate shock as decimal (e.g., 0.02 for +2% rate increase)"
+          }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "calculate_optimal_debt",
+      description: "Calculate the optimal debt level for a given target DSCR",
+      parameters: {
+        type: "object",
+        properties: {
+          targetDSCR: {
+            type: "number",
+            description: "Target DSCR ratio (e.g., 1.35 for 1.35x coverage)"
+          }
+        },
+        required: ["targetDSCR"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "navigate_to_tab",
+      description: "Navigate to a specific analysis tab in the application",
+      parameters: {
+        type: "object",
+        properties: {
+          tab: {
+            type: "string",
+            enum: ["historical", "capital", "dashboard", "scenarios", "custom", "tables"],
+            description: "The tab to navigate to"
+          }
+        },
+        required: ["tab"]
+      }
+    }
+  }
+];
 
 // Suggested prompts for quick actions
 const SUGGESTED_PROMPTS = [
@@ -40,7 +129,7 @@ const SUGGESTED_PROMPTS = [
   }
 ];
 
-function ChatAssistant({ modelData }) {
+function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateToTab }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -50,6 +139,70 @@ function ChatAssistant({ modelData }) {
   const inputRef = useRef(null);
 
   const { session, getUsageInfo, canMakeAIQuery } = useAuth();
+
+  // Handle tool execution
+  const executeToolCall = async (toolName, toolParams) => {
+    const ccy = modelData?.params?.currency || 'USD';
+
+    switch (toolName) {
+      case 'update_param':
+        if (onParamUpdate) {
+          onParamUpdate(toolParams.param_name, toolParams.new_value);
+          return `Updated ${toolParams.param_name} to ${toolParams.new_value}. ${toolParams.reason}`;
+        }
+        return "Parameter update not available in current context.";
+
+      case 'run_stress_test':
+        if (onRunStressTest) {
+          const shocks = {
+            growthDelta: toolParams.growthDelta || 0,
+            cogsDelta: toolParams.cogsDelta || 0,
+            rateDelta: toolParams.rateDelta || 0
+          };
+          onRunStressTest(shocks);
+          const shockDescriptions = [];
+          if (shocks.growthDelta) shockDescriptions.push(`Revenue: ${(shocks.growthDelta * 100).toFixed(1)}%`);
+          if (shocks.cogsDelta) shockDescriptions.push(`COGS: +${(shocks.cogsDelta * 100).toFixed(1)}%`);
+          if (shocks.rateDelta) shockDescriptions.push(`Rate: +${(shocks.rateDelta * 100).toFixed(1)}%`);
+          return `Stress test applied with: ${shockDescriptions.join(', ')}. Check the Custom Stress tab for results.`;
+        }
+        return "Stress test not available in current context.";
+
+      case 'calculate_optimal_debt':
+        // Calculate optimal debt inline
+        const ebitda = modelData?.projections?.base?.rows?.[0]?.ebitda || 0;
+        const rate = modelData?.params?.interestRate || 0.10;
+        const tenor = modelData?.params?.debtTenorYears || 5;
+
+        if (ebitda <= 0) {
+          return "Cannot calculate optimal debt: EBITDA is not available.";
+        }
+
+        // PMT factor formula
+        const paymentFactor = (rate * Math.pow(1 + rate, tenor)) / (Math.pow(1 + rate, tenor) - 1);
+        const optimalDebt = ebitda / (paymentFactor * toolParams.targetDSCR);
+
+        return `At ${toolParams.targetDSCR}x DSCR target, optimal debt capacity is ${currencyFmtMM(optimalDebt, ccy)}. This assumes ${(rate * 100).toFixed(1)}% rate over ${tenor} years with EBITDA of ${currencyFmtMM(ebitda, ccy)}.`;
+
+      case 'navigate_to_tab':
+        if (onNavigateToTab) {
+          onNavigateToTab(toolParams.tab);
+          const tabNames = {
+            'historical': 'Historical Data',
+            'capital': 'Capital Structure',
+            'dashboard': 'Credit Dashboard',
+            'scenarios': 'Scenario Analysis',
+            'custom': 'Custom Stress',
+            'tables': 'Data Tables'
+          };
+          return `Navigated to ${tabNames[toolParams.tab] || toolParams.tab} tab.`;
+        }
+        return "Navigation not available in current context.";
+
+      default:
+        return `Unknown tool: ${toolName}`;
+    }
+  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -94,7 +247,22 @@ function ChatAssistant({ modelData }) {
     setError(null);
 
     try {
-      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague at a lending institution, so keep your tone warm, conversational, and natural. Always speak from the lender's perspective and do not describe the situation as if you are the borrower.
+      // Enhanced system message with tool awareness
+      const systemMessage = `You are FinAssist, a friendly and experienced financial analyst who specializes in credit analysis and debt structuring. You're having a casual conversation with a colleague at a lending institution.
+
+CAPABILITIES:
+You can not only analyze data but also TAKE ACTIONS using these tools:
+- update_param: Change model parameters (debt amounts, rates, growth assumptions, etc.)
+- run_stress_test: Execute stress scenarios with specific shocks
+- calculate_optimal_debt: Compute optimal debt level for a target DSCR
+- navigate_to_tab: Navigate to specific analysis views
+
+When the user asks to CHANGE something (not just analyze), use the appropriate tool.
+Examples:
+- "Set the debt to 50M" → use update_param with param_name="openingDebt", new_value=50000000
+- "What if revenue drops 20%?" → use run_stress_test with growthDelta=-0.20
+- "What's the max debt we can support at 1.3x DSCR?" → use calculate_optimal_debt with targetDSCR=1.3
+- "Show me the credit dashboard" → use navigate_to_tab with tab="dashboard"
 
 FINANCIAL MODEL DATA:
 ${modelSummary}
@@ -114,10 +282,10 @@ WHAT TO FOCUS ON:
 - Give specific, actionable insights based on what you see
 - Point out both strengths and concerns in a balanced way
 - If you spot risks, explain them clearly but don't be alarmist
+- If you see DATA WARNINGS, proactively mention them to the user
 - Make recommendations that are practical and easy to understand
-- If data is missing, mention it naturally: "I don't see any revenue projections yet, so once you add those..."
 
-Remember: You're a trusted advisor having a conversation, not a bot generating a report. Keep it natural, helpful, and human.`;
+Remember: You're a trusted advisor who can both analyze AND take action. Keep it natural, helpful, and human.`;
 
       const response = await fetch("/api/ai/analyze", {
         method: "POST",
@@ -131,7 +299,8 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
           messages: messages.slice(-6).map(m => ({
             role: m.role,
             content: m.content
-          }))
+          })),
+          tools: AI_TOOLS  // Include tools for function calling
         }),
       });
 
@@ -141,21 +310,54 @@ Remember: You're a trusted advisor having a conversation, not a bot generating a
         throw new Error(data.error || data.message || `API error: ${response.status}`);
       }
 
-      const aiMessage = data.choices?.[0]?.message?.content || "No response from AI service.";
-      
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: aiMessage,
-        timestamp: new Date().toISOString(),
-        usage: data.userUsage
-      }]);
+      // Check if AI wants to call tools
+      const toolCalls = data.choices?.[0]?.message?.tool_calls;
+
+      if (toolCalls && toolCalls.length > 0) {
+        // Execute each tool call
+        const toolResults = await Promise.all(
+          toolCalls.map(async (call) => {
+            try {
+              const params = JSON.parse(call.function.arguments);
+              const result = await executeToolCall(call.function.name, params);
+              return { tool: call.function.name, result, success: true };
+            } catch (e) {
+              return { tool: call.function.name, result: `Error: ${e.message}`, success: false };
+            }
+          })
+        );
+
+        // Build response with tool results
+        const aiMessage = data.choices?.[0]?.message?.content || "";
+        const toolSummary = toolResults.map(r =>
+          r.success ? `✓ ${r.result}` : `✗ ${r.result}`
+        ).join("\n");
+
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: aiMessage ? `${aiMessage}\n\n${toolSummary}` : toolSummary,
+          timestamp: new Date().toISOString(),
+          usage: data.userUsage,
+          toolCalls: toolResults
+        }]);
+      } else {
+        // Normal response without tool calls
+        const aiMessage = data.choices?.[0]?.message?.content || "No response from AI service.";
+
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: aiMessage,
+          timestamp: new Date().toISOString(),
+          usage: data.userUsage
+        }]);
+      }
     } catch (error) {
       console.error("Chat API Error:", error);
       setError(error.message || "Failed to get response. Please try again.");
-      
+
       // Add error message to chat
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
+      setMessages(prev => [...prev, {
+        role: "assistant",
         content: "Sorry, I hit a snag trying to process that. Mind trying again?",
         isError: true
       }]);

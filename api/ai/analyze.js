@@ -240,12 +240,30 @@ export default async function handler(req, res) {
       }
     }
 
-    // Step 6: Check Usage Limits
+    // Step 6: Check if user is admin (bypass limits)
+    let isAdmin = false;
+    try {
+      const { data: adminUser, error: adminError } = await supabase
+        .from('admin_users')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .single();
+
+      if (!adminError && adminUser) {
+        isAdmin = true;
+        console.log(`[AI Analyze] Admin bypass for user ${user.id} (${adminUser.role})`);
+      }
+    } catch (adminCheckErr) {
+      // Silently ignore admin check errors - just proceed as non-admin
+    }
+
+    // Step 7: Check Usage Limits (skip for admins)
     const tier = userProfile.tier || 'free';
-    const limit = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+    const limit = isAdmin ? 999999 : (PLAN_LIMITS[tier] || PLAN_LIMITS.free);
     const currentUsage = userProfile.ai_queries_this_month || 0;
 
-    if (currentUsage >= limit) {
+    if (!isAdmin && currentUsage >= limit) {
       return res.status(429).json({
         error: 'Monthly AI query limit reached',
         code: ERROR_CODES.RATE_LIMITED,
@@ -258,7 +276,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 7: Validate Request Body
+    // Step 8: Validate Request Body
     const { prompt, systemMessage, messages, extractionMode, tools } = req.body || {};
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
@@ -269,7 +287,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 8: Build DeepSeek Request
+    // Step 9: Build DeepSeek Request
     const temperature = extractionMode ? 0.2 : 0.8;
     const maxTokens = extractionMode ? 3000 : 1500;
 
@@ -288,7 +306,7 @@ export default async function handler(req, res) {
 
     deepseekMessages.push({ role: 'user', content: prompt.trim() });
 
-    // Step 9: Call DeepSeek API
+    // Step 10: Call DeepSeek API
     let aiResponse;
     let aiData;
 
@@ -344,7 +362,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 10: Parse AI Response (null-safe)
+    // Step 11: Parse AI Response (null-safe)
     const aiMessage = safeGet(aiData, 'choices.0.message', {});
     const aiContent = aiMessage.content;
     const aiToolCalls = aiMessage.tool_calls;
@@ -364,7 +382,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 11: Update Usage (non-blocking)
+    // Step 12: Update Usage (non-blocking)
     supabase
       .from('users')
       .update({
@@ -386,7 +404,7 @@ export default async function handler(req, res) {
       .then(() => {})
       .catch(err => logError('USAGE_LOG', err, { userId: user.id }));
 
-    // Step 12: Return Success
+    // Step 13: Return Success
     const responseMessage = { content: aiContent };
 
     // Include tool_calls if present

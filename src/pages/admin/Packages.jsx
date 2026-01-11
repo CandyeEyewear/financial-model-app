@@ -189,7 +189,11 @@ export default function AdminPackages() {
     }));
   };
 
-  const formatCurrency = (amount) => `J$${(amount || 0).toLocaleString()}`;
+  const formatCurrency = (amount, currency = 'USD') => {
+    const symbols = { USD: '$', JMD: 'J$', EUR: '€', GBP: '£' };
+    const symbol = symbols[currency] || '$';
+    return `${symbol}${(amount || 0).toLocaleString()}`;
+  };
 
   if (adminRole !== 'super_admin') {
     return (
@@ -311,11 +315,11 @@ export default function AdminPackages() {
 
               <div className="mb-4">
                 <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {formatCurrency(pkg.price_monthly)}
+                  {formatCurrency(pkg.price_monthly, pkg.currency)}
                   <span className="text-sm font-normal text-gray-500">/mo</span>
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {formatCurrency(pkg.price_yearly)}/year
+                  {formatCurrency(pkg.price_yearly, pkg.currency)}/year
                 </p>
               </div>
 
@@ -417,7 +421,7 @@ export default function AdminPackages() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Monthly Price (JMD)
+                    Monthly Price
                   </label>
                   <input
                     type="number"
@@ -430,7 +434,7 @@ export default function AdminPackages() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Yearly Price (JMD)
+                    Yearly Price
                   </label>
                   <input
                     type="number"

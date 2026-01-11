@@ -268,10 +268,12 @@ function getDebtBreakdown(projections, params) {
     // Build components from params for display, but use projection total
     const components = [];
 
-    if ((params.openingDebt || 0) > 0) {
+    // Check both openingDebt and existingDebtAmount (they should be synced, but fallback to either)
+    const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
+    if (existingDebt > 0) {
       components.push({
         name: 'Existing Debt',
-        amount: params.openingDebt,
+        amount: existingDebt,
         rate: params.existingDebtRate || params.interestRate || 0,
         seniority: 'Senior',
         source: 'From Parameters'

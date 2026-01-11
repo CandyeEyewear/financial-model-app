@@ -746,29 +746,36 @@ function calculateMaturityDate(startYear, tenorYears) {
   // ============================================================================
   // INVESTMENT RETURNS (Using proper IRR calculation)
   // ============================================================================
-  
-  const totalInvested = params.equityContribution > 0 ? params.equityContribution : 1;
-  
-  // MOIC: Exit Value / Entry Investment
-  const moic = calculateMOIC(equityValue, totalInvested);
-  
-  // Build cash flow series for IRR calculation
-  // Initial investment (negative), followed by interim distributions (if any), then exit value
-  const cashFlowsForIRR = [-totalInvested];
-  
-  // Add any dividend payments as interim cash flows
-  rows.forEach((row) => {
-    // Assume dividends are distributed to equity holders
-    cashFlowsForIRR.push(row.dividends || 0);
-  });
-  
-  // Add exit value to the final year
-  if (cashFlowsForIRR.length > 1) {
-    cashFlowsForIRR[cashFlowsForIRR.length - 1] += Math.max(0, equityValue);
+
+  // Only calculate MOIC and IRR if there's an actual equity investment
+  // If equityContribution is 0 or not set, these metrics are not applicable
+  const totalInvested = params.equityContribution || 0;
+
+  let moic = null;
+  let irr = null;
+
+  if (totalInvested > 0) {
+    // MOIC: Exit Value / Entry Investment
+    moic = calculateMOIC(equityValue, totalInvested);
+
+    // Build cash flow series for IRR calculation
+    // Initial investment (negative), followed by interim distributions (if any), then exit value
+    const cashFlowsForIRR = [-totalInvested];
+
+    // Add any dividend payments as interim cash flows
+    rows.forEach((row) => {
+      // Assume dividends are distributed to equity holders
+      cashFlowsForIRR.push(row.dividends || 0);
+    });
+
+    // Add exit value to the final year
+    if (cashFlowsForIRR.length > 1) {
+      cashFlowsForIRR[cashFlowsForIRR.length - 1] += Math.max(0, equityValue);
+    }
+
+    // Calculate IRR using Newton-Raphson method
+    irr = calculateIRR(cashFlowsForIRR);
   }
-  
-  // Calculate IRR using Newton-Raphson method
-  const irr = calculateIRR(cashFlowsForIRR) || 0;
   
   const entryEV = params.entryMultiple * rows[0].ebitda;
   const exitEV = enterpriseValue;

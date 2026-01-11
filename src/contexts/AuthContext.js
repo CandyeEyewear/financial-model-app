@@ -34,6 +34,11 @@ export const AuthProvider = ({ children }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminRole, setAdminRole] = useState(null); // 'super_admin', 'admin', 'support', 'billing'
 
+  // Team state
+  const [teams, setTeams] = useState({ ownedTeams: [], memberTeams: [] });
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [currentTeam, setCurrentTeam] = useState(null);
+
   // Plan limits for AI queries
   const PLAN_LIMITS = {
     free: 10,
@@ -157,6 +162,149 @@ export const AuthProvider = ({ children }) => {
   };
 
   /**
+   * Fetch user's teams and invites
+   */
+  const fetchTeamData = async (userId, userEmail) => {
+    try {
+      // Fetch owned teams
+      const { data: ownedTeams, error: ownedError } = await supabase
+        .from('teams')
+        .select(`
+          *,
+          team_members (
+            id,
+            user_id,
+            invited_email,
+            role,
+            status,
+            joined_at,
+            users:user_id (
+              id,
+              email,
+              name,
+              avatar_url
+            )
+          )
+        `)
+        .eq('owner_id', userId);
+
+      if (ownedError) {
+        log.error('Error fetching owned teams:', ownedError);
+      }
+
+      // Fetch teams where user is a member
+      const { data: memberTeams, error: memberError } = await supabase
+        .from('team_members')
+        .select(`
+          role,
+          status,
+          joined_at,
+          teams:team_id (
+            id,
+            name,
+            description,
+            owner_id,
+            max_members,
+            created_at
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .neq('role', 'owner');
+
+      if (memberError) {
+        log.error('Error fetching member teams:', memberError);
+      }
+
+      // Fetch pending invites
+      const { data: invites, error: inviteError } = await supabase
+        .from('team_members')
+        .select(`
+          id,
+          team_id,
+          role,
+          invited_at,
+          teams:team_id (
+            id,
+            name,
+            description,
+            owner_id
+          )
+        `)
+        .or(`user_id.eq.${userId},invited_email.eq.${userEmail}`)
+        .eq('status', 'pending');
+
+      if (inviteError) {
+        log.error('Error fetching invites:', inviteError);
+      }
+
+      // Calculate member counts for owned teams
+      const teamsWithCounts = (ownedTeams || []).map(team => ({
+        ...team,
+        member_count: team.team_members?.filter(m => m.status === 'active').length || 0,
+        isOwner: true
+      }));
+
+      // Transform member teams
+      const memberTeamsTransformed = (memberTeams || [])
+        .filter(m => m.teams)
+        .map(m => ({
+          ...m.teams,
+          myRole: m.role,
+          joined_at: m.joined_at,
+          isOwner: false
+        }));
+
+      setTeams({
+        ownedTeams: teamsWithCounts,
+        memberTeams: memberTeamsTransformed
+      });
+      setPendingInvites(invites || []);
+
+      log.info(`Loaded ${teamsWithCounts.length} owned teams, ${memberTeamsTransformed.length} member teams, ${(invites || []).length} pending invites`);
+    } catch (err) {
+      log.error('Team data fetch failed:', err);
+    }
+  };
+
+  /**
+   * Refresh team data
+   */
+  const refreshTeamData = async () => {
+    if (user && userProfile) {
+      await fetchTeamData(user.id, userProfile.email);
+    }
+  };
+
+  /**
+   * Check if user can manage teams (business or enterprise tier)
+   */
+  const canManageTeams = () => {
+    const tier = userProfile?.tier;
+    return tier === 'business' || tier === 'enterprise';
+  };
+
+  /**
+   * Get the number of teams the user can create
+   */
+  const getTeamLimit = () => {
+    const tier = userProfile?.tier;
+    if (tier === 'enterprise') return Infinity;
+    if (tier === 'business') return 1;
+    return 0;
+  };
+
+  /**
+   * Get max team members based on tier
+   */
+  const getMaxTeamMembers = () => {
+    const tier = userProfile?.tier;
+    if (tier === 'enterprise') return Infinity;
+    if (tier === 'business') return 5;
+    return 0;
+  };
+
+  /**
    * Sign up with email and password
    */
   const signUp = async (email, password, metadata = {}) => {
@@ -252,6 +400,10 @@ export const AuthProvider = ({ children }) => {
           fetchOrCreateProfile(currentSession.user).then(profile => {
             if (mounted) {
               setUserProfile(profile);
+              // Fetch team data after profile is loaded
+              if (profile?.email) {
+                fetchTeamData(currentSession.user.id, profile.email);
+              }
             }
           }).catch(err => {
             log.error('Profile fetch error during init', err);
@@ -287,6 +439,10 @@ export const AuthProvider = ({ children }) => {
         fetchOrCreateProfile(currentSession.user).then(profile => {
           if (mounted) {
             setUserProfile(profile);
+            // Fetch team data after profile is loaded
+            if (profile?.email) {
+              fetchTeamData(currentSession.user.id, profile.email);
+            }
           }
         }).catch(err => {
           log.error('Profile fetch error during auth change', err);
@@ -294,10 +450,13 @@ export const AuthProvider = ({ children }) => {
         // Check admin status using access token
         checkAdminStatus(currentSession.access_token);
       } else {
-        // User logged out - reset admin state
+        // User logged out - reset all state
         setUserProfile(null);
         setIsAdmin(false);
         setAdminRole(null);
+        setTeams({ ownedTeams: [], memberTeams: [] });
+        setPendingInvites([]);
+        setCurrentTeam(null);
       }
     });
 
@@ -326,6 +485,15 @@ export const AuthProvider = ({ children }) => {
     isAdmin,
     adminRole,
     isSuperAdmin: adminRole === 'super_admin',
+    // Team properties
+    teams,
+    pendingInvites,
+    currentTeam,
+    setCurrentTeam,
+    canManageTeams,
+    getTeamLimit,
+    getMaxTeamMembers,
+    refreshTeamData,
   };
 
   return (

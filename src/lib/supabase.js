@@ -234,7 +234,7 @@ export const db = {
       .select('*')
       .eq('id', modelId)
       .single();
-    
+
     if (fetchError) return { data: null, error: fetchError };
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -256,8 +256,349 @@ export const db = {
       })
       .select()
       .single();
-    
+
     return { data, error };
+  },
+
+  // ==========================================
+  // TEAM MANAGEMENT
+  // ==========================================
+
+  // Get user's teams (owned and member)
+  getUserTeams: async () => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return { data: null, error: new Error('Authenticated user not found') };
+    }
+
+    // Get teams where user is owner
+    const { data: ownedTeams, error: ownedError } = await supabase
+      .from('teams')
+      .select(`
+        *,
+        team_members (
+          id,
+          user_id,
+          invited_email,
+          role,
+          status,
+          joined_at,
+          users:user_id (
+            id,
+            email,
+            name,
+            avatar_url
+          )
+        )
+      `)
+      .eq('owner_id', userId);
+
+    if (ownedError) return { data: null, error: ownedError };
+
+    // Get teams where user is a member
+    const { data: memberTeams, error: memberError } = await supabase
+      .from('team_members')
+      .select(`
+        role,
+        status,
+        joined_at,
+        teams:team_id (
+          id,
+          name,
+          description,
+          owner_id,
+          max_members,
+          created_at
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .neq('role', 'owner');
+
+    if (memberError) return { data: null, error: memberError };
+
+    return {
+      data: {
+        ownedTeams: ownedTeams || [],
+        memberTeams: (memberTeams || []).map(m => ({ ...m.teams, myRole: m.role }))
+      },
+      error: null
+    };
+  },
+
+  // Get pending team invites for current user
+  getPendingInvites: async () => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return { data: null, error: new Error('Authenticated user not found') };
+    }
+
+    // Get user's email for email-based invites
+    const { data: profile } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    const { data, error } = await supabase
+      .from('team_members')
+      .select(`
+        id,
+        team_id,
+        role,
+        invited_at,
+        teams:team_id (
+          id,
+          name,
+          description,
+          owner_id
+        )
+      `)
+      .or(`user_id.eq.${userId},invited_email.eq.${profile?.email}`)
+      .eq('status', 'pending');
+
+    return { data, error };
+  },
+
+  // Get team members
+  getTeamMembers: async (teamId) => {
+    const { data, error } = await supabase
+      .from('team_members')
+      .select(`
+        id,
+        user_id,
+        invited_email,
+        role,
+        status,
+        invited_at,
+        joined_at,
+        users:user_id (
+          id,
+          email,
+          name,
+          avatar_url
+        )
+      `)
+      .eq('team_id', teamId)
+      .order('joined_at', { ascending: true, nullsFirst: false });
+
+    return { data, error };
+  },
+
+  // Create a new team
+  createTeam: async (name, description) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return { data: null, error: new Error('Authenticated user not found') };
+    }
+
+    // Get user profile to check tier
+    const { data: profile } = await supabase
+      .from('users')
+      .select('tier')
+      .eq('id', userId)
+      .single();
+
+    if (!profile || !['business', 'enterprise'].includes(profile.tier)) {
+      return { data: null, error: new Error('Team management requires Business or Enterprise subscription') };
+    }
+
+    const maxMembers = profile.tier === 'enterprise' ? 999999 : 5;
+
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .insert({
+        name,
+        description,
+        owner_id: userId,
+        max_members: maxMembers
+      })
+      .select()
+      .single();
+
+    if (teamError) return { data: null, error: teamError };
+
+    // Add owner as team member
+    await supabase
+      .from('team_members')
+      .insert({
+        team_id: team.id,
+        user_id: userId,
+        role: 'owner',
+        status: 'active',
+        joined_at: new Date().toISOString()
+      });
+
+    // Set as current team
+    await supabase
+      .from('users')
+      .update({ current_team_id: team.id })
+      .eq('id', userId);
+
+    return { data: team, error: null };
+  },
+
+  // Invite team member
+  inviteTeamMember: async (teamId, email, role = 'member') => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    // Check if user exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    const inviteData = {
+      team_id: teamId,
+      role,
+      status: 'pending',
+      invited_by: userData.user.id,
+      invited_at: new Date().toISOString()
+    };
+
+    if (existingUser) {
+      inviteData.user_id = existingUser.id;
+    } else {
+      inviteData.invited_email = email.toLowerCase();
+    }
+
+    const { data, error } = await supabase
+      .from('team_members')
+      .insert(inviteData)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Accept team invite
+  acceptTeamInvite: async (teamId) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    const userId = userData?.user?.id;
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    const { data, error } = await supabase
+      .from('team_members')
+      .update({
+        status: 'active',
+        user_id: userId,
+        invited_email: null,
+        joined_at: new Date().toISOString()
+      })
+      .or(`user_id.eq.${userId},invited_email.eq.${profile?.email}`)
+      .eq('team_id', teamId)
+      .eq('status', 'pending')
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Decline team invite
+  declineTeamInvite: async (teamId) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { data: null, error: userError };
+
+    const userId = userData?.user?.id;
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    const { error } = await supabase
+      .from('team_members')
+      .update({ status: 'declined' })
+      .or(`user_id.eq.${userId},invited_email.eq.${profile?.email}`)
+      .eq('team_id', teamId)
+      .eq('status', 'pending');
+
+    return { error };
+  },
+
+  // Remove team member
+  removeTeamMember: async (memberId) => {
+    const { error } = await supabase
+      .from('team_members')
+      .update({ status: 'removed' })
+      .eq('id', memberId);
+
+    return { error };
+  },
+
+  // Leave team
+  leaveTeam: async (teamId) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { error: userError };
+
+    const { error } = await supabase
+      .from('team_members')
+      .update({ status: 'removed' })
+      .eq('team_id', teamId)
+      .eq('user_id', userData.user.id);
+
+    // Clear current_team_id
+    await supabase
+      .from('users')
+      .update({ current_team_id: null })
+      .eq('id', userData.user.id)
+      .eq('current_team_id', teamId);
+
+    return { error };
+  },
+
+  // Update member role
+  updateMemberRole: async (memberId, role) => {
+    const { data, error } = await supabase
+      .from('team_members')
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', memberId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Set current team
+  setCurrentTeam: async (teamId) => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { error: userError };
+
+    const { error } = await supabase
+      .from('users')
+      .update({ current_team_id: teamId })
+      .eq('id', userData.user.id);
+
+    return { error };
+  },
+
+  // Delete team
+  deleteTeam: async (teamId) => {
+    const { error } = await supabase
+      .from('teams')
+      .delete()
+      .eq('id', teamId);
+
+    return { error };
   }
 };
 

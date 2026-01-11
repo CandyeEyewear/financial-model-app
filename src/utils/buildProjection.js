@@ -90,7 +90,8 @@ function buildAmortizationSchedule(params) {
   }
 
   // Determine the appropriate rate based on what debt exists
-  const hasOpeningDebt = (params.openingDebt || 0) > 0;
+  // CRITICAL: Respect hasExistingDebt toggle for rate selection too
+  const hasOpeningDebt = (params.hasExistingDebt === true) && (params.openingDebt || 0) > 0;
   const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
 
   let annualRate;
@@ -100,19 +101,25 @@ function buildAmortizationSchedule(params) {
   } else if (!hasOpeningDebt && hasNewFacility) {
     // Only new facility - use proposed pricing
     annualRate = params.proposedPricing || params.interestRate || 0;
+  } else if (hasOpeningDebt && hasNewFacility) {
+    // Both exist - use blended rate or fall back to general interestRate
+    annualRate = params.interestRate || params.proposedPricing || 0;
   } else {
-    // Both or neither - use the general interestRate (blended scenarios handled by multi-tranche)
+    // Neither - use the general interestRate
     annualRate = params.interestRate || 0;
   }
-  const tenorYears = params.debtTenorYears || 5;
-  const interestOnlyYears = params.interestOnlyYears || 0;
-  
-  // Get amortization type (default to 'amortizing')
-  const amortizationType = params.openingDebtAmortizationType || 'amortizing';
+  const tenorYears = params.debtTenorYears || params.proposedTenor || 5;
+  const interestOnlyYears = params.interestOnlyYears || params.interestOnlyPeriod || 0;
+
+  // Get amortization type - prefer new facility type when toggle is OFF
+  const amortizationType = hasOpeningDebt
+    ? (params.openingDebtAmortizationType || 'amortizing')
+    : (params.facilityAmortizationType || params.amortizationType || 'amortizing');
   
   // Calculate maturity year relative to start year
+  // CRITICAL: Only use openingDebtMaturityDate when existing debt toggle is ON
   const startYear = params.startYear;
-  const maturityYear = params.openingDebtMaturityDate 
+  const maturityYear = (hasOpeningDebt && params.openingDebtMaturityDate)
     ? new Date(params.openingDebtMaturityDate).getFullYear()
     : startYear + tenorYears;
   
@@ -300,6 +307,18 @@ function buildMultiTrancheSchedule(params) {
  * @returns {Object} Complete financial projection
  */
 export function buildProjection(params) {
+  // ============================================================================
+  // DEBUG: Log debt-related params
+  // ============================================================================
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('buildProjection CALLED with debt params:');
+  console.log('  hasExistingDebt toggle:', params.hasExistingDebt);
+  console.log('  openingDebt:', params.openingDebt);
+  console.log('  requestedLoanAmount:', params.requestedLoanAmount);
+  console.log('  proposedPricing:', params.proposedPricing);
+  console.log('  proposedTenor:', params.proposedTenor);
+  console.log('═══════════════════════════════════════════════════════════');
+
   // ============================================================================
   // PARAMETER VALIDATION
   // ============================================================================

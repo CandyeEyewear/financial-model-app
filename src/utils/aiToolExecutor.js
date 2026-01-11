@@ -5,11 +5,12 @@
 
 import { currencyFmt, currencyFmtMM, pctFmt, numFmt } from './formatters';
 import {
+  calculateAllDebtMetrics,
   getEffectiveExistingDebt,
   getNewFacilityAmount,
-  getTotalDebtFromParams as getTotalDebtHelper,
+  getTotalDebtFromParams,
   getDebtSummary
-} from './debtHelpers';
+} from './debtCalculationService';
 
 /**
  * Parse monetary value from various formats
@@ -1433,11 +1434,11 @@ ${recommendationSection}`;
 
 /**
  * Helper: Get total debt from all sources
- * Uses centralized toggle-aware helper from debtHelpers.js
+ * Uses centralized toggle-aware helper from debtCalculationService.js
  */
 function getTotalDebt(params) {
   // Use the centralized toggle-aware helper
-  return getTotalDebtHelper(params);
+  return getTotalDebtFromParams(params);
 }
 
 /**

@@ -308,6 +308,18 @@ function buildMultiTrancheSchedule(params) {
  */
 export function buildProjection(params) {
   // ============================================================================
+  // DEBUG: Log debt-related params
+  // ============================================================================
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('buildProjection CALLED with debt params:');
+  console.log('  hasExistingDebt toggle:', params.hasExistingDebt);
+  console.log('  openingDebt:', params.openingDebt);
+  console.log('  requestedLoanAmount:', params.requestedLoanAmount);
+  console.log('  proposedPricing:', params.proposedPricing);
+  console.log('  proposedTenor:', params.proposedTenor);
+  console.log('═══════════════════════════════════════════════════════════');
+
+  // ============================================================================
   // PARAMETER VALIDATION
   // ============================================================================
   

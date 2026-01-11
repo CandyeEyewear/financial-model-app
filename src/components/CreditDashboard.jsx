@@ -5,13 +5,16 @@ import { Button } from "./Button";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { CapitalStructurePanel } from './CapitalStructurePanel';
 import { generateAICapitalStructureRecommendations } from '../utils/aiCapitalStructureAdvisor';
-// Import toggle-aware debt helpers
+// Import centralized debt calculation service
 import {
+  calculateAllDebtMetrics,
   getEffectiveExistingDebt,
   getNewFacilityAmount,
   getTotalDebtFromParams,
   hasAnyDebt as hasAnyDebtHelper
-} from '../utils/debtHelpers';
+} from '../utils/debtCalculationService';
+// Import hook for memoized debt calculations
+import { useDebtCalculations } from '../hooks/useDebtCalculations';
 
 import {
   CheckCircle,
@@ -796,9 +799,45 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
     }));
   }, [baseProj, params.startYear]);
 
-  // Multi-tranche detection
-  const hasMultipleTranches = baseProj?.hasMultipleTranches || false;
-  const multiTrancheInfo = baseProj?.multiTrancheInfo;
+  // Multi-tranche detection - MUST respect hasExistingDebt toggle
+  // If toggle is OFF, filter out existing debt tranches from the display
+  const rawMultiTrancheInfo = baseProj?.multiTrancheInfo;
+  const multiTrancheInfo = useMemo(() => {
+    if (!rawMultiTrancheInfo) return null;
+
+    // If existing debt toggle is ON, show all tranches
+    if (params.hasExistingDebt === true) {
+      return rawMultiTrancheInfo;
+    }
+
+    // Toggle is OFF - filter out existing debt tranches
+    const filteredTranches = (rawMultiTrancheInfo.tranches || []).filter(t =>
+      !t.isOpeningDebt &&
+      !t.name?.toLowerCase().includes('existing') &&
+      !t.name?.toLowerCase().includes('opening')
+    );
+
+    // If only one tranche remains (new facility), don't show multi-tranche section
+    if (filteredTranches.length <= 1) {
+      return null;
+    }
+
+    // Recalculate totals for filtered tranches
+    const totalDebt = filteredTranches.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const blendedRate = totalDebt > 0
+      ? filteredTranches.reduce((sum, t) => sum + (t.amount || 0) * (t.rate || 0), 0) / totalDebt
+      : 0;
+
+    return {
+      ...rawMultiTrancheInfo,
+      tranches: filteredTranches,
+      totalTranches: filteredTranches.length,
+      totalDebt,
+      blendedRate
+    };
+  }, [rawMultiTrancheInfo, params.hasExistingDebt]);
+
+  const hasMultipleTranches = multiTrancheInfo !== null && (multiTrancheInfo.totalTranches || 0) > 1;
 
   // AI Capital Structure Generation - uses hasAnyDebt instead of old hasExistingDebt
   useEffect(() => {
@@ -1197,7 +1236,8 @@ export function CreditDashboard({ params, projections, ccy = "JMD" }) {
           );
         })()}
 
-        {params.openingDebtMaturityDate && params.issueDate && (
+        {/* Only show refinancing warning if existing debt toggle is ON */}
+        {params.hasExistingDebt === true && params.openingDebtMaturityDate && params.issueDate && (
           <OpeningDebtWarning
             maturityDate={params.openingDebtMaturityDate}
             newFacilityEndDate={(() => {

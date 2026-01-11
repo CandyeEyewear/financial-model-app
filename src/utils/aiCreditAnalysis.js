@@ -64,11 +64,10 @@ export async function generateCreditInsights(projection, params, accessToken) {
     },
     industry: params.industry || 'General',
     facilityType: params.facilityType || params.dealStructure,
-    // Fixed: Check all debt sources
+    // Fixed: Respect hasExistingDebt toggle in fallback calculation
     totalDebt: projection.rows?.[0]?.grossDebt ||
-               params.openingDebt ||
-               params.existingDebtAmount ||
-               (params.openingDebt || 0) + (params.requestedLoanAmount || 0),
+               (params.hasExistingDebt === true ? (params.openingDebt || params.existingDebtAmount || 0) : 0) +
+               (params.requestedLoanAmount || 0),
     baseRevenue: params.baseRevenue
   };
 

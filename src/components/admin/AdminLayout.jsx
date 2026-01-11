@@ -41,7 +41,7 @@ export default function AdminLayout() {
         .from('admin_users')
         .select('role, permissions')
         .eq('user_id', user.id)
-        .eq('is_active', true)
+        .is('is_active', true)
         .single();
 
       if (error || !data) {

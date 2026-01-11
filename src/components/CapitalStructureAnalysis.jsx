@@ -42,12 +42,14 @@ import {
 } from "recharts";
 
 // Import utilities
-import { 
-  calculateDebtCapacity, 
+import {
+  calculateDebtCapacity,
   generateAlternativeStructures,
   calculateSensitivity,
   getIndustryBenchmarks
 } from "../utils/debtCapacityAnalyzer";
+import { calculateAllDebtMetrics } from "../utils/debtCalculationService";
+import { useDebtCalculations, useHasDebt } from "../hooks/useDebtCalculations";
 import { generateAICapitalStructureRecommendations } from "../utils/aiCapitalStructureAdvisor";
 import { AITextRenderer, AITextRendererCompact } from "./AITextRenderer";
 

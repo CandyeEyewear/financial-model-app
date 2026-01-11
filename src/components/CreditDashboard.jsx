@@ -5,13 +5,16 @@ import { Button } from "./Button";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { CapitalStructurePanel } from './CapitalStructurePanel';
 import { generateAICapitalStructureRecommendations } from '../utils/aiCapitalStructureAdvisor';
-// Import toggle-aware debt helpers
+// Import centralized debt calculation service
 import {
+  calculateAllDebtMetrics,
   getEffectiveExistingDebt,
   getNewFacilityAmount,
   getTotalDebtFromParams,
   hasAnyDebt as hasAnyDebtHelper
-} from '../utils/debtHelpers';
+} from '../utils/debtCalculationService';
+// Import hook for memoized debt calculations
+import { useDebtCalculations } from '../hooks/useDebtCalculations';
 
 import {
   CheckCircle,

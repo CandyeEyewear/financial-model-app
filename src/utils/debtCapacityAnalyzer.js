@@ -2,10 +2,11 @@
 // Lender-focused debt capacity and structure optimization
 
 import {
+  calculateAllDebtMetrics,
   getEffectiveExistingDebt,
   getNewFacilityAmount,
   getTotalDebtFromParams
-} from './debtHelpers';
+} from './debtCalculationService';
 
 /**
  * Use appropriate rate based on context

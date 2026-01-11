@@ -510,8 +510,15 @@ Use Jamaican Dollar (J$) formatting.`;
 
     setFollowThroughDepth(prev => prev + 1);
 
-    // Small delay to let state update (if params changed)
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Check if any parameter updates happened - they need more time to propagate
+    const hasParamUpdate = toolResults.some(r => r.tool === 'update_model_parameter');
+    const hasStressTest = toolResults.some(r => r.tool === 'run_stress_test');
+
+    // Delay to let state update - longer for param updates and stress tests
+    // Using 1500ms to be extra safe for React state propagation
+    const delay = (hasParamUpdate || hasStressTest) ? 1500 : 300;
+    console.log(`Waiting ${delay}ms for state updates before follow-through...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
 
     setIsLoading(true);
 
@@ -519,12 +526,37 @@ Use Jamaican Dollar (J$) formatting.`;
       // Refresh model data summary
       const freshSummary = generateModelDataSummary ? generateModelDataSummary(modelDataRef.current) : '';
 
+      // Build explicit update context if parameters were changed
+      let updateContext = '';
+      if (hasParamUpdate) {
+        const paramUpdates = toolResults
+          .filter(r => r.tool === 'update_model_parameter' && r.data)
+          .map(r => {
+            console.log(`Follow-through: Parameter ${r.data.paramName} should now be ${r.data.newValue}`);
+            return `- ${r.data.paramName} was updated to ${r.data.newValue}`;
+          })
+          .join('\n');
+
+        // Log current model data for debugging
+        if (modelDataRef.current?.params) {
+          console.log('Follow-through modelData.params:', {
+            requestedLoanAmount: modelDataRef.current.params.requestedLoanAmount,
+            openingDebt: modelDataRef.current.params.openingDebt,
+            existingDebtAmount: modelDataRef.current.params.existingDebtAmount
+          });
+        }
+
+        if (paramUpdates) {
+          updateContext = `\n\nPARAMETERS JUST UPDATED:\n${paramUpdates}\n\nIMPORTANT: These parameter changes should now be reflected in the model data below. Use the NEW values in your analysis.`;
+        }
+      }
+
       // Build the follow-through prompt
       const followThroughMessage = `CONTEXT: The user originally asked: "${originalQuery}"
 
 I just executed tool(s) and need to provide my analysis.
 
-${followThroughPrompts.join('\n')}
+${followThroughPrompts.join('\n')}${updateContext}
 
 CURRENT MODEL DATA:
 ${freshSummary}

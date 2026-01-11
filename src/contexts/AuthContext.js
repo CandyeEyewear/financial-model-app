@@ -3,7 +3,7 @@
  * Handles user authentication, session management, and usage tracking
  */
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase, auth, db } from '../lib/supabase';
+import { auth, db } from '../lib/supabase';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AuthContext');
@@ -127,21 +127,29 @@ export const AuthProvider = ({ children }) => {
   };
 
   /**
-   * Check if user is admin
+   * Check if user is admin via API endpoint
+   * Uses server-side query to bypass RLS restrictions
    */
-  const checkAdminStatus = async (userId) => {
+  const checkAdminStatus = async (accessToken) => {
     try {
-      const { data, error } = await supabase
-        .from('admin_users')
-        .select('role')
-        .eq('user_id', userId)
-        .is('is_active', true)
-        .single();
+      const response = await fetch('/api/auth/admin-status', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
-      if (data && !error) {
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+
+      const { isAdmin: adminStatus, role } = await response.json();
+
+      if (adminStatus) {
         setIsAdmin(true);
-        setAdminRole(data.role);
-        log.info(`Admin access granted: ${data.role}`);
+        setAdminRole(role);
+        log.info(`Admin access granted: ${role}`);
       } else {
         setIsAdmin(false);
         setAdminRole(null);
@@ -400,8 +408,8 @@ export const AuthProvider = ({ children }) => {
           }).catch(err => {
             log.error('Profile fetch error during init', err);
           });
-          // Check admin status in background
-          checkAdminStatus(currentSession.user.id);
+          // Check admin status in background using access token
+          checkAdminStatus(currentSession.access_token);
         } else if (mounted) {
           setIsLoading(false);
         }
@@ -439,8 +447,8 @@ export const AuthProvider = ({ children }) => {
         }).catch(err => {
           log.error('Profile fetch error during auth change', err);
         });
-        // Check admin status
-        checkAdminStatus(currentSession.user.id);
+        // Check admin status using access token
+        checkAdminStatus(currentSession.access_token);
       } else {
         // User logged out - reset all state
         setUserProfile(null);

@@ -83,7 +83,8 @@ const asM = (v) => (Number.isFinite(v) ? (v / 1_000_000) : 0);
  */
 function detectDebtPresence(params, projections) {
   // Use toggle-aware helper from debtHelpers
-  return hasAnyDebtHelper(projections, params);
+  // FIX: hasAnyDebtHelper expects (params) not (projections, params)
+  return hasAnyDebtHelper(params);
 }
 
 /**

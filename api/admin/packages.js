@@ -51,18 +51,32 @@ async function getPackages(req, res) {
 
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      // Check if table doesn't exist
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        console.error('subscription_packages table does not exist. Please run migrations.');
+        return res.status(200).json({
+          success: true,
+          data: [],
+          warning: 'Packages table not found. Please run database migrations.'
+        });
+      }
+      throw error;
+    }
 
     // Get subscriber count for each tier
-    const { data: users } = await supabase
+    const { data: users, error: usersError } = await supabase
       .from('users')
       .select('tier');
 
+    // Handle users table gracefully
     const tierCounts = {};
-    (users || []).forEach(u => {
-      const tier = u.tier || 'free';
-      tierCounts[tier] = (tierCounts[tier] || 0) + 1;
-    });
+    if (!usersError && users) {
+      users.forEach(u => {
+        const tier = u.tier || 'free';
+        tierCounts[tier] = (tierCounts[tier] || 0) + 1;
+      });
+    }
 
     // Add subscriber count to each package
     const packagesWithCounts = (data || []).map(pkg => ({
@@ -74,7 +88,10 @@ async function getPackages(req, res) {
 
   } catch (error) {
     console.error('Get packages error:', error);
-    res.status(500).json({ error: 'Failed to fetch packages' });
+    res.status(500).json({
+      error: 'Failed to fetch packages',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 }
 

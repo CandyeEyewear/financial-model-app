@@ -17,8 +17,10 @@ export default function AdminPackages() {
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [warning, setWarning] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingPackage, setEditingPackage] = useState(null);
+  const [showInactive, setShowInactive] = useState(true);
   const [formData, setFormData] = useState({
     tier_id: '',
     name: '',
@@ -44,21 +46,35 @@ export default function AdminPackages() {
 
   useEffect(() => {
     fetchPackages();
-  }, []);
+  }, [showInactive]);
 
   const fetchPackages = async () => {
     setLoading(true);
+    setError(null);
+    setWarning(null);
     try {
-      const response = await fetch('/api/admin/packages', {
+      const url = showInactive
+        ? '/api/admin/packages?include_inactive=true'
+        : '/api/admin/packages';
+
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${session?.access_token}`
         }
       });
 
-      if (!response.ok) throw new Error('Failed to fetch packages');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch packages');
+      }
 
       const result = await response.json();
       setPackages(result.data || []);
+
+      // Show warning if returned from API
+      if (result.warning) {
+        setWarning(result.warning);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -194,13 +210,24 @@ export default function AdminPackages() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Packages</h1>
           <p className="text-gray-500 dark:text-gray-400">Manage subscription packages and pricing</p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Package
-        </button>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600"
+            />
+            Show inactive
+          </label>
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Package
+          </button>
+        </div>
       </div>
 
       {/* Error Alert */}
@@ -214,10 +241,36 @@ export default function AdminPackages() {
         </div>
       )}
 
+      {/* Warning Alert */}
+      {warning && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-500" />
+          <span className="text-yellow-700 dark:text-yellow-400">{warning}</span>
+          <button onClick={() => setWarning(null)} className="ml-auto">
+            <X className="w-4 h-4 text-yellow-500" />
+          </button>
+        </div>
+      )}
+
       {/* Packages Grid */}
       {loading ? (
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      ) : packages.length === 0 ? (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-12 text-center">
+          <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No packages found</h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-6">
+            Create subscription packages to manage your pricing tiers.
+          </p>
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create First Package
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -249,7 +302,12 @@ export default function AdminPackages() {
               </div>
 
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{pkg.name}</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{pkg.tier_id}</p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">{pkg.tier_id}</p>
+                <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
+                  {pkg.subscriber_count || 0} users
+                </span>
+              </div>
 
               <div className="mb-4">
                 <p className="text-3xl font-bold text-gray-900 dark:text-white">

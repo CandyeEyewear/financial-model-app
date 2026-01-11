@@ -37,6 +37,7 @@ function download(filename, text) {
 
 export default function App({ buildProjection, applyShocks }) {
   const [ccy, setCcy] = useState("JMD");
+  const [currentDealId, setCurrentDealId] = useState(null);
   const [params, setParams] = useState({
     startYear: new Date().getFullYear(),
     years: 5,
@@ -60,6 +61,7 @@ export default function App({ buildProjection, applyShocks }) {
     equityContribution: 50_000_000,
     entryMultiple: 8.0,
     currency: "JMD",
+    dealName: "",
   });
 
   const [customShocks, setCustomShocks] = useState({
@@ -125,6 +127,17 @@ export default function App({ buildProjection, applyShocks }) {
       setShowInputs(true); // Show inputs so user can see what was applied
     }
   };
+
+  // Generate deal ID for chat history persistence
+  // Use saved model ID if available, otherwise use default
+  const dealId = useMemo(() => {
+    if (currentDealId) {
+      return currentDealId;
+    }
+    // Use a default ID for unsaved models
+    // In a real app, this would be set when loading/saving a model
+    return 'default-model';
+  }, [currentDealId]);
 
   // Build projections (memoized)
   const projections = useMemo(() => {
@@ -382,6 +395,7 @@ export default function App({ buildProjection, applyShocks }) {
             <Card className="h-[calc(100vh-280px)] sticky top-4">
               <ChatAssistant
                 modelData={modelData}
+                dealId={dealId}
                 onParamUpdate={handleParamUpdate}
                 onRunStressTest={handleRunStressTest}
                 onNavigateToTab={handleNavigateToTab}

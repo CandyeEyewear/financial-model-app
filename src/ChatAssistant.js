@@ -13,6 +13,11 @@ import {
   Send, Bot, User, AlertCircle, RefreshCw, Trash2,
   Download, Copy, Check, Sparkles, TrendingUp, Wrench
 } from "lucide-react";
+import {
+  loadChatHistory,
+  saveMessage,
+  clearChatHistory
+} from "./services/chatHistoryService";
 
 // Color palette
 const COLORS = {
@@ -195,12 +200,14 @@ const SUGGESTED_PROMPTS = [
   }
 ];
 
-function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateToTab }) {
+function ChatAssistant({ modelData, dealId, onParamUpdate, onRunStressTest, onNavigateToTab }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -210,6 +217,28 @@ function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateTo
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Load chat history when dealId changes
+  useEffect(() => {
+    async function loadHistory() {
+      if (!dealId) {
+        setIsLoadingHistory(false);
+        return;
+      }
+
+      setIsLoadingHistory(true);
+      try {
+        const history = await loadChatHistory(dealId);
+        setMessages(history);
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    }
+
+    loadHistory();
+  }, [dealId]);
 
   // Generate comprehensive model summary
   const modelSummary = useMemo(() => {
@@ -223,6 +252,30 @@ function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateTo
   const hasModelData = useMemo(() => {
     return modelData && modelData.projections && modelData.params;
   }, [modelData]);
+
+  // Helper to add and save a message
+  const addMessage = async (message) => {
+    // Add to local state immediately for responsiveness
+    setMessages(prev => [...prev, message]);
+
+    // Save to database in background (only if dealId exists)
+    if (dealId) {
+      await saveMessage(dealId, message);
+    }
+  };
+
+  // Handle clearing chat history
+  const handleClearHistory = async () => {
+    if (!dealId) return;
+
+    const success = await clearChatHistory(dealId);
+    if (success) {
+      setMessages([]);
+      setShowClearConfirm(false);
+    } else {
+      setError('Failed to clear chat history');
+    }
+  };
 
   // Handle sending messages
   const handleSend = async (customPrompt = null) => {
@@ -243,7 +296,7 @@ function ChatAssistant({ modelData, onParamUpdate, onRunStressTest, onNavigateTo
     }
 
     const userMessage = { role: "user", content: messageText };
-    setMessages(prev => [...prev, userMessage]);
+    await addMessage(userMessage);
     setInput("");
     setIsLoading(true);
     setError(null);
@@ -376,34 +429,34 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
           }
         });
 
-        setMessages(prev => [...prev, {
+        await addMessage({
           role: "assistant",
           content: finalMessage.trim(),
           timestamp: new Date().toISOString(),
           usage: data.userUsage,
           toolResults
-        }]);
+        });
       } else {
         // Normal response without tool calls
         const aiMessage = data.choices?.[0]?.message?.content || "No response from AI service.";
 
-        setMessages(prev => [...prev, {
+        await addMessage({
           role: "assistant",
           content: aiMessage,
           timestamp: new Date().toISOString(),
           usage: data.userUsage
-        }]);
+        });
       }
     } catch (error) {
       console.error("Chat API Error:", error);
       setError(error.message || "Failed to get response. Please try again.");
 
       // Add error message to chat
-      setMessages(prev => [...prev, {
+      await addMessage({
         role: "assistant",
         content: "Sorry, I hit a snag trying to process that. Mind trying again?",
         isError: true
-      }]);
+      });
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
@@ -492,9 +545,9 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
                   <Download className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={handleClear}
+                  onClick={() => setShowClearConfirm(true)}
                   className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Clear conversation"
+                  title="Clear chat history"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -518,8 +571,25 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
-        {messages.length === 0 && (
+        {isLoadingHistory ? (
+          <div className="flex items-center justify-center p-8">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />
+              <span className="text-slate-600">Loading chat history...</span>
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="space-y-4">
+            {!dealId && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-amber-700">
+                    Chat history is not being saved. Save this deal to preserve chat across sessions.
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="text-center p-6">
               <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <Sparkles className="w-8 h-8 text-white" />
@@ -564,9 +634,9 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
               </div>
             )}
           </div>
-        )}
-        
-        {messages.map((m, i) => (
+        ) : (
+          <>
+            {messages.map((m, i) => (
           <div 
             key={i} 
             className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
@@ -621,10 +691,10 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
               )}
             </div>
           </div>
-        ))}
-        
-        {/* Loading indicator */}
-        {isLoading && (
+        )))}
+
+            {/* Loading indicator */}
+            {isLoading && (
           <div className="flex justify-start">
             <div className="max-w-[85%]">
               <div className="flex items-center gap-2 mb-1 ml-1">
@@ -643,8 +713,10 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
               </div>
             </div>
           </div>
+            )}
+          </>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -703,6 +775,39 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
           </div>
         )}
       </div>
+
+      {/* Clear confirmation modal */}
+      {showClearConfirm && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800 mb-1">Clear Chat History?</h3>
+                <p className="text-sm text-slate-600">
+                  This will permanently delete all messages for this deal. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearHistory}
+                className="px-4 py-2 text-sm bg-red-500 text-white hover:bg-red-600 rounded-lg transition-colors font-medium shadow-md"
+              >
+                Clear History
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

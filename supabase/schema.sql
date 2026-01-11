@@ -239,6 +239,63 @@ CREATE POLICY "Users can view own usage logs" ON public.ai_usage_logs
 CREATE POLICY "Service can insert usage logs" ON public.ai_usage_logs
   FOR INSERT WITH CHECK (true);
 
+-- ==========================================
+-- AI CHAT HISTORY TABLE
+-- ==========================================
+
+-- Create ai_chat_messages table for persistent chat history
+CREATE TABLE IF NOT EXISTS public.ai_chat_messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  deal_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  tool_results JSONB DEFAULT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user_deal ON public.ai_chat_messages(user_id, deal_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON public.ai_chat_messages(created_at DESC);
+
+-- Enable Row Level Security
+ALTER TABLE public.ai_chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can only see their own messages
+CREATE POLICY "Users can view own messages" ON public.ai_chat_messages
+  FOR SELECT USING (auth.uid() = user_id);
+
+-- Policy: Users can insert their own messages
+CREATE POLICY "Users can insert own messages" ON public.ai_chat_messages
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Policy: Users can delete their own messages
+CREATE POLICY "Users can delete own messages" ON public.ai_chat_messages
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Function to enforce 50 message limit per deal
+CREATE OR REPLACE FUNCTION public.enforce_chat_message_limit()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Delete oldest messages if count exceeds 50 for this user/deal
+  DELETE FROM public.ai_chat_messages
+  WHERE id IN (
+    SELECT id FROM public.ai_chat_messages
+    WHERE user_id = NEW.user_id AND deal_id = NEW.deal_id
+    ORDER BY created_at DESC
+    OFFSET 50
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to run after each insert
+DROP TRIGGER IF EXISTS limit_chat_messages ON public.ai_chat_messages;
+CREATE TRIGGER limit_chat_messages
+  AFTER INSERT ON public.ai_chat_messages
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_chat_message_limit();
+
 -- Grant permissions
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;

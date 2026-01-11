@@ -16,6 +16,17 @@ import PricingPage from './components/PricingPage';
 import { Button } from './components/Button';
 import { MessageCircle, X, LogOut, User, Loader2, RefreshCw } from 'lucide-react';
 
+// Admin imports
+import AdminLayout from './components/admin/AdminLayout';
+import AdminDashboard from './pages/admin/Dashboard';
+import AdminUsers from './pages/admin/Users';
+import AdminSubscriptions from './pages/admin/Subscriptions';
+import AdminPackages from './pages/admin/Packages';
+import AdminRevenue from './pages/admin/Revenue';
+import AdminCosts from './pages/admin/Costs';
+import AdminSettings from './pages/admin/Settings';
+import AdminAuditLogs from './pages/admin/AuditLogs';
+
 /**
  * Main App Component - Handles routing and auth state
  */
@@ -79,6 +90,21 @@ function App() {
           isAuthenticated ? <PaymentCancelled /> : <Navigate to="/auth" replace />
         } />
         <Route path="/pricing" element={<PricingPage />} />
+
+        {/* Admin Routes */}
+        <Route path="/admin" element={
+          isAuthenticated ? <AdminLayout /> : <Navigate to="/auth" replace />
+        }>
+          <Route index element={<AdminDashboard />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="subscriptions" element={<AdminSubscriptions />} />
+          <Route path="packages" element={<AdminPackages />} />
+          <Route path="revenue" element={<AdminRevenue />} />
+          <Route path="costs" element={<AdminCosts />} />
+          <Route path="settings" element={<AdminSettings />} />
+          <Route path="audit-logs" element={<AdminAuditLogs />} />
+        </Route>
+
         <Route path="/" element={
           isAuthenticated ? <ProtectedRoute /> : <Navigate to="/auth" replace />
         } />

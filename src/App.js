@@ -2,7 +2,7 @@
  * FinSight - Financial Modeling Platform
  * Main Application Component
  */
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import FinancialModelAndStressTester from './FinancialModelAndStressTester';

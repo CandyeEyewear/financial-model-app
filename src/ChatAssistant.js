@@ -515,9 +515,9 @@ Use Jamaican Dollar (J$) formatting.`;
     const hasStressTest = toolResults.some(r => r.tool === 'run_stress_test');
 
     // Delay to let state update - longer for param updates and stress tests
-    // Using 1500ms to be extra safe for React state propagation
-    const delay = (hasParamUpdate || hasStressTest) ? 1500 : 300;
-    console.log(`Waiting ${delay}ms for state updates before follow-through...`);
+    // Using 2500ms to ensure projections fully recalculate
+    const delay = (hasParamUpdate || hasStressTest) ? 2500 : 300;
+    console.log(`Waiting ${delay}ms for state updates and projection recalculation before follow-through...`);
     await new Promise(resolve => setTimeout(resolve, delay));
 
     setIsLoading(true);
@@ -537,17 +537,37 @@ Use Jamaican Dollar (J$) formatting.`;
           })
           .join('\n');
 
+        // Calculate and log EXPECTED total debt explicitly
+        const currentParams = modelDataRef.current?.params || {};
+        const existingDebt = currentParams.openingDebt || currentParams.existingDebtAmount || 0;
+        const newFacility = currentParams.requestedLoanAmount || 0;
+        const totalDebt = existingDebt + newFacility;
+
         // Log current model data for debugging
-        if (modelDataRef.current?.params) {
-          console.log('Follow-through modelData.params:', {
-            requestedLoanAmount: modelDataRef.current.params.requestedLoanAmount,
-            openingDebt: modelDataRef.current.params.openingDebt,
-            existingDebtAmount: modelDataRef.current.params.existingDebtAmount
+        console.log('Follow-through modelData.params:', {
+          requestedLoanAmount: currentParams.requestedLoanAmount,
+          openingDebt: currentParams.openingDebt,
+          existingDebtAmount: currentParams.existingDebtAmount,
+          CALCULATED_TOTAL_DEBT: totalDebt
+        });
+
+        // Log what's in projections
+        if (modelDataRef.current?.projections) {
+          console.log('Follow-through projections:', {
+            finalDebt: modelDataRef.current.projections.base?.finalDebt,
+            multiTrancheTotal: modelDataRef.current.projections.base?.multiTrancheInfo?.totalDebt
           });
         }
 
         if (paramUpdates) {
-          updateContext = `\n\nPARAMETERS JUST UPDATED:\n${paramUpdates}\n\nIMPORTANT: These parameter changes should now be reflected in the model data below. Use the NEW values in your analysis.`;
+          updateContext = `\n\nPARAMETERS JUST UPDATED:\n${paramUpdates}
+
+DEBT BREAKDOWN (use these exact figures):
+- Existing Debt: J$${(existingDebt / 1000000).toFixed(1)}M
+- New Facility: J$${(newFacility / 1000000).toFixed(1)}M
+- TOTAL DEBT: J$${(totalDebt / 1000000).toFixed(1)}M
+
+CRITICAL: When analyzing the deal, use BOTH the existing debt (J$${(existingDebt / 1000000).toFixed(1)}M) AND the new facility (J$${(newFacility / 1000000).toFixed(1)}M). The total debt is J$${(totalDebt / 1000000).toFixed(1)}M. Do NOT use only one of these values - always consider the complete debt structure.`;
         }
       }
 

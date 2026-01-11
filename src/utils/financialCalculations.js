@@ -5,6 +5,22 @@
  * ============================================================================
  */
 
+// Import and re-export shared math utilities from centralized module
+import {
+  safeDivide as _safeDivide,
+  clamp as _clamp,
+  roundTo as _roundTo,
+  isValidNumber as _isValidNumber,
+  safeNumber as _safeNumber
+} from './mathUtils';
+
+// Re-export for backward compatibility
+export const safeDivide = _safeDivide;
+export const clamp = _clamp;
+export const roundTo = _roundTo;
+export const isValidNumber = _isValidNumber;
+export const safeNumber = _safeNumber;
+
 /**
  * Calculate Internal Rate of Return (IRR) using Newton-Raphson method
  * This is the industry-standard approach for IRR calculation
@@ -438,67 +454,5 @@ export function calculateCAGR(beginningValue, endingValue, years) {
   return Math.pow(endingValue / beginningValue, 1 / years) - 1;
 }
 
-/**
- * Safe division helper
- * 
- * @param {number} numerator 
- * @param {number} denominator 
- * @param {number} fallback - Value to return if division is invalid
- * @returns {number}
- */
-export function safeDivide(numerator, denominator, fallback = 0) {
-  if (denominator === 0 || !Number.isFinite(denominator)) {
-    return fallback;
-  }
-  const result = numerator / denominator;
-  return Number.isFinite(result) ? result : fallback;
-}
-
-/**
- * Clamp a value between min and max
- * 
- * @param {number} value 
- * @param {number} min 
- * @param {number} max 
- * @returns {number}
- */
-export function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-/**
- * Round to specified decimal places
- * 
- * @param {number} value 
- * @param {number} decimals 
- * @returns {number}
- */
-export function roundTo(value, decimals = 2) {
-  const factor = Math.pow(10, decimals);
-  return Math.round(value * factor) / factor;
-}
-
-/**
- * Check if a value is a valid finite number
- * 
- * @param {*} value 
- * @returns {boolean}
- */
-export function isValidNumber(value) {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-/**
- * Get safe numeric value with fallback
- * 
- * @param {*} value 
- * @param {number} fallback 
- * @returns {number}
- */
-export function safeNumber(value, fallback = 0) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  const parsed = parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+// Note: safeDivide, clamp, roundTo, isValidNumber, safeNumber are now
+// imported from mathUtils.js and re-exported at the top of this file

@@ -30,115 +30,59 @@ export default async function handler(req, res) {
   }
 }
 
-async function getPackages(req, res) {
-  // Any admin can view packages
-  const auth = await verifyAdmin(req.headers.authorization);
-  if (auth.error) {
-    return res.status(auth.status).json({ error: auth.error });
-  }
+/**
+ * Map database schema to frontend expected format
+ * Database schema: id, name, description, amount, currency, frequency, ai_query_limit, report_limit
+ * Frontend expects: tier_id, name, description, price_monthly, price_yearly, currency, query_limit, reports_limit, features
+ */
+function mapPackageToFrontend(pkg) {
+  const amount = parseFloat(pkg.amount) || 0;
+  const isAnnual = pkg.frequency === 'annually';
 
-  try {
-    const { include_inactive = false } = req.query;
-
-    // Try subscription_packages table first (full schema)
-    let { data, error } = await supabase
-      .from('subscription_packages')
-      .select('*')
-      .order('display_order', { ascending: true });
-
-    let usingLegacyTable = false;
-
-    // If subscription_packages doesn't exist or is empty, try legacy "packages" table
-    if (error || !data || data.length === 0) {
-      const legacyResult = await supabase
-        .from('packages')
-        .select('*');
-
-      if (!legacyResult.error && legacyResult.data && legacyResult.data.length > 0) {
-        usingLegacyTable = true;
-        // Map legacy schema to expected format
-        data = legacyResult.data.map((pkg, index) => ({
-          id: pkg.id,
-          tier_id: pkg.id, // Legacy table uses id as tier_id
-          name: pkg.name,
-          description: pkg.description,
-          price_monthly: pkg.frequency === 'monthly' ? parseFloat(pkg.amount) || 0 : 0,
-          price_yearly: pkg.frequency === 'annually' ? parseFloat(pkg.amount) || 0 : (parseFloat(pkg.amount) || 0) * 12,
-          currency: pkg.currency || 'USD',
-          query_limit: pkg.query_limit || getDefaultQueryLimit(pkg.id),
-          reports_limit: pkg.reports_limit || getDefaultReportsLimit(pkg.id),
-          features: pkg.features || getDefaultFeatures(pkg.id),
-          is_active: pkg.is_active !== false,
-          display_order: pkg.display_order || index + 1,
-          created_at: pkg.created_at,
-          updated_at: pkg.updated_at
-        }));
-        error = null;
-      }
-    }
-
-    if (error) {
-      // Check if table doesn't exist
-      if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        console.error('No packages table found. Please run migrations or create packages.');
-        return res.status(200).json({
-          success: true,
-          data: [],
-          warning: 'Packages table not found. Please run database migrations.'
-        });
-      }
-      throw error;
-    }
-
-    // Filter inactive if needed
-    if (!include_inactive || include_inactive === 'false') {
-      data = (data || []).filter(pkg => pkg.is_active !== false);
-    }
-
-    // Get subscriber count for each tier
-    const { data: users, error: usersError } = await supabase
-      .from('users')
-      .select('tier');
-
-    // Handle users table gracefully
-    const tierCounts = {};
-    if (!usersError && users) {
-      users.forEach(u => {
-        const tier = u.tier || 'free';
-        tierCounts[tier] = (tierCounts[tier] || 0) + 1;
-      });
-    }
-
-    // Add subscriber count to each package
-    const packagesWithCounts = (data || []).map(pkg => ({
-      ...pkg,
-      subscriber_count: tierCounts[pkg.tier_id] || 0
-    }));
-
-    res.status(200).json({
-      success: true,
-      data: packagesWithCounts,
-      legacy_table: usingLegacyTable
-    });
-
-  } catch (error) {
-    console.error('Get packages error:', error);
-    res.status(500).json({
-      error: 'Failed to fetch packages',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
+  return {
+    id: pkg.id,
+    tier_id: pkg.id,
+    name: pkg.name,
+    description: pkg.description,
+    price_monthly: isAnnual ? Math.round(amount / 12) : amount,
+    price_yearly: isAnnual ? amount : amount * 12,
+    currency: pkg.currency || 'USD',
+    frequency: pkg.frequency || 'monthly',
+    query_limit: pkg.ai_query_limit ?? getDefaultQueryLimit(pkg.id),
+    reports_limit: pkg.report_limit ?? getDefaultReportsLimit(pkg.id),
+    features: getDefaultFeatures(pkg.id),
+    is_active: true, // Table doesn't have this field, assume active
+    display_order: getDefaultDisplayOrder(pkg.id),
+    created_at: pkg.created_at,
+    updated_at: pkg.updated_at
+  };
 }
 
-// Helper functions for default values when using legacy table
+/**
+ * Map frontend data to database schema for insert/update
+ */
+function mapFrontendToDatabase(data) {
+  return {
+    id: data.tier_id || data.id,
+    name: data.name,
+    description: data.description,
+    amount: data.price_monthly || 0,
+    currency: data.currency || 'USD',
+    frequency: data.frequency || 'monthly',
+    ai_query_limit: data.query_limit,
+    report_limit: data.reports_limit
+  };
+}
+
+// Helper functions for default values
 function getDefaultQueryLimit(tierId) {
-  const limits = { free: 10, professional: 100, business: 500, enterprise: -1 };
-  return limits[tierId] || 10;
+  const limits = { free: 10, professional: 2000, business: 10000, enterprise: null };
+  return limits[tierId] ?? 10;
 }
 
 function getDefaultReportsLimit(tierId) {
-  const limits = { free: 2, professional: 20, business: 100, enterprise: -1 };
-  return limits[tierId] || 5;
+  const limits = { free: 5, professional: 200, business: 1000, enterprise: null };
+  return limits[tierId] ?? 5;
 }
 
 function getDefaultFeatures(tierId) {
@@ -151,29 +95,74 @@ function getDefaultFeatures(tierId) {
   return features[tierId] || { ai_chat: true, basic_models: true };
 }
 
-// Detect which table is being used
-async function detectPackagesTable() {
-  // Try subscription_packages first
-  const { data: subPkgs, error: subErr } = await supabase
-    .from('subscription_packages')
-    .select('id')
-    .limit(1);
+function getDefaultDisplayOrder(tierId) {
+  const order = { free: 1, professional: 2, business: 3, enterprise: 4 };
+  return order[tierId] || 99;
+}
 
-  if (!subErr) {
-    return 'subscription_packages';
+async function getPackages(req, res) {
+  // Any admin can view packages
+  const auth = await verifyAdmin(req.headers.authorization);
+  if (auth.error) {
+    return res.status(auth.status).json({ error: auth.error });
   }
 
-  // Try legacy packages table
-  const { error: legacyErr } = await supabase
-    .from('packages')
-    .select('id')
-    .limit(1);
+  try {
+    const { include_inactive = false } = req.query;
 
-  if (!legacyErr) {
-    return 'packages';
+    // Query the subscription_packages table
+    const { data, error } = await supabase
+      .from('subscription_packages')
+      .select('*')
+      .order('amount', { ascending: true });
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        console.error('subscription_packages table does not exist.');
+        return res.status(200).json({
+          success: true,
+          data: [],
+          warning: 'Packages table not found. Please run database migrations.'
+        });
+      }
+      throw error;
+    }
+
+    // Map to frontend format
+    const mappedPackages = (data || []).map(mapPackageToFrontend);
+
+    // Get subscriber count for each tier
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('tier');
+
+    const tierCounts = {};
+    if (!usersError && users) {
+      users.forEach(u => {
+        const tier = u.tier || 'free';
+        tierCounts[tier] = (tierCounts[tier] || 0) + 1;
+      });
+    }
+
+    // Add subscriber count to each package
+    const packagesWithCounts = mappedPackages.map(pkg => ({
+      ...pkg,
+      subscriber_count: tierCounts[pkg.tier_id] || 0
+    }));
+
+    // Sort by display order
+    packagesWithCounts.sort((a, b) => a.display_order - b.display_order);
+
+    res.status(200).json({ success: true, data: packagesWithCounts });
+
+  } catch (error) {
+    console.error('Get packages error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch packages',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-
-  return 'subscription_packages'; // Default
 }
 
 async function createPackage(req, res) {
@@ -186,84 +175,51 @@ async function createPackage(req, res) {
       name,
       description,
       price_monthly,
-      price_yearly,
       currency = 'USD',
+      frequency = 'monthly',
       query_limit,
-      reports_limit,
-      features,
-      display_order
+      reports_limit
     } = req.body;
 
     if (!tier_id || !name) {
       return res.status(400).json({ error: 'tier_id and name are required' });
     }
 
-    const tableName = await detectPackagesTable();
-
     // Check if tier_id already exists
-    const idField = tableName === 'packages' ? 'id' : 'tier_id';
     const { data: existing } = await supabase
-      .from(tableName)
+      .from('subscription_packages')
       .select('id')
-      .eq(idField, tier_id)
+      .eq('id', tier_id)
       .single();
 
     if (existing) {
       return res.status(400).json({ error: 'A package with this tier_id already exists' });
     }
 
-    let insertData;
-    if (tableName === 'packages') {
-      // Legacy table format
-      insertData = {
-        id: tier_id,
-        name,
-        description,
-        amount: price_monthly || 0,
-        currency: currency || 'USD',
-        frequency: 'monthly'
-      };
-    } else {
-      // Full schema format
-      insertData = {
-        tier_id,
-        name,
-        description,
-        price_monthly: price_monthly || 0,
-        price_yearly: price_yearly || 0,
-        currency: currency || 'USD',
-        query_limit: query_limit || 10,
-        reports_limit: reports_limit || 5,
-        features: features || {},
-        display_order: display_order || 99
-      };
-    }
+    // Insert into database with correct schema
+    const insertData = {
+      id: tier_id,
+      name,
+      description,
+      amount: price_monthly || 0,
+      currency,
+      frequency,
+      ai_query_limit: query_limit,
+      report_limit: reports_limit
+    };
 
     const { data, error } = await supabase
-      .from(tableName)
+      .from('subscription_packages')
       .insert(insertData)
       .select()
       .single();
 
     if (error) throw error;
 
-    // Map response to expected format
-    const responseData = tableName === 'packages' ? {
-      id: data.id,
-      tier_id: data.id,
-      name: data.name,
-      description: data.description,
-      price_monthly: parseFloat(data.amount) || 0,
-      price_yearly: (parseFloat(data.amount) || 0) * 12,
-      currency: data.currency || 'USD',
-      query_limit: getDefaultQueryLimit(data.id),
-      reports_limit: getDefaultReportsLimit(data.id),
-      features: getDefaultFeatures(data.id),
-      is_active: true,
-      display_order: 99
-    } : data;
+    // Map response to frontend format
+    const responseData = mapPackageToFrontend(data);
 
-    await logAdminAction(auth.user.id, 'created_package', 'package', responseData.id || responseData.tier_id, { tier_id, name });
+    await logAdminAction(auth.user.id, 'created_package', 'package', data.id, { tier_id, name });
 
     res.status(201).json({ success: true, data: responseData });
 
@@ -284,29 +240,19 @@ async function updatePackage(req, res) {
       return res.status(400).json({ error: 'Package id is required' });
     }
 
-    const tableName = await detectPackagesTable();
-
-    // Remove undefined values
-    Object.keys(updates).forEach(key => {
-      if (updates[key] === undefined) delete updates[key];
-    });
-
-    let updateData;
-    if (tableName === 'packages') {
-      // Map to legacy schema
-      updateData = {};
-      if (updates.name !== undefined) updateData.name = updates.name;
-      if (updates.description !== undefined) updateData.description = updates.description;
-      if (updates.price_monthly !== undefined) updateData.amount = updates.price_monthly;
-      if (updates.currency !== undefined) updateData.currency = updates.currency;
-      if (updates.updated_at !== undefined) updateData.updated_at = updates.updated_at;
-    } else {
-      updateData = { ...updates };
-      updateData.updated_at = new Date().toISOString();
-    }
+    // Map frontend field names to database field names
+    const updateData = {};
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.description !== undefined) updateData.description = updates.description;
+    if (updates.price_monthly !== undefined) updateData.amount = updates.price_monthly;
+    if (updates.currency !== undefined) updateData.currency = updates.currency;
+    if (updates.frequency !== undefined) updateData.frequency = updates.frequency;
+    if (updates.query_limit !== undefined) updateData.ai_query_limit = updates.query_limit;
+    if (updates.reports_limit !== undefined) updateData.report_limit = updates.reports_limit;
+    updateData.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
-      .from(tableName)
+      .from('subscription_packages')
       .update(updateData)
       .eq('id', id)
       .select()
@@ -314,21 +260,8 @@ async function updatePackage(req, res) {
 
     if (error) throw error;
 
-    // Map response to expected format
-    const responseData = tableName === 'packages' ? {
-      id: data.id,
-      tier_id: data.id,
-      name: data.name,
-      description: data.description,
-      price_monthly: parseFloat(data.amount) || 0,
-      price_yearly: (parseFloat(data.amount) || 0) * 12,
-      currency: data.currency || 'USD',
-      query_limit: getDefaultQueryLimit(data.id),
-      reports_limit: getDefaultReportsLimit(data.id),
-      features: getDefaultFeatures(data.id),
-      is_active: data.is_active !== false,
-      display_order: data.display_order || 99
-    } : data;
+    // Map response to frontend format
+    const responseData = mapPackageToFrontend(data);
 
     await logAdminAction(auth.user.id, 'updated_package', 'package', id, updates);
 
@@ -351,67 +284,29 @@ async function deletePackage(req, res) {
       return res.status(400).json({ error: 'Package id is required' });
     }
 
-    const tableName = await detectPackagesTable();
-
     // Check if there are users on this tier
-    const tierId = tableName === 'packages' ? id : null;
-    let tierIdToCheck = tierId;
+    const { count } = await supabase
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('tier', id);
 
-    if (!tierIdToCheck) {
-      const { data: pkg } = await supabase
-        .from(tableName)
-        .select('tier_id')
-        .eq('id', id)
-        .single();
-
-      tierIdToCheck = pkg?.tier_id;
+    if (count > 0) {
+      return res.status(400).json({
+        error: `Cannot delete: ${count} users are on this tier. Move them first.`
+      });
     }
 
-    if (tierIdToCheck) {
-      const { count } = await supabase
-        .from('users')
-        .select('id', { count: 'exact', head: true })
-        .eq('tier', tierIdToCheck);
-
-      if (count > 0) {
-        return res.status(400).json({
-          error: `Cannot delete: ${count} users are on this tier. Move them first.`
-        });
-      }
-    }
-
-    // Soft delete - mark as inactive or delete for legacy table
-    let error;
-    if (tableName === 'packages') {
-      // Legacy table might not have is_active, so try update first, then delete
-      const updateResult = await supabase
-        .from(tableName)
-        .update({ is_active: false })
-        .eq('id', id);
-
-      if (updateResult.error) {
-        // If update fails (column doesn't exist), do hard delete
-        const deleteResult = await supabase
-          .from(tableName)
-          .delete()
-          .eq('id', id);
-        error = deleteResult.error;
-      } else {
-        error = updateResult.error;
-      }
-    } else {
-      const result = await supabase
-        .from(tableName)
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', id);
-      error = result.error;
-    }
+    // Hard delete since table doesn't have is_active column
+    const { error } = await supabase
+      .from('subscription_packages')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
 
     await logAdminAction(auth.user.id, 'deleted_package', 'package', id);
 
-    res.status(200).json({ success: true, message: 'Package deactivated' });
+    res.status(200).json({ success: true, message: 'Package deleted' });
 
   } catch (error) {
     console.error('Delete package error:', error);

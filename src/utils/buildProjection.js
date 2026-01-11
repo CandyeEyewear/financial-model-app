@@ -77,7 +77,17 @@ function buildAmortizationSchedule(params) {
   const existingDebtAmount = (params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0;
   const newFacilityAmount = params.requestedLoanAmount || 0;
   const principal = existingDebtAmount + newFacilityAmount;
-  
+
+  // DEBUG: Log debt calculation inputs
+  console.log('buildAmortizationSchedule:', {
+    hasExistingDebt: params.hasExistingDebt,
+    openingDebt: params.openingDebt,
+    requestedLoanAmount: params.requestedLoanAmount,
+    existingDebtAmount,
+    newFacilityAmount,
+    principal
+  });
+
   // No debt - return empty schedule
   if (principal === 0) {
     return Array(params.years).fill({
@@ -359,6 +369,15 @@ const debtSchedule = (() => {
   // CRITICAL: Respect hasExistingDebt toggle
   const hasOpeningDebt = (params.hasExistingDebt === true) && (params.openingDebt || 0) > 0;
   const hasNewFacility = (params.requestedLoanAmount || 0) > 0;
+
+  // DEBUG: Log debt schedule path selection
+  console.log('debtSchedule path selection:', {
+    hasOpeningDebt,
+    hasNewFacility,
+    hasMultipleTranches: params.hasMultipleTranches,
+    debtTranchesLength: params.debtTranches?.length,
+    requestedLoanAmount: params.requestedLoanAmount
+  });
 
   // Explicit multi-tranche mode - but also check for standalone debt amounts
   if (params.hasMultipleTranches && params.debtTranches?.length > 0) {

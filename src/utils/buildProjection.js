@@ -782,11 +782,17 @@ function calculateMaturityDate(startYear, tenorYears) {
   
   // Enterprise Value
   const enterpriseValue = pvProjectedCashFlows + pvTerminal;
-  
-  // Equity Value
+
+  // Equity Value - use INITIAL debt/cash for "value today" calculation
+  // (not final debt/cash, which represents exit value)
+  const initialDebt = ((params.hasExistingDebt === true) ? (params.openingDebt || 0) : 0) +
+                      (params.requestedLoanAmount || 0);
+  const initialCash = params.openingCash || 0;
+  const equityValue = enterpriseValue - initialDebt + initialCash;
+
+  // Also keep final values for reference (exit value perspective)
   const finalDebt = rows[rows.length - 1].grossDebt;
   const finalCash = rows[rows.length - 1].cash;
-  const equityValue = enterpriseValue - finalDebt + finalCash;
   
   // ============================================================================
   // INVESTMENT RETURNS (Using proper IRR calculation)
@@ -878,6 +884,11 @@ function calculateMaturityDate(startYear, tenorYears) {
     // Debt analysis
     totalDebtRepaid: debtSchedule.reduce((sum, year) => sum + year.principal, 0),
     totalInterestPaid: debtSchedule.reduce((sum, year) => sum + year.interest, 0),
+    // Initial values (for "value today" equity bridge)
+    initialDebt,
+    initialCash,
+    initialNetDebt: initialDebt - initialCash,
+    // Final values (for exit value perspective)
     finalCash,
     finalDebt,
     finalNetDebt: finalDebt - finalCash,

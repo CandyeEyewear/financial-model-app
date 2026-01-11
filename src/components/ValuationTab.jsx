@@ -79,7 +79,8 @@ export function ValuationTab({ projections, params, ccy }) {
     const terminalValue = projections.terminalValue;
     const pvProjectedFCFs = projections.pvProjectedCashFlows;
     const pvTerminal = projections.pvTerminal;
-    const netDebt = projections.finalNetDebt;
+    // Use INITIAL net debt for "equity value today" calculation
+    const netDebt = projections.initialNetDebt ?? projections.finalNetDebt;
 
     // ----- SHARES & PRICE PER SHARE -----
     const sharesOutstanding = options.sharesOverride ?? params.sharesOutstanding ?? 0;
@@ -115,8 +116,9 @@ export function ValuationTab({ projections, params, ccy }) {
       blendedRate: debtBreakdown.blendedRate,
       netDebt,
 
-      // Cash
+      // Cash (use initial/opening cash for equity bridge, not final accumulated cash)
       cash: cashData,
+      initialCash: projections.initialCash ?? (params.openingCash || 0),
       finalCash: projections.finalCash,
 
       // Shares & Price
@@ -635,10 +637,10 @@ function CapitalStructureSection({ data, ccy }) {
                   {data.cash.isMissing && (
                     <span className="ml-2 text-xs text-amber-600 font-medium">(Not provided)</span>
                   )}
-                  <div className="text-xs text-slate-400">{data.cash.source}</div>
+                  <div className="text-xs text-slate-400">Opening Cash (for equity today)</div>
                 </div>
                 <span className="font-semibold text-green-600">
-                  ({currencyFmtMM(data.finalCash, ccy)})
+                  ({currencyFmtMM(data.initialCash, ccy)})
                 </span>
               </div>
 

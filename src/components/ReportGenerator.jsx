@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { Button } from "./Button";
 import { Label } from "./Label";
@@ -22,6 +22,102 @@ const calculateCAGR = (data, field) => {
   if (start === 0) return 0;
   const years = data.length - 1;
   return ((Math.pow(end / start, 1 / years) - 1) * 100).toFixed(1);
+};
+
+/**
+ * Strip markdown formatting from AI responses
+ * AI is instructed not to use markdown, but sometimes it slips through
+ */
+const stripMarkdown = (text) => {
+  if (!text) return '';
+
+  return text
+    // Remove headers (## Header)
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove bold (**text** or __text__)
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    // Remove italic (*text* or _text_)
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    // Remove inline code (`code`)
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove code blocks (```code```)
+    .replace(/```[\s\S]*?```/g, '')
+    // Remove links [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Remove horizontal rules
+    .replace(/^[-*_]{3,}$/gm, '')
+    // Remove bullet points at start of lines (keep content)
+    .replace(/^[\s]*[-*+]\s+/gm, '• ')
+    // Clean up extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+/**
+ * Get total debt from all sources
+ * Matches pattern used in other components for consistency
+ */
+const getTotalDebt = (params, projection = null) => {
+  // Priority 1: Projection data (most accurate)
+  if (projection?.multiTrancheInfo?.totalDebt > 0) {
+    return {
+      total: projection.multiTrancheInfo.totalDebt,
+      source: 'Multi-tranche',
+      breakdown: projection.multiTrancheInfo.tranches || []
+    };
+  }
+
+  if (projection?.finalDebt > 0) {
+    return {
+      total: projection.finalDebt,
+      source: 'Projection',
+      breakdown: []
+    };
+  }
+
+  // Priority 2: Multi-tranche params
+  if (params?.hasMultipleTranches && params?.debtTranches?.length > 0) {
+    const total = params.debtTranches.reduce((sum, t) => sum + (t.amount || 0), 0);
+    return {
+      total,
+      source: 'Multi-tranche params',
+      breakdown: params.debtTranches
+    };
+  }
+
+  // Priority 3: Single debt fields
+  const existingDebt = params?.openingDebt || params?.existingDebtAmount || 0;
+  const newFacility = params?.requestedLoanAmount || 0;
+
+  return {
+    total: existingDebt + newFacility,
+    source: existingDebt > 0 && newFacility > 0 ? 'Existing + New' :
+            existingDebt > 0 ? 'Existing only' :
+            newFacility > 0 ? 'New facility only' : 'No debt',
+    breakdown: [
+      existingDebt > 0 ? { name: 'Existing Debt', amount: existingDebt } : null,
+      newFacility > 0 ? { name: 'New Facility', amount: newFacility } : null
+    ].filter(Boolean)
+  };
+};
+
+/**
+ * Calculate LTV safely - returns null if cannot calculate
+ */
+const calculateLTV = (totalDebt, collateralValue) => {
+  if (!collateralValue || collateralValue <= 0) return null;
+  if (!totalDebt || totalDebt <= 0) return 0;
+  return (totalDebt / collateralValue) * 100;
+};
+
+/**
+ * Check if there's any debt configured
+ */
+const hasAnyDebt = (params, projection = null) => {
+  const debtInfo = getTotalDebt(params, projection);
+  return debtInfo.total > 0;
 };
 
 // Helper to convert hex to RGB
@@ -112,8 +208,12 @@ const [selectedSections, setSelectedSections] = useState({
       : "Bullet payment at maturity",
     principalPrepayment: "Issuer may prepay after 30 days notice without penalty",
     
-    securityDescription: params.collateralDescription || 
-      `First legal mortgage over assets. Market value: ${currencyFmtMM(params.collateralValue || 0, ccy)} (LTV: ${params.collateralValue > 0 ? ((params.requestedLoanAmount / params.collateralValue) * 100).toFixed(1) : 0}%). Personal guarantees from principals.`,
+    securityDescription: params.collateralDescription ||
+      `First legal mortgage over assets. Market value: ${currencyFmtMM(params.collateralValue || 0, ccy)} (LTV: ${(() => {
+        const totalDebt = (params.openingDebt || params.existingDebtAmount || 0) + (params.requestedLoanAmount || 0);
+        const ltv = params.collateralValue > 0 ? ((totalDebt / params.collateralValue) * 100).toFixed(1) : 'N/A';
+        return ltv;
+      })()}%). Personal guarantees from principals.`,
     
     financialCovenants: 
       `• Minimum Current Ratio: 1.5x
@@ -171,6 +271,67 @@ const [selectedSections, setSelectedSections] = useState({
     legalCostEstimatePercent: 0.1,
   });
 
+  // Sync termSheetFields with params changes
+  useEffect(() => {
+    const debtInfo = getTotalDebt(params, projections?.base);
+    const ltv = calculateLTV(debtInfo.total, params.collateralValue);
+
+    setTermSheetFields(prev => ({
+      ...prev,
+      // Only update if params have meaningful values (don't overwrite user edits with empty strings)
+      issuer: params.companyLegalName || prev.issuer,
+      raiseAmount: debtInfo.total || prev.raiseAmount,
+      currency: ccy || prev.currency,
+      tenure: params.proposedTenor || prev.tenure,
+      coupon: params.proposedPricing ? (params.proposedPricing * 100) : prev.coupon,
+      couponFrequency: params.paymentFrequency || prev.couponFrequency,
+      accrualBasis: params.dayCountConvention || prev.accrualBasis,
+      useOfProceeds: params.useOfProceeds || prev.useOfProceeds,
+
+      // Update maturity date based on tenor
+      maturityDate: params.proposedTenor
+        ? new Date(Date.now() + params.proposedTenor * 365 * 24 * 60 * 60 * 1000).toLocaleDateString()
+        : prev.maturityDate,
+
+      // Update principal repayment based on balloon
+      principalRepayment: params.balloonPercentage > 0
+        ? `Amortization with ${params.balloonPercentage}% balloon at maturity`
+        : params.useBalloonPayment === false
+          ? "Amortizing principal payments"
+          : prev.principalRepayment,
+
+      // Update security description with correct LTV
+      securityDescription: params.collateralDescription ||
+        `First legal mortgage over assets. Market value: ${currencyFmtMM(params.collateralValue || 0, ccy)} (LTV: ${ltv !== null ? numFmt(ltv) : 'N/A'}%). Personal guarantees from principals.`,
+
+      // Update financial covenants
+      financialCovenants:
+        `• Minimum Current Ratio: 1.5x
+• Minimum Interest Coverage: ${numFmt(params.targetICR || 2.25)}x
+• Minimum Debt Service Coverage: ${numFmt(params.minDSCR || 1.25)}x
+• Maximum Leverage Ratio: ${numFmt(params.maxNDToEBITDA || 3.5)}x`,
+    }));
+  }, [
+    params.companyLegalName,
+    params.requestedLoanAmount,
+    params.openingDebt,
+    params.existingDebtAmount,
+    params.proposedTenor,
+    params.proposedPricing,
+    params.collateralValue,
+    params.collateralDescription,
+    params.minDSCR,
+    params.targetICR,
+    params.maxNDToEBITDA,
+    params.balloonPercentage,
+    params.paymentFrequency,
+    params.dayCountConvention,
+    params.useOfProceeds,
+    params.useBalloonPayment,
+    projections?.base,
+    ccy
+  ]);
+
   // AI Integration using serverless function /api/ai/analyze
   // No longer needs frontend API key - uses accessToken for auth
 
@@ -216,64 +377,121 @@ const [selectedSections, setSelectedSections] = useState({
     const minDSCR = base.creditStats?.minDSCR || 0;
     const maxLeverage = base.creditStats?.maxLeverage || 0;
     const minICR = base.creditStats?.minICR || 0;
-    
+
+    // Get total debt from all sources
+    const debtInfo = getTotalDebt(params, base);
+    const ltv = calculateLTV(debtInfo.total, params.collateralValue);
+    const netDebt = debtInfo.total - (params.openingCash || 0);
+
+    // Calculate debt service info
+    const avgDebtService = base.rows?.length > 0
+      ? base.rows.reduce((sum, r) => sum + (r.debtService || 0), 0) / base.rows.length
+      : 0;
+
     return `
 FINANCIAL MODEL SUMMARY FOR AI ANALYSIS:
 
 COMPANY INFORMATION:
 - Legal Name: ${params.companyLegalName || "N/A"}
+- Operating Name: ${params.companyOperatingName || "N/A"}
 - Industry: ${params.industry || "N/A"}
 - Business Age: ${params.businessAge || 0} years
 - Management Experience: ${params.managementExperience || "N/A"}
 - Credit History: ${params.creditHistory || "N/A"}
 
+DEBT STRUCTURE:
+- Total Debt: ${currencyFmtMM(debtInfo.total, ccy)} (Source: ${debtInfo.source})
+- Existing Debt: ${currencyFmtMM(params.openingDebt || params.existingDebtAmount || 0, ccy)}
+- New Facility: ${currencyFmtMM(params.requestedLoanAmount || 0, ccy)}
+- Opening Cash: ${params.openingCash !== undefined ? currencyFmtMM(params.openingCash, ccy) : "NOT SET (defaults to 0)"}
+- Net Debt: ${currencyFmtMM(netDebt, ccy)}
+${debtInfo.breakdown.length > 1 ? `- Breakdown: ${debtInfo.breakdown.map(t => `${t.name}: ${currencyFmtMM(t.amount, ccy)}`).join(', ')}` : ''}
+
 TRANSACTION DETAILS:
-- Requested Amount: ${currencyFmtMM(params.requestedLoanAmount || 0, ccy)}
 - Proposed Tenor: ${params.proposedTenor || 0} years
-- Interest Rate: ${pctFmt(params.proposedPricing || 0)}
+- New Facility Rate: ${params.proposedPricing ? pctFmt(params.proposedPricing) : "N/A"}
+- Existing Debt Rate: ${params.existingDebtRate ? pctFmt(params.existingDebtRate) : "N/A"}
+- Blended Rate: ${params.interestRate ? pctFmt(params.interestRate) : "N/A"}
 - Loan Purpose: ${params.loanPurpose || "N/A"}
 - Use of Proceeds: ${params.useOfProceeds || "N/A"}
+- Payment Frequency: ${params.paymentFrequency || "N/A"}
+- Balloon Payment: ${params.balloonPercentage > 0 ? `${params.balloonPercentage}% at maturity (${currencyFmtMM(debtInfo.total * params.balloonPercentage / 100, ccy)})` : "None"}
 
 FINANCIAL METRICS (BASE CASE):
 - Enterprise Value: ${currencyFmtMM(base.enterpriseValue || 0, ccy)}
 - Equity Value: ${currencyFmtMM(base.equityValue || 0, ccy)}
 - Equity MOIC: ${numFmt(base.moic || 0)}x
 - Equity IRR: ${pctFmt(base.irr || 0)}
-- Min DSCR: ${numFmt(minDSCR)}
+- Min DSCR: ${numFmt(minDSCR)}x
 - Max Leverage: ${numFmt(maxLeverage)}x
-- Min ICR: ${numFmt(minICR)}
+- Min ICR: ${numFmt(minICR)}x
+${params.sharesOutstanding ? `- Shares Outstanding: ${numFmt(params.sharesOutstanding, 0)}
+- Price per Share: ${currencyFmtMM((base.equityValue || 0) / params.sharesOutstanding, ccy)}` : '- Shares Outstanding: NOT SET'}
+
+DEBT SERVICE ANALYSIS:
+${base.rows && base.rows.length > 0 ? `
+- Year 1 Debt Service: ${currencyFmtMM(base.rows[0].debtService || 0, ccy)}
+- Year 1 EBITDA: ${currencyFmtMM(base.rows[0].ebitda || 0, ccy)}
+- Avg Annual Debt Service: ${currencyFmtMM(avgDebtService, ccy)}
+- Debt Service % of Revenue: ${base.rows[0].revenue > 0 ? pctFmt((base.rows[0].debtService || 0) / base.rows[0].revenue) : 'N/A'}`
+: "No projection rows available"}
 
 COVENANT COMPLIANCE:
-- DSCR Requirement: ${numFmt(params.minDSCR || 1.2)}
-- DSCR Cushion: ${numFmt(minDSCR - (params.minDSCR || 1.2))}
+- DSCR Requirement: ${numFmt(params.minDSCR || 1.2)}x
+- DSCR Actual: ${numFmt(minDSCR)}x
+- DSCR Cushion: ${numFmt(minDSCR - (params.minDSCR || 1.2))}x ${minDSCR < (params.minDSCR || 1.2) ? "⚠️ BREACH" : "✅"}
 - Leverage Limit: ${numFmt(params.maxNDToEBITDA || 3.5)}x
-- Leverage Cushion: ${numFmt((params.maxNDToEBITDA || 3.5) - maxLeverage)}x
-- Covenant Breaches: ${(base.breaches?.dscrBreaches || 0) + (base.breaches?.icrBreaches || 0) + (base.breaches?.ndBreaches || 0)}
-
-QUALITATIVE FACTORS:
-${params.businessModel ? `Business Model: ${params.businessModel.substring(0, 300)}` : "No business model provided"}
-${params.creditStrengths ? `Credit Strengths: ${params.creditStrengths.substring(0, 300)}` : "No strengths identified"}
-${params.keyRisks ? `Key Risks: ${params.keyRisks.substring(0, 300)}` : "No risks identified"}
-${params.mitigatingFactors ? `Mitigating Factors: ${params.mitigatingFactors.substring(0, 300)}` : "No mitigants specified"}
+- Leverage Actual: ${numFmt(maxLeverage)}x
+- Leverage Cushion: ${numFmt((params.maxNDToEBITDA || 3.5) - maxLeverage)}x ${maxLeverage > (params.maxNDToEBITDA || 3.5) ? "⚠️ BREACH" : "✅"}
+- ICR Requirement: ${numFmt(params.targetICR || 2.0)}x
+- ICR Actual: ${numFmt(minICR)}x
+- Total Covenant Breaches: ${(base.breaches?.dscrBreaches || 0) + (base.breaches?.icrBreaches || 0) + (base.breaches?.ndBreaches || 0)}
+${base.breaches?.dscrBreachYears?.length > 0 ? `- DSCR Breach Years: ${base.breaches.dscrBreachYears.join(', ')}` : ''}
+${base.breaches?.icrBreachYears?.length > 0 ? `- ICR Breach Years: ${base.breaches.icrBreachYears.join(', ')}` : ''}
+${base.breaches?.leverageBreachYears?.length > 0 ? `- Leverage Breach Years: ${base.breaches.leverageBreachYears.join(', ')}` : ''}
 
 COLLATERAL:
 - Collateral Value: ${currencyFmtMM(params.collateralValue || 0, ccy)}
-- LTV Ratio: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / params.collateralValue) * 100) : "N/A"}%
+- LTV Ratio: ${ltv !== null ? `${numFmt(ltv)}%` : "Cannot calculate (no collateral value)"}
+- LTV Assessment: ${ltv !== null ? (ltv <= 60 ? "STRONG (≤60%)" : ltv <= 75 ? "ADEQUATE (≤75%)" : "ELEVATED (>75%)") : "N/A"}
 - Lien Position: ${params.lienPosition || "N/A"}
 - Description: ${params.collateralDescription || "N/A"}
 
+QUALITATIVE FACTORS:
+${params.businessModel ? `Business Model: ${params.businessModel.substring(0, 300)}` : "⚠️ No business model provided"}
+${params.creditStrengths ? `Credit Strengths: ${params.creditStrengths.substring(0, 300)}` : "⚠️ No strengths identified"}
+${params.keyRisks ? `Key Risks: ${params.keyRisks.substring(0, 300)}` : "⚠️ No risks identified"}
+${params.mitigatingFactors ? `Mitigating Factors: ${params.mitigatingFactors.substring(0, 300)}` : "⚠️ No mitigants specified"}
+
 STRESS SCENARIOS:
-${Object.keys(projections).filter(k => k !== 'base').map(scenario => {
-  const proj = projections[scenario];
-  return `- ${scenario}: IRR ${pctFmt(proj.irr || 0)}, Min DSCR ${numFmt(proj.creditStats?.minDSCR || 0)}`;
-}).join('\n')}
+${Object.keys(projections).filter(k => k !== 'base').length > 0 ?
+  Object.keys(projections).filter(k => k !== 'base').map(scenario => {
+    const proj = projections[scenario];
+    const breaches = (proj.breaches?.dscrBreaches || 0) + (proj.breaches?.icrBreaches || 0) + (proj.breaches?.ndBreaches || 0);
+    return `- ${scenario}: IRR ${pctFmt(proj.irr || 0)}, Min DSCR ${numFmt(proj.creditStats?.minDSCR || 0)}x, Leverage ${numFmt(proj.creditStats?.maxLeverage || 0)}x, Breaches: ${breaches}`;
+  }).join('\n')
+  : "No stress scenarios configured"}
 
 HISTORICAL DATA:
-${historicalData && historicalData.length > 0 ? 
-  `${historicalData.length} years of historical data available. Latest year revenue: ${currencyFmtMM(historicalData[historicalData.length - 1]?.revenue || 0, ccy)}
+${historicalData && historicalData.length > 0 ?
+  `${historicalData.length} years of historical data available.
+Latest year revenue: ${currencyFmtMM(historicalData[historicalData.length - 1]?.revenue || 0, ccy)}
 Revenue CAGR: ${calculateCAGR(historicalData, 'revenue')}%
-EBITDA trend: ${historicalData.map(y => `${y.year}: ${currencyFmtMM(y.ebitda || 0, ccy)}`).join(', ')}` 
-  : "No historical data provided"}
+EBITDA trend: ${historicalData.map(y => `${y.year}: ${currencyFmtMM(y.ebitda || 0, ccy)}`).join(', ')}
+Latest EBITDA Margin: ${historicalData[historicalData.length - 1]?.ebitda && historicalData[historicalData.length - 1]?.revenue ? pctFmt(historicalData[historicalData.length - 1].ebitda / historicalData[historicalData.length - 1].revenue) : 'N/A'}`
+  : "⚠️ No historical data provided - recommend obtaining 3-5 years before credit decision"}
+
+DATA QUALITY WARNINGS:
+${[
+  !params.openingCash && params.openingCash !== 0 ? "- Opening Cash: NOT SET (net debt calculation may be inaccurate)" : null,
+  !params.sharesOutstanding ? "- Shares Outstanding: NOT SET (price per share cannot be calculated)" : null,
+  !params.collateralValue ? "- Collateral Value: NOT SET (LTV cannot be calculated)" : null,
+  !params.businessModel ? "- Business Model: NOT PROVIDED" : null,
+  !params.keyRisks ? "- Key Risks: NOT IDENTIFIED" : null,
+  (!historicalData || historicalData.length === 0) ? "- Historical Data: NONE PROVIDED" : null,
+  params.openingDebt && params.existingDebtAmount && params.openingDebt !== params.existingDebtAmount ?
+    `- Debt Mismatch: openingDebt (${params.openingDebt}) differs from existingDebtAmount (${params.existingDebtAmount})` : null
+].filter(Boolean).join('\n') || "All key data fields populated ✅"}
 `;
   };
 
@@ -380,7 +598,11 @@ Maximum 400 words.`,
 - Assessment of leverage sustainability
 
 3. COLLATERAL ADEQUACY:
-- LTV: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / params.collateralValue) * 100) : 'N/A'}%
+- Total Debt: ${currencyFmtMM(getTotalDebt(params, projections?.base).total, ccy)}
+- LTV: ${(() => {
+    const ltv = calculateLTV(getTotalDebt(params, projections?.base).total, params.collateralValue);
+    return ltv !== null ? numFmt(ltv) : 'N/A';
+  })()}%
 - Lien position: ${params.lienPosition || 'Not specified'}
 - Estimated recovery in default scenario
 
@@ -402,9 +624,19 @@ VALUATION ANALYSIS:
 - Estimated Forced Sale Value: ${currencyFmtMM((params.collateralValue || 0) * 0.50, ccy)} (assume 50% of market)
 
 LOAN-TO-VALUE ANALYSIS:
-- LTV on Market Value: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / params.collateralValue) * 100) : 'N/A'}%
-- LTV on Orderly Liquidation: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / (params.collateralValue * 0.70)) * 100) : 'N/A'}%
-- LTV on Forced Sale: ${params.collateralValue > 0 ? numFmt((params.requestedLoanAmount / (params.collateralValue * 0.50)) * 100) : 'N/A'}%
+- Total Debt: ${currencyFmtMM(getTotalDebt(params, projections?.base).total, ccy)}
+- LTV on Market Value: ${(() => {
+    const ltv = calculateLTV(getTotalDebt(params, projections?.base).total, params.collateralValue);
+    return ltv !== null ? numFmt(ltv) : 'N/A';
+  })()}%
+- LTV on Orderly Liquidation (70%): ${(() => {
+    const ltv = calculateLTV(getTotalDebt(params, projections?.base).total, (params.collateralValue || 0) * 0.70);
+    return ltv !== null ? numFmt(ltv) : 'N/A';
+  })()}%
+- LTV on Forced Sale (50%): ${(() => {
+    const ltv = calculateLTV(getTotalDebt(params, projections?.base).total, (params.collateralValue || 0) * 0.50);
+    return ltv !== null ? numFmt(ltv) : 'N/A';
+  })()}%
 
 RECOVERY ANALYSIS:
 - Estimated recovery rate in default
@@ -819,12 +1051,18 @@ CRITICAL INSTRUCTION: Do NOT use any markdown formatting in your response. No as
   // Validation function
   const validateReportData = () => {
     const errors = [];
-    
+
     if (!projections?.base) errors.push("No financial projections available");
     if (!params?.companyLegalName) errors.push("Company name is required");
-    if (!params?.requestedLoanAmount) errors.push("Loan amount is required");
+
+    // FIXED: Check for any debt source, not just requestedLoanAmount
+    const debtInfo = getTotalDebt(params, projections?.base);
+    if (debtInfo.total <= 0) {
+      errors.push("No debt configured (set existing debt or new facility amount)");
+    }
+
     if (!params?.proposedTenor) errors.push("Loan tenor is required");
-    
+
     if (errors.length > 0) {
       alert(`Cannot generate report:\n\n${errors.join('\n')}`);
       return false;
@@ -1700,22 +1938,36 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
 
     const minDSCR = projection.creditStats?.minDSCR || 0;
     const maxLeverage = projection.creditStats?.maxLeverage || 0;
-    const totalBreaches = (projection.breaches?.dscrBreaches || 0) + 
-                         (projection.breaches?.icrBreaches || 0) + 
+    const totalBreaches = (projection.breaches?.dscrBreaches || 0) +
+                         (projection.breaches?.icrBreaches || 0) +
                          (projection.breaches?.ndBreaches || 0);
     const irr = projection.irr || 0;
     const moic = projection.moic || 0;
 
+    // Get total debt for collateral comparison - FIXED
+    const debtInfo = getTotalDebt(params, projection);
+    const totalDebt = debtInfo.total || 0;
+
     const strongManagement = params.managementExperience === "Exceptional" || params.managementExperience === "Strong";
     const cleanCreditHistory = params.creditHistory === "Excellent" || params.creditHistory === "Clean";
-    const adequateCollateral = params.collateralValue >= params.requestedLoanAmount * 1.5;
-    const establishedBusiness = params.businessAge >= 5;
+
+    // FIXED: Compare collateral against TOTAL debt, not just requestedLoanAmount
+    // Also add safety check for zero/undefined values
+    const collateralValue = params.collateralValue || 0;
+    const adequateCollateral = collateralValue > 0 && totalDebt > 0
+      ? collateralValue >= totalDebt * 1.5
+      : false;
+
+    const establishedBusiness = (params.businessAge || 0) >= 5;
+
+    // Calculate LTV for reporting
+    const ltv = calculateLTV(totalDebt, collateralValue);
 
     if (totalBreaches > 0) {
       return {
         decision: "DECLINE",
         summary: "Covenant breaches identified - unacceptable credit risk",
-        rationale: `Analysis shows ${totalBreaches} covenant breach(es). Recommend decline or significant restructuring.`,
+        rationale: `Analysis shows ${totalBreaches} covenant breach(es). Total debt ${currencyFmtMM(totalDebt, ccy)}. Recommend decline or significant restructuring.`,
         color: [239, 68, 68]
       };
     }
@@ -1725,14 +1977,14 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
         return {
           decision: "CONDITIONAL APPROVAL",
           summary: "Weak DSCR offset by strong qualitative factors - approve with enhanced monitoring",
-          rationale: `DSCR of ${numFmt(minDSCR)} is below covenant but strong collateral coverage and ${params.businessAge}+ years of operations provide comfort.`,
+          rationale: `DSCR of ${numFmt(minDSCR)}x is below covenant but strong collateral coverage (LTV ${ltv !== null ? numFmt(ltv) : 'N/A'}%) and ${params.businessAge}+ years of operations provide comfort. Total debt: ${currencyFmtMM(totalDebt, ccy)}.`,
           color: [245, 158, 11]
         };
       }
       return {
         decision: "DECLINE",
         summary: "Insufficient debt service coverage with weak fundamentals",
-        rationale: `DSCR of ${numFmt(minDSCR)} below minimum ${numFmt(params.minDSCR || 1.2)} without offsetting strengths.`,
+        rationale: `DSCR of ${numFmt(minDSCR)}x below minimum ${numFmt(params.minDSCR || 1.2)}x without offsetting strengths. Total debt: ${currencyFmtMM(totalDebt, ccy)}.`,
         color: [239, 68, 68]
       };
     }
@@ -1745,7 +1997,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
       return {
         decision: "APPROVE",
         summary: `Excellent credit profile - strong recommendation${strongManagement && cleanCreditHistory ? ' with superior management' : ''}`,
-        rationale: `DSCR ${numFmt(minDSCR)} (cushion: ${numFmt(minDSCR - (params.minDSCR || 1.2))}), Leverage ${numFmt(maxLeverage)}x, IRR ${pctFmt(irr)}. ${strongManagement ? 'Exceptional management team.' : ''}`,
+        rationale: `DSCR ${numFmt(minDSCR)}x (cushion: ${numFmt(minDSCR - (params.minDSCR || 1.2))}x), Leverage ${numFmt(maxLeverage)}x, IRR ${pctFmt(irr)}. Total debt: ${currencyFmtMM(totalDebt, ccy)}. ${strongManagement ? 'Exceptional management team.' : ''}`,
         color: [34, 197, 94]
       };
     }
@@ -1754,7 +2006,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
       return {
         decision: "APPROVE",
         summary: "Sound credit metrics with adequate protection",
-        rationale: `Acceptable risk profile with DSCR ${numFmt(minDSCR)}, Leverage ${numFmt(maxLeverage)}x. ${adequateCollateral ? 'Strong collateral coverage.' : ''}`,
+        rationale: `Acceptable risk profile with DSCR ${numFmt(minDSCR)}x, Leverage ${numFmt(maxLeverage)}x. Total debt: ${currencyFmtMM(totalDebt, ccy)}. ${adequateCollateral ? `Strong collateral coverage (LTV ${ltv !== null ? numFmt(ltv) : 'N/A'}%).` : ''}`,
         color: [34, 197, 94]
       };
     }
@@ -1762,7 +2014,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
     return {
       decision: "APPROVE WITH CONDITIONS",
       summary: "Marginal metrics - approve with enhanced monitoring and conditions",
-      rationale: `DSCR ${numFmt(minDSCR)} provides limited cushion. Recommend quarterly monitoring and tighter covenants.`,
+      rationale: `DSCR ${numFmt(minDSCR)}x provides limited cushion. Total debt: ${currencyFmtMM(totalDebt, ccy)}. Recommend quarterly monitoring and tighter covenants.`,
       color: [59, 130, 246]
     };
   };
@@ -1962,7 +2214,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
         </CardHeader>
         <CardContent className="pt-6">
           {/* API Key Status */}
-          {!apiKey && (
+          {!accessToken && (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-amber-800">
@@ -1975,7 +2227,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-6">
             <Button 
               onClick={() => generateAIAnalysis('executiveSummary')}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs"
             >
               {isGeneratingAI ? <Loader className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
@@ -1984,7 +2236,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
             
             <Button 
               onClick={() => generateAIAnalysis('historicalPerformance')}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs"
             >
               <Bot className="w-3 h-3 mr-1" />
@@ -1993,7 +2245,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
             
             <Button 
               onClick={() => generateAIAnalysis('creditAnalysis')}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs"
             >
               <Bot className="w-3 h-3 mr-1" />
@@ -2002,7 +2254,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
             
             <Button 
               onClick={() => generateAIAnalysis('collateralAnalysis')}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-xs"
             >
               <Bot className="w-3 h-3 mr-1" />
@@ -2011,7 +2263,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
 
             <Button 
               onClick={() => generateAIAnalysis('sensitivityAnalysis')}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs"
             >
               <AlertCircle className="w-3 h-3 mr-1" />
@@ -2020,7 +2272,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
 
             <Button 
               onClick={() => generateAIAnalysis('recommendation')}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs"
             >
               <Check className="w-3 h-3 mr-1" />
@@ -2029,7 +2281,7 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
 
             <Button 
               onClick={generateAllAIContent}
-              disabled={isGeneratingAI || !apiKey}
+              disabled={isGeneratingAI || !accessToken}
               className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white text-xs font-semibold"
             >
               <Sparkles className="w-3 h-3 mr-1" />

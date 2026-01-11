@@ -175,21 +175,21 @@ function calculateOptimalDebt(params, modelData, currency) {
 
   return {
     success: true,
-    message: `📊 Optimal Debt Analysis
+    message: `📊 **Optimal Debt Analysis**
 
-Target DSCR: ${targetDSCR.toFixed(2)}x
+**Target DSCR:** ${targetDSCR.toFixed(2)}x
 
-Calculation Results:
+**Calculation Results:**
 • Maximum Debt Capacity: ${prefix}${(optimalDebt / 1000000).toFixed(1)}M
 • Annual Debt Service: ${prefix}${(annualDebtService / 1000000).toFixed(2)}M
 • Based on EBITDA: ${prefix}${(ebitda / 1000000).toFixed(1)}M
 
-Current Position:
+**Current Position:**
 • Current Total Debt: ${prefix}${(currentDebt / 1000000).toFixed(1)}M
 • Current DSCR: ${currentDSCR.toFixed(2)}x
 • Debt Capacity ${optimalDebt > currentDebt ? 'Available' : 'Exceeded'}: ${prefix}${(Math.abs(optimalDebt - currentDebt) / 1000000).toFixed(1)}M
 
-Assumptions:
+**Assumptions:**
 • Interest Rate: ${(interestRate * 100).toFixed(1)}%
 • Loan Tenor: ${tenor} years
 • Amortization: Level payment`,
@@ -201,7 +201,9 @@ Assumptions:
       currentDSCR,
       ebitda,
       annualDebtService
-    }
+    },
+    // This tool already provides analysis, so no follow-through needed
+    needsFollowThrough: false
   };
 }
 
@@ -252,17 +254,18 @@ function runStressTest(params, onRunStressTest, modelData, currency) {
 
   return {
     success: true,
-    message: `🔬 Stress Test Initiated
+    message: `🔬 **Stress Test Initiated**
 
-Shocks Applied:
-${shockDescriptions.length > 0 ? shockDescriptions.map(s => `• ${s}`).join('\n') : '• No shocks specified'}
-
-The stress test is now running. Now analyze the results: review the impact on DSCR, ICR, covenant compliance, and cash flow. Provide your assessment of the stress scenario and any risks identified.`,
+**Shocks Applied:**
+${shockDescriptions.length > 0 ? shockDescriptions.map(s => `• ${s}`).join('\n') : '• No shocks specified'}`,
     data: {
       growthDelta: normalizedRevenueShock,
       cogsDelta: normalizedCostShock,
       rateDelta: normalizedRateShock
-    }
+    },
+    // Flag indicating this tool needs follow-through
+    needsFollowThrough: true,
+    followThroughPrompt: `The stress test is running. Now analyze the impact on covenants and identify which scenarios cause breaches.`
   };
 }
 
@@ -354,18 +357,18 @@ function updateModelParameter(params, onParamUpdate) {
 
   return {
     success: true,
-    message: `✅ Parameter Updated
+    message: `✅ **Parameter Updated**
 
-Changed: ${normalizedParamName}
-New Value: ${displayValue}
-${reason ? `Reason: ${reason}` : ''}
-
-The financial model has been recalculated with the new value. Now analyze the impact on key metrics (DSCR, leverage, cash flow) and provide your assessment.`,
+**Changed:** ${normalizedParamName}
+**New Value:** ${displayValue}${reason ? `\n**Reason:** ${reason}` : ''}`,
     data: {
       paramName: normalizedParamName,
       oldValue: null, // We don't have access to old value here
       newValue: parsedValue
-    }
+    },
+    // Flag indicating this tool needs follow-through
+    needsFollowThrough: true,
+    followThroughPrompt: `The model has been updated. Now analyze how this change affects the deal - look at DSCR, covenant compliance, and overall viability.`
   };
 }
 
@@ -386,7 +389,62 @@ function navigateToTab(params, onNavigateToTab) {
     };
   }
 
-  const tabNames = {
+  // CORRECT TAB MAPPING
+  // Key = what AI might send, Value = actual tab ID in your app
+  const tabMapping = {
+    // Valuation variations
+    'valuation': 'valuation',
+    'value': 'valuation',
+    'dcf': 'valuation',
+    'enterprise-value': 'valuation',
+    'equity-value': 'valuation',
+
+    // Dashboard variations
+    'dashboard': 'dashboard',
+    'credit': 'dashboard',
+    'credit-dashboard': 'dashboard',
+    'overview': 'dashboard',
+    'summary': 'dashboard',
+
+    // Capital Structure variations
+    'capital': 'capital',
+    'capital-structure': 'capital',
+    'debt-structure': 'capital',
+    'structure': 'capital',
+
+    // Scenarios variations
+    'scenarios': 'scenarios',
+    'scenario': 'scenarios',
+    'scenario-comparison': 'scenarios',
+    'comparison': 'scenarios',
+
+    // Stress Testing variations
+    'stress': 'debt-stress',
+    'stress-test': 'debt-stress',
+    'stress-testing': 'debt-stress',
+    'debt-stress': 'debt-stress',
+    'custom': 'custom',
+
+    // Sensitivity variations
+    'sensitivity': 'sensitivity',
+    'sensitivity-analysis': 'sensitivity',
+
+    // Reports variations
+    'reports': 'reports',
+    'report': 'reports',
+
+    // Historical variations
+    'historical': 'historical',
+    'history': 'historical',
+
+    // Tables variations
+    'tables': 'tables',
+    'data': 'tables',
+    'data-tables': 'tables'
+  };
+
+  // Tab display names for user-friendly messages
+  const tabDisplayNames = {
     'dashboard': 'Credit Dashboard',
     'capital': 'Capital Structure',
     'valuation': 'Valuation',
@@ -399,20 +457,34 @@ function navigateToTab(params, onNavigateToTab) {
     'tables': 'Data Tables'
   };
 
-  if (!tabNames[normalizedTabId]) {
+  // Normalize input
+  const normalizedInput = normalizedTabId.toLowerCase().trim();
+
+  // Find the correct tab
+  const actualTabId = tabMapping[normalizedInput] || normalizedInput;
+
+  // Validate tab exists
+  if (!tabDisplayNames[actualTabId]) {
     return {
       success: false,
-      message: `Unknown tab: "${normalizedTabId}". Valid options: ${Object.keys(tabNames).join(', ')}`,
+      message: `Unknown tab: "${normalizedTabId}". Valid tabs are: ${Object.keys(tabDisplayNames).join(', ')}`,
       data: null
     };
   }
 
-  onNavigateToTab(normalizedTabId);
+  // Execute navigation
+  onNavigateToTab(actualTabId);
 
   return {
     success: true,
-    message: `📍 Navigating to ${tabNames[normalizedTabId]} tab...`,
-    data: { tabId: normalizedTabId }
+    message: `📍 Navigating to **${tabDisplayNames[actualTabId]}** tab...`,
+    data: {
+      tabId: actualTabId,
+      displayName: tabDisplayNames[actualTabId]
+    },
+    // Flag indicating this tool needs follow-through
+    needsFollowThrough: true,
+    followThroughPrompt: `Now that you're viewing the ${tabDisplayNames[actualTabId]}, provide your analysis of what you see.`
   };
 }
 
@@ -506,11 +578,11 @@ function analyzeCovenantHeadroom(params, modelData, currency) {
 
   return {
     success: true,
-    message: `📋 Covenant Headroom Analysis
+    message: `📋 **Covenant Headroom Analysis**
 
 ${sections.join('\n\n')}
 
-Overall Assessment: ${overallStatus}`,
+**Overall Assessment:** ${overallStatus}`,
     data: {
       analysis,
       breaches: {
@@ -518,7 +590,9 @@ Overall Assessment: ${overallStatus}`,
         icr: icrBreachYears,
         leverage: leverageBreachYears
       }
-    }
+    },
+    // This tool already provides analysis, so no follow-through needed
+    needsFollowThrough: false
   };
 }
 
@@ -597,7 +671,9 @@ function restructureDeal(params, modelData, currency) {
       diagnosis,
       options,
       recommendation
-    }
+    },
+    // This tool already provides comprehensive analysis, so no follow-through needed
+    needsFollowThrough: false
   };
 }
 

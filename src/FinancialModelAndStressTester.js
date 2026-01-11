@@ -1178,6 +1178,7 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
 
   // Sync draft params with actual params when debounced
   useEffect(() => {
+    console.log('Syncing debouncedParams to params, requestedLoanAmount:', debouncedParams.requestedLoanAmount);
     setParams(debouncedParams);
   }, [debouncedParams]);
 
@@ -2172,10 +2173,13 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
                   Core Terms
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <MoneyField 
-                    label="Loan Amount" 
-                    value={draftParams.requestedLoanAmount} 
-                    onChange={(v) => setDraftParams({...draftParams, requestedLoanAmount: v})} 
+                  <MoneyField
+                    label="Loan Amount"
+                    value={draftParams.requestedLoanAmount}
+                    onChange={(v) => {
+                      console.log('Loan Amount changed to:', v);
+                      setDraftParams({...draftParams, requestedLoanAmount: v});
+                    }}
                     ccy={ccy}
                   />
                   <PctField 

@@ -259,10 +259,10 @@ export default async function handler(req, res) {
     }
 
     // Step 7: Validate Request Body
-    const { prompt, systemMessage, messages, extractionMode } = req.body || {};
+    const { prompt, systemMessage, messages, extractionMode, tools } = req.body || {};
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Prompt is required and must be a non-empty string',
         code: ERROR_CODES.MISSING_PROMPT,
         requestId
@@ -280,7 +280,7 @@ export default async function handler(req, res) {
     }
 
     if (messages && Array.isArray(messages)) {
-      const validMessages = messages.filter(m => 
+      const validMessages = messages.filter(m =>
         m && typeof m.role === 'string' && typeof m.content === 'string'
       );
       deepseekMessages.push(...validMessages);
@@ -291,20 +291,28 @@ export default async function handler(req, res) {
     // Step 9: Call DeepSeek API
     let aiResponse;
     let aiData;
-    
+
     try {
+      const requestBody = {
+        model: 'deepseek-chat',
+        messages: deepseekMessages,
+        temperature,
+        max_tokens: maxTokens
+      };
+
+      // Add tools if provided (for function calling)
+      if (tools && Array.isArray(tools) && tools.length > 0) {
+        requestBody.tools = tools;
+        requestBody.tool_choice = 'auto';
+      }
+
       aiResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
         },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: deepseekMessages,
-          temperature,
-          max_tokens: maxTokens
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!aiResponse.ok) {
@@ -337,14 +345,18 @@ export default async function handler(req, res) {
     }
 
     // Step 10: Parse AI Response (null-safe)
-    const aiContent = safeGet(aiData, 'choices.0.message.content', null);
-    
-    if (!aiContent) {
+    const aiMessage = safeGet(aiData, 'choices.0.message', {});
+    const aiContent = aiMessage.content;
+    const aiToolCalls = aiMessage.tool_calls;
+
+    // Content is optional if tool calls are present
+    if (!aiContent && (!aiToolCalls || aiToolCalls.length === 0)) {
       logError('DEEPSEEK_RESPONSE', new Error('Empty or malformed response'), {
         hasChoices: !!aiData?.choices,
-        choicesLength: aiData?.choices?.length
+        choicesLength: aiData?.choices?.length,
+        hasToolCalls: !!aiToolCalls
       });
-      
+
       return res.status(502).json({
         error: 'AI service returned an invalid response',
         code: ERROR_CODES.AI_RESPONSE_PARSE,
@@ -375,8 +387,15 @@ export default async function handler(req, res) {
       .catch(err => logError('USAGE_LOG', err, { userId: user.id }));
 
     // Step 12: Return Success
+    const responseMessage = { content: aiContent };
+
+    // Include tool_calls if present
+    if (aiToolCalls && aiToolCalls.length > 0) {
+      responseMessage.tool_calls = aiToolCalls;
+    }
+
     return res.status(200).json({
-      choices: [{ message: { content: aiContent } }],
+      choices: [{ message: responseMessage }],
       model: aiData.model || 'deepseek-chat',
       usage: aiData.usage || {},
       userUsage: {

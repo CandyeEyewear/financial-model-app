@@ -5,6 +5,13 @@ import { Button } from "./Button";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { CapitalStructurePanel } from './CapitalStructurePanel';
 import { generateAICapitalStructureRecommendations } from '../utils/aiCapitalStructureAdvisor';
+// Import toggle-aware debt helpers
+import {
+  getEffectiveExistingDebt,
+  getNewFacilityAmount,
+  getTotalDebtFromParams,
+  hasAnyDebt as hasAnyDebtHelper
+} from '../utils/debtHelpers';
 
 import {
   CheckCircle,
@@ -62,48 +69,47 @@ const clampPct = (v) => Math.max(0, Math.min(100, v));
 const asM = (v) => (Number.isFinite(v) ? (v / 1_000_000) : 0);
 
 // ============================================================================
-// HELPER FUNCTIONS - CRITICAL FIX: Proper debt detection
+// HELPER FUNCTIONS - CRITICAL FIX: Proper debt detection (RESPECTS TOGGLE)
 // ============================================================================
 
 /**
  * Detect if there is ANY debt configured (existing or new)
- * This is THE source of truth for debt detection - checks ALL possible sources
+ * RESPECTS hasExistingDebt toggle - if OFF, ignores existing debt values
  *
- * FIXES BUG #1: Previously only checked params.openingDebt
+ * FIXED: Now uses toggle-aware helpers
  */
 function detectDebtPresence(params, projections) {
-  // Check projections first (most reliable - already calculated)
-  if ((projections?.multiTrancheInfo?.totalDebt || 0) > 0) return true;
-  if ((projections?.finalDebt || 0) > 0) return true;
-
-  // Check params - ALL possible debt sources
-  if (safe(params?.openingDebt, 0) > 0) return true;
-  if (safe(params?.existingDebtAmount, 0) > 0) return true;
-  if (params?.hasExistingDebt === true) return true;
-  if (safe(params?.requestedLoanAmount, 0) > 0) return true;
-
-  // Check debt tranches
-  if (params?.debtTranches?.some(t => (t.amount || 0) > 0)) return true;
-
-  return false;
+  // Use toggle-aware helper from debtHelpers
+  return hasAnyDebtHelper(projections, params);
 }
 
 /**
  * Get comprehensive debt information from projections or params
- * PRIORITY: projections.multiTrancheInfo > projections.finalDebt > params
+ * RESPECTS hasExistingDebt toggle
  *
- * FIXES BUG #3: Previously only used params.openingDebt
+ * FIXED: Now uses toggle-aware helpers
  */
 function getDebtInfo(projections, params) {
+  // Use toggle-aware helpers for consistent values
+  const effectiveExisting = getEffectiveExistingDebt(params);
+  const newFacility = getNewFacilityAmount(params);
+  const totalDebt = effectiveExisting + newFacility;
+
+  // Check if existing debt is being ignored due to toggle
+  const rawExisting = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
+  const existingIgnored = rawExisting > 0 && params?.hasExistingDebt !== true;
+
   // PRIORITY 1: Use multiTrancheInfo from projections (most complete)
-  if (projections?.multiTrancheInfo?.totalDebt > 0) {
+  // But still apply toggle logic
+  if (projections?.multiTrancheInfo?.totalDebt > 0 && params?.hasExistingDebt === true) {
     const info = projections.multiTrancheInfo;
     const existingTranches = info.tranches?.filter(t =>
-      t.name?.toLowerCase().includes('existing')
+      t.name?.toLowerCase().includes('existing') || t.isOpeningDebt
     ) || [];
     const newTranches = info.tranches?.filter(t =>
       t.name?.toLowerCase().includes('new') ||
-      t.name?.toLowerCase().includes('facility')
+      t.name?.toLowerCase().includes('facility') ||
+      t.isNewFacility
     ) || [];
 
     return {
@@ -113,64 +119,53 @@ function getDebtInfo(projections, params) {
       components: info.tranches || [],
       blendedRate: info.blendedRate || 0,
       source: 'Multi-Tranche (From Projection)',
-      isMultiTranche: true
+      isMultiTranche: true,
+      hasExistingDebtToggle: params?.hasExistingDebt === true,
+      existingIgnored: false
     };
   }
 
-  // PRIORITY 2: Use finalDebt from projections
-  if (projections?.finalDebt > 0) {
-    const existing = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
-    const newFacility = safe(params?.requestedLoanAmount) || 0;
-
-    return {
-      totalDebt: projections.finalDebt,
-      existingDebt: existing,
-      newFacility: newFacility,
-      components: buildComponentsFromParams(params),
-      blendedRate: calculateBlendedRate(params),
-      source: 'From Projection',
-      isMultiTranche: false
-    };
-  }
-
-  // PRIORITY 3: Calculate from params (fallback)
-  const existing = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
-  const newFacility = safe(params?.requestedLoanAmount) || 0;
-
+  // PRIORITY 2/3: Calculate from params (toggle-aware)
   return {
-    totalDebt: existing + newFacility,
-    existingDebt: existing,
+    totalDebt: totalDebt,
+    existingDebt: effectiveExisting,
     newFacility: newFacility,
     components: buildComponentsFromParams(params),
     blendedRate: calculateBlendedRate(params),
-    source: 'From Parameters',
-    isMultiTranche: false
+    source: projections?.finalDebt > 0 ? 'From Projection (Toggle-Aware)' : 'From Parameters (Toggle-Aware)',
+    isMultiTranche: false,
+    hasExistingDebtToggle: params?.hasExistingDebt === true,
+    existingIgnored: existingIgnored,
+    rawExistingDebt: rawExisting
   };
 }
 
 /**
  * Build debt components from params for display
+ * RESPECTS hasExistingDebt toggle
  */
 function buildComponentsFromParams(params) {
   const components = [];
 
-  // Check BOTH openingDebt and existingDebtAmount
-  const existingAmt = safe(params?.openingDebt) || safe(params?.existingDebtAmount);
-  if (existingAmt > 0) {
+  // CRITICAL: Only include existing debt if toggle is ON
+  const effectiveExisting = getEffectiveExistingDebt(params);
+  if (effectiveExisting > 0) {
     components.push({
       name: 'Existing Debt',
-      amount: existingAmt,
+      amount: effectiveExisting,
       rate: params?.existingDebtRate || params?.interestRate || 0,
       seniority: 'Senior',
       maturityDate: params?.openingDebtMaturityDate || 'N/A',
-      source: 'From Parameters'
+      source: 'From Parameters (Toggle: ON)'
     });
   }
 
-  if (safe(params?.requestedLoanAmount) > 0) {
+  // New facility is always included if present
+  const newFacility = getNewFacilityAmount(params);
+  if (newFacility > 0) {
     components.push({
       name: 'New Facility',
-      amount: params.requestedLoanAmount,
+      amount: newFacility,
       rate: params?.proposedPricing || params?.interestRate || 0,
       seniority: 'Senior',
       maturityDate: calculateMaturityDate(params),
@@ -183,11 +178,12 @@ function buildComponentsFromParams(params) {
 
 /**
  * Calculate blended interest rate across debt sources
+ * RESPECTS hasExistingDebt toggle
  */
 function calculateBlendedRate(params) {
-  const existingAmt = safe(params?.openingDebt) || safe(params?.existingDebtAmount) || 0;
+  const existingAmt = getEffectiveExistingDebt(params);
   const existingRate = params?.existingDebtRate || params?.interestRate || 0;
-  const newAmt = safe(params?.requestedLoanAmount) || 0;
+  const newAmt = getNewFacilityAmount(params);
   const newRate = params?.proposedPricing || params?.interestRate || 0;
 
   const total = existingAmt + newAmt;

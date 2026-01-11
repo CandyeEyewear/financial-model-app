@@ -76,13 +76,18 @@ export function calculateDebtCapacity(params, projection) {
   const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
   const newFacility = params.requestedLoanAmount || 0;
 
-  // Also check projection for actual debt (projection is source of truth if available)
-  const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
-                        projection?.finalDebt ||
-                        projection?.rows?.[0]?.grossDebt || 0;
+  // Calculate total debt from params
+  const paramsDebt = existingDebt + newFacility;
 
-  // Use projection debt if available and greater than 0, otherwise use params
-  const currentDebtRequest = projectionDebt > 0 ? projectionDebt : (existingDebt + newFacility);
+  // Also check projection for actual debt (only use if multi-tranche or explicit finalDebt)
+  const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
+                        projection?.finalDebt || 0;
+
+  // CRITICAL FIX: Prioritize params when user has entered requestedLoanAmount
+  // Only use projection debt if it's a multi-tranche scenario AND params don't have new facility
+  const currentDebtRequest = (newFacility > 0)
+    ? paramsDebt  // User entered new facility - use params
+    : (projectionDebt > 0 ? projectionDebt : paramsDebt);  // Otherwise check projection
   
   // Calculate available capacity or excess debt
   // Positive = over capacity (excess debt), Negative = under capacity (available room)
@@ -187,9 +192,10 @@ export function calculateDebtCapacity(params, projection) {
       totalDebt: currentDebtRequest,
       existingDebtPct: currentDebtRequest > 0 ? (existingDebt / currentDebtRequest) * 100 : 0,
       newFacilityPct: currentDebtRequest > 0 ? (newFacility / currentDebtRequest) * 100 : 0,
-      // Track debt source for transparency
-      debtSource: projectionDebt > 0 ? 'projection' : 'params',
-      projectionDebt: projectionDebt
+      // Track debt source for transparency - prioritize params when new facility is set
+      debtSource: (newFacility > 0) ? 'params' : (projectionDebt > 0 ? 'projection' : 'params'),
+      projectionDebt: projectionDebt,
+      paramsDebt: paramsDebt
     }
   };
 }
@@ -202,10 +208,13 @@ export function generateAlternativeStructures(params, projection, debtCapacity) 
   // Fixed: Check all debt sources for consistency with calculateDebtCapacity
   const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
   const newFacility = params.requestedLoanAmount || 0;
+  const paramsDebt = existingDebt + newFacility;
   const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
-                        projection?.finalDebt ||
-                        projection?.rows?.[0]?.grossDebt || 0;
-  const currentDebt = projectionDebt > 0 ? projectionDebt : (existingDebt + newFacility);
+                        projection?.finalDebt || 0;
+  // CRITICAL FIX: Same logic as calculateDebtCapacity - prioritize params when new facility is set
+  const currentDebt = (newFacility > 0)
+    ? paramsDebt
+    : (projectionDebt > 0 ? projectionDebt : paramsDebt);
   const currentEquity = params.equityContribution || 0;
   const totalCapital = currentDebt + currentEquity;
   const ebitda = projection?.rows?.[0]?.ebitda || params.baseRevenue * 0.20;

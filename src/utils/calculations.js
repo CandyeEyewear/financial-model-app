@@ -1,8 +1,5 @@
-export const clamp = (x, min, max) =>
-  Math.min(max, Math.max(min, Number.isFinite(x) ? x : 0));
-
-export const num = (x) =>
-  x === "" || x === null || x === undefined ? 0 : Number(x);
+// Re-export shared math utilities from centralized module
+export { clamp, num } from './mathUtils';
 
 /**
  * FIXED: Calculate historical assumptions with better CAPEX logic

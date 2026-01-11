@@ -2,13 +2,14 @@ import React, { useState, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { ChartWrapper } from "./ChartWrapper";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
-import { 
-  BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, 
+import { clamp, safeDivide, isValidNumber, sum, average } from "../utils/mathUtils";
+import {
+  BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar,
   ResponsiveContainer, LineChart, Line, ScatterChart, Scatter, Cell,
   Area, AreaChart, ComposedChart
 } from "recharts";
-import { 
-  AlertTriangle, TrendingUp, TrendingDown, Shield, Zap, DollarSign, 
+import {
+  AlertTriangle, TrendingUp, TrendingDown, Shield, Zap, DollarSign,
   CheckCircle, XCircle, Info, AlertCircle, BarChart3
 } from "lucide-react";
 
@@ -131,33 +132,39 @@ function getTotalDebt(projection, params) {
 
 /**
  * Calculate cash flow volatility (coefficient of variation)
+ * Uses centralized math utilities for safety
  */
 function calculateCashFlowVolatility(cashFlows) {
   if (!cashFlows || cashFlows.length < 2) return 0;
 
-  const validFlows = cashFlows.filter(v => Number.isFinite(v));
+  const validFlows = cashFlows.filter(isValidNumber);
   if (validFlows.length < 2) return 0;
 
-  const mean = validFlows.reduce((sum, val) => sum + val, 0) / validFlows.length;
+  const mean = average(validFlows);
   if (mean === 0) return 0;
 
-  const variance = validFlows.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / validFlows.length;
+  const variance = safeDivide(
+    validFlows.reduce((s, val) => s + Math.pow(val - mean, 2), 0),
+    validFlows.length,
+    0
+  );
   const stdDev = Math.sqrt(variance);
 
-  return stdDev / Math.abs(mean); // Coefficient of variation
+  return safeDivide(stdDev, Math.abs(mean), 0); // Coefficient of variation
 }
 
 /**
  * Calculate debt service capacity (aggregate EBITDA / aggregate debt service)
+ * Uses safe division to handle edge cases
  */
 function calculateDebtServiceCapacity(projection) {
   if (!projection.rows || projection.rows.length === 0) return 0;
-  
-  const totalEBITDA = projection.rows.reduce((sum, row) => sum + (row.ebitda || 0), 0);
-  const totalDebtService = projection.rows.reduce((sum, row) => sum + (row.debtService || 0), 0);
-  
+
+  const totalEBITDA = projection.rows.reduce((s, row) => s + (row.ebitda || 0), 0);
+  const totalDebtService = projection.rows.reduce((s, row) => s + (row.debtService || 0), 0);
+
   if (totalDebtService === 0) return Infinity;
-  return totalEBITDA / totalDebtService;
+  return safeDivide(totalEBITDA, totalDebtService, Infinity);
 }
 
 /**
@@ -210,7 +217,7 @@ function calculateResilienceScore(metrics, params = {}) {
                   icrRatio >= 0.8 ? 4 : 2;
   score = score - 10 + icrScore;
 
-  return Math.max(0, Math.min(100, Math.round(score)));
+  return clamp(Math.round(score), 0, 100);
 }
 
 /**

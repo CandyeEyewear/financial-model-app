@@ -32,6 +32,18 @@ import { calculateHistoricalAssumptions } from "./utils/calculations.js";
 import { buildProjection } from "./utils/buildProjection.js";
 import { applyShocks } from "./utils/applyShocks.js";
 import { getBenchmarksForIndustry } from "./utils/industryBenchmarks.js";
+// Centralized math utilities for consistency
+import {
+  clamp,
+  safeDivide,
+  isValidNumber,
+  safeNumber,
+  average,
+  sum,
+  decimalToPercent,
+  percentToDecimal,
+  roundTo
+} from "./utils/mathUtils.js";
 
 // Hook imports
 import { useDebounce } from "./hooks/debounce.js";
@@ -208,61 +220,60 @@ function MoneyField({ label, value, onChange, ccy }) {
 
 function PctField({ label, value, onChange, min = -100, max = 100 }) {
   // Display value is the percentage number (12 for 12%, not 0.12)
+  // Uses centralized mathUtils for consistent conversions
   const [displayValue, setDisplayValue] = React.useState('');
   const [isFocused, setIsFocused] = React.useState(false);
-  
+
   // Sync display when prop changes from outside (but not when user is typing)
   React.useEffect(() => {
     if (!isFocused) {
-      const pctValue = (value * 100).toFixed(2);
-      setDisplayValue(pctValue);
+      setDisplayValue(decimalToPercent(value).toFixed(2));
     }
   }, [value, isFocused]);
-  
+
   // Initialize on mount
   React.useEffect(() => {
-    setDisplayValue((value * 100).toFixed(2));
+    setDisplayValue(decimalToPercent(value).toFixed(2));
   }, []);
-  
+
   const handleChange = (e) => {
     const inputValue = e.target.value;
     setDisplayValue(inputValue);
-    
-    // Convert percentage to decimal for storage
+
+    // Convert percentage to decimal for storage using centralized utility
     const numValue = parseFloat(inputValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      // Clamp to reasonable range
-      const clamped = Math.min(max, Math.max(min, numValue));
-      onChange(clamped / 100); // Store as decimal (12 becomes 0.12)
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
+      onChange(percentToDecimal(clamped)); // Store as decimal (12 becomes 0.12)
     }
   };
-  
+
   const handleBlur = () => {
     setIsFocused(false);
     // Format to 2 decimal places on blur
     const numValue = parseFloat(displayValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
       setDisplayValue(clamped.toFixed(2));
-      onChange(clamped / 100);
+      onChange(percentToDecimal(clamped));
     } else {
       // Invalid input, reset to current value
-      setDisplayValue((value * 100).toFixed(2));
+      setDisplayValue(decimalToPercent(value).toFixed(2));
     }
   };
-  
+
   const handleFocus = (e) => {
     setIsFocused(true);
     // Select all text on focus for easy editing
     e.target.select();
   };
-  
+
   return (
     <div className="space-y-1">
       <Label className="text-xs font-semibold text-slate-700">{label}</Label>
       <div className="flex items-center gap-2">
-        <Input 
-          type="number" 
+        <Input
+          type="number"
           value={displayValue}
           onFocus={handleFocus}
           onBlur={handleBlur}
@@ -317,16 +328,16 @@ function ValidationErrors({ params }) {
   if (params.terminalGrowth >= params.wacc) {
     errors.push({
       field: "Terminal Growth",
-      message: `Terminal growth (${(params.terminalGrowth * 100).toFixed(2)}%) must be less than WACC (${(params.wacc * 100).toFixed(2)}%).`,
+      message: `Terminal growth (${decimalToPercent(params.terminalGrowth).toFixed(2)}%) must be less than WACC (${decimalToPercent(params.wacc).toFixed(2)}%).`,
       severity: "critical"
     });
   }
-  
+
   // Check reasonable WACC range
   if (params.wacc > 0.50) {
     errors.push({
       field: "WACC",
-      message: `WACC of ${(params.wacc * 100).toFixed(2)}% seems unusually high. Typical range is 5-25%.`,
+      message: `WACC of ${decimalToPercent(params.wacc).toFixed(2)}% seems unusually high. Typical range is 5-25%.`,
       severity: "warning"
     });
   }
@@ -627,7 +638,45 @@ function ClearConfirmDialog({ show, onClose, onConfirm }) {
 const STORAGE_KEY_PARAMS = 'finsight_params';
 const STORAGE_KEY_HISTORICAL = 'finsight_historical_data';
 
+// ==========================================
+// CONFIGURABLE CONSTANTS
+// These can be adjusted based on business requirements
+// ==========================================
+const AUTO_CALC_CONSTANTS = {
+  // Collateral estimation: percentage of total assets used as collateral value
+  COLLATERAL_TO_ASSETS_RATIO: 0.50,
+
+  // Cost structure estimation when only EBITDA margin is known
+  COGS_TO_TOTAL_OPCOST_RATIO: 0.60,  // 60% of operating costs are COGS
+  OPEX_TO_TOTAL_OPCOST_RATIO: 0.40,  // 40% of operating costs are OpEx
+
+  // Default operating expense rate when not calculable
+  DEFAULT_OPEX_PCT: 0.20,
+
+  // Default depreciation rate as % of PPE
+  DEFAULT_DA_PCT_OF_PPE: 0.10,
+
+  // Working capital estimation defaults
+  DEFAULT_WC_PCT_OF_REV: 0.15,
+
+  // Tax rate defaults by jurisdiction (currently US default)
+  DEFAULT_TAX_RATE: 0.21,
+
+  // Valuation defaults
+  DEFAULT_WACC: 0.10,
+  DEFAULT_TERMINAL_GROWTH: 0.03,
+  DEFAULT_ENTRY_MULTIPLE: 8.0,
+
+  // Interest rate defaults
+  DEFAULT_NEW_FACILITY_RATE: 0.12,
+  DEFAULT_EXISTING_DEBT_RATE: 0.08,
+};
+
 // Default params for initialization and reset
+// NOTE: Field naming convention for debt:
+//   - NEW FACILITY: proposedPricing, proposedTenor, interestOnlyPeriod, facilityAmortizationType
+//   - EXISTING DEBT: existingDebtRate, existingDebtTenor, existingDebtAmortizationType
+//   - LEGACY (for backward compat): openingDebt, interestRate, debtTenorYears, interestOnlyYears
 const getDefaultParams = () => ({
   // TIER 1: CORE ASSUMPTIONS
   startYear: new Date().getFullYear(),
@@ -635,31 +684,31 @@ const getDefaultParams = () => ({
   baseRevenue: 0,
   growth: 0.08,
   cogsPct: 0.40,
-  opexPct: 0.25,
+  opexPct: AUTO_CALC_CONSTANTS.DEFAULT_OPEX_PCT + 0.05, // 25% default
   capexPct: 0.05,
-  daPctOfPPE: 0.10,
-  wcPctOfRev: 0.15,
-  taxRate: 0.21,
-  wacc: 0.10,
-  terminalGrowth: 0.03,
+  daPctOfPPE: AUTO_CALC_CONSTANTS.DEFAULT_DA_PCT_OF_PPE,
+  wcPctOfRev: AUTO_CALC_CONSTANTS.DEFAULT_WC_PCT_OF_REV,
+  taxRate: AUTO_CALC_CONSTANTS.DEFAULT_TAX_RATE,
+  wacc: AUTO_CALC_CONSTANTS.DEFAULT_WACC,
+  terminalGrowth: AUTO_CALC_CONSTANTS.DEFAULT_TERMINAL_GROWTH,
   equityContribution: 0,
-  entryMultiple: 8.0,
+  entryMultiple: AUTO_CALC_CONSTANTS.DEFAULT_ENTRY_MULTIPLE,
   sharesOutstanding: 1_000_000,
   industry: "Manufacturing",
 
   // NEW FACILITY
   requestedLoanAmount: 0,
-  proposedPricing: 0.12,
+  proposedPricing: AUTO_CALC_CONSTANTS.DEFAULT_NEW_FACILITY_RATE,
   proposedTenor: 5,
   facilityAmortizationType: 'amortizing',
-  interestOnlyPeriod: 0,
+  interestOnlyPeriod: 0,  // Maps to interestOnlyYears in buildProjection
   paymentFrequency: "Quarterly",
   balloonPercentage: 0,
 
   // EXISTING DEBT
   hasExistingDebt: false,
   existingDebtAmount: 0,
-  existingDebtRate: 0.08,
+  existingDebtRate: AUTO_CALC_CONSTANTS.DEFAULT_EXISTING_DEBT_RATE,
   existingDebtTenor: 5,
   existingDebtAmortizationType: 'amortizing',
 
@@ -1194,6 +1243,7 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
   }, [debouncedParams]);
 
   // Auto-populate financial parameters when historical data changes
+  // Uses centralized mathUtils for consistent calculations
   useEffect(() => {
     const validYears = [...historicalData]
     .filter(d => d.revenue > 0)
@@ -1204,13 +1254,11 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
       // Get assumptions for averages (growth, opex, etc.)
       const assumptions = calculateHistoricalAssumptions(historicalData);
 
-      // ✅ Get the most recent (last) year in the list
+      // Get the most recent (last) year in the list
       const mostRecent = validYears[validYears.length - 1];
 
-      // ✅ Compute the average revenue across all years (backup)
-      const avgRevenue =
-        validYears.reduce((sum, yr) => sum + (yr.revenue || 0), 0) /
-        validYears.length;
+      // Compute the average revenue across all years (backup) using centralized utility
+      const avgRevenue = average(validYears.map(yr => yr.revenue || 0));
 
       if (assumptions) {
         setDraftParams((prev) => {
@@ -1218,13 +1266,12 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
           const totalHistoricalDebt =
             (mostRecent.shortTermDebt || 0) + (mostRecent.longTermDebt || 0);
 
-          // Calculate implied interest rate from interest expense
-          const historicalRate =
-            mostRecent.interestExpense && totalHistoricalDebt > 0
-              ? mostRecent.interestExpense / totalHistoricalDebt
-              : null;
+          // Calculate implied interest rate from interest expense using safe division
+          const historicalRate = mostRecent.interestExpense && totalHistoricalDebt > 0
+            ? safeDivide(mostRecent.interestExpense, totalHistoricalDebt, null)
+            : null;
 
-          // NEW: Store historical values for comparison
+          // Store historical values for comparison
           const historicalValues = {
             cogsPct: assumptions.cogsPct,
             opexPct: assumptions.opexPct,
@@ -1236,7 +1283,7 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
           return {
             ...prev,
 
-            // Base Revenue
+            // Base Revenue - use most recent, fallback to average, fallback to calculated
             baseRevenue:
               prev.baseRevenue === 0
                 ? mostRecent.revenue || avgRevenue || assumptions.baseRevenue
@@ -1249,21 +1296,22 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
             wcPctOfRev: !isFieldEdited(prev._editedFields, 'wcPctOfRev') ? assumptions.wcPctOfRev : prev.wcPctOfRev,
             growth: !isFieldEdited(prev._editedFields, 'growth') ? assumptions.growth : prev.growth,
 
-            // Optional auto-updates
+            // Optional auto-updates for debt
             openingDebt: prev.openingDebt === 0 ? totalHistoricalDebt : prev.openingDebt,
+            existingDebtAmount: prev.existingDebtAmount === 0 ? totalHistoricalDebt : prev.existingDebtAmount, // Keep in sync
             interestRate: prev.interestRate === 0 && historicalRate ? historicalRate : prev.interestRate,
-            
+
             // Auto-populate Total Assets from historical financials
-            totalAssets: prev.totalAssets === 0 && mostRecent?.totalAssets > 0 
-              ? mostRecent.totalAssets 
+            totalAssets: prev.totalAssets === 0 && mostRecent?.totalAssets > 0
+              ? mostRecent.totalAssets
               : prev.totalAssets,
-            
-            // Auto-populate Collateral Value from total assets if not set (conservative estimate at 50%)
+
+            // Auto-populate Collateral Value using configurable ratio constant
             collateralValue: prev.collateralValue === 0 && mostRecent?.totalAssets > 0
-              ? mostRecent.totalAssets * 0.5
+              ? mostRecent.totalAssets * AUTO_CALC_CONSTANTS.COLLATERAL_TO_ASSETS_RATIO
               : prev.collateralValue,
-            
-            // NEW: Store historical values for variance display
+
+            // Store historical values for variance display
             _historicalValues: historicalValues
           };
         });
@@ -1274,20 +1322,14 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
   const applyHistoricalAssumptions = () => {
     try {
       const assumptions = calculateHistoricalAssumptions(historicalData);
-      
+
       // Get most recent year with data for total assets
       const validYears = [...historicalData]
         .filter(d => d.revenue > 0)
         .sort((a, b) => a.year - b.year);
       const mostRecentYear = validYears.length > 0 ? validYears[validYears.length - 1] : null;
-      
+
       if (assumptions) {
-        // Get the most recent year from historical data for revenue
-        const validYears = [...historicalData]
-          .filter(d => d.revenue > 0)
-          .sort((a, b) => a.year - b.year);
-        const mostRecentYear = validYears[validYears.length - 1];
-        
         setDraftParams(prev => ({
           ...prev,
           // Use most recent year's revenue, falling back to calculated assumption
@@ -1295,20 +1337,21 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
             ? (mostRecentYear?.revenue || assumptions.baseRevenue)
             : prev.baseRevenue,
 
+          // Update if still at default values
           growth:     prev.growth     === 0.08 ? assumptions.growth     : prev.growth,
           cogsPct:    prev.cogsPct    === 0.40 ? assumptions.cogsPct    : prev.cogsPct,
-          opexPct:    prev.opexPct    === 0.25 ? assumptions.opexPct    : prev.opexPct,
-          wcPctOfRev: prev.wcPctOfRev === 0.15 ? assumptions.wcPctOfRev : prev.wcPctOfRev,
+          opexPct:    prev.opexPct    === AUTO_CALC_CONSTANTS.DEFAULT_OPEX_PCT + 0.05 ? assumptions.opexPct : prev.opexPct,
+          wcPctOfRev: prev.wcPctOfRev === AUTO_CALC_CONSTANTS.DEFAULT_WC_PCT_OF_REV ? assumptions.wcPctOfRev : prev.wcPctOfRev,
           capexPct:   prev.capexPct   === 0.05 ? assumptions.capexPct   : prev.capexPct,
 
           // Apply total assets from historical data
-          totalAssets: prev.totalAssets === 0 && mostRecentYear?.totalAssets > 0 
-            ? mostRecentYear.totalAssets 
+          totalAssets: prev.totalAssets === 0 && mostRecentYear?.totalAssets > 0
+            ? mostRecentYear.totalAssets
             : prev.totalAssets,
-          
-          // Apply collateral value estimate if not set
+
+          // Apply collateral value estimate using configurable ratio
           collateralValue: prev.collateralValue === 0 && mostRecentYear?.totalAssets > 0
-            ? mostRecentYear.totalAssets * 0.5
+            ? mostRecentYear.totalAssets * AUTO_CALC_CONSTANTS.COLLATERAL_TO_ASSETS_RATIO
             : prev.collateralValue,
         }));
         setShowInputs(true);

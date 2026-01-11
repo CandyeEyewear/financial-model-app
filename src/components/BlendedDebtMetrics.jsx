@@ -2,6 +2,7 @@
 import React from 'react';
 import { DollarSign, Percent, Calendar, TrendingUp, AlertTriangle } from 'lucide-react';
 import { currencyFmtMM } from '../utils/formatters';
+import { safeDivide, decimalToPercent } from '../utils/mathUtils';
 
 // Calculate Year 1 principal accounting for interest-only periods
 const calculateYear1Principal = (tranches) => {
@@ -21,9 +22,9 @@ const calculateYear1Principal = (tranches) => {
       return sum;
     }
 
-    // Amortizing - calculate annual principal
+    // Amortizing - calculate annual principal using safe division
     const amortizingYears = tenorYears - interestOnlyYears;
-    const annualPrincipal = amortizingYears > 0 ? amount / amortizingYears : 0;
+    const annualPrincipal = safeDivide(amount, amortizingYears, 0);
 
     return sum + annualPrincipal;
   }, 0);
@@ -33,8 +34,11 @@ export function BlendedDebtMetrics({ tranches, ccy, startYear, projectionYears }
   if (!tranches || tranches.length === 0) return null;
 
   const totalDebt = tranches.reduce((sum, t) => sum + t.amount, 0);
-  const weightedRate =
-    totalDebt > 0 ? tranches.reduce((sum, t) => sum + (t.amount * t.rate), 0) / totalDebt : 0;
+  const weightedRate = safeDivide(
+    tranches.reduce((sum, t) => sum + (t.amount * t.rate), 0),
+    totalDebt,
+    0
+  );
 
   // Calculate estimated annual debt service (interest + amortization if applicable)
   const totalInterest = tranches.reduce((s, t) => s + (t.amount || 0) * (t.rate || 0), 0);
@@ -63,7 +67,7 @@ export function BlendedDebtMetrics({ tranches, ccy, startYear, projectionYears }
         <Metric label="Total Debt" value={currencyFmtMM(totalDebt, ccy)} icon={<DollarSign />} />
         <Metric
           label="Blended Rate"
-          value={`${(weightedRate * 100).toFixed(2)}%`}
+          value={`${decimalToPercent(weightedRate).toFixed(2)}%`}
           icon={<Percent />}
         />
         <Metric
@@ -114,9 +118,9 @@ export function BlendedDebtMetrics({ tranches, ccy, startYear, projectionYears }
                 <td className="py-2 font-medium text-purple-900">{t.name}</td>
                 <td className="text-right text-purple-800">{currencyFmtMM(t.amount, ccy)}</td>
                 <td className="text-right text-purple-700">
-                  {((t.amount / totalDebt) * 100).toFixed(1)}%
+                  {decimalToPercent(safeDivide(t.amount, totalDebt, 0)).toFixed(1)}%
                 </td>
-                <td className="text-right text-purple-800">{(t.rate * 100).toFixed(2)}%</td>
+                <td className="text-right text-purple-800">{decimalToPercent(t.rate).toFixed(2)}%</td>
                 <td className="text-right text-purple-700">
                   {new Date(t.maturityDate).toLocaleDateString()}
                 </td>

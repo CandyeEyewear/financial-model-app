@@ -6,6 +6,66 @@
 import { currencyFmt, currencyFmtMM, pctFmt, numFmt } from './formatters';
 
 /**
+ * Parse monetary value from various formats
+ * Handles: "$100M", "100m", "100 million", "100,000,000", "100000000"
+ *
+ * @param {string|number} value - The value to parse
+ * @returns {number} - Parsed numeric value
+ */
+function parseMonetaryValue(value) {
+  // If already a valid number, return it
+  if (typeof value === 'number' && !isNaN(value) && value !== 0) {
+    return value;
+  }
+
+  // Convert to string for parsing
+  let str = String(value).trim().toLowerCase();
+
+  // Remove currency symbols and spaces
+  str = str.replace(/[$j\s,]/g, '');
+
+  // Handle millions shorthand: "100m" or "100M"
+  if (str.match(/^[\d.]+m$/i)) {
+    const num = parseFloat(str.replace(/m$/i, ''));
+    return num * 1000000;
+  }
+
+  // Handle billions shorthand: "1b" or "1B"
+  if (str.match(/^[\d.]+b$/i)) {
+    const num = parseFloat(str.replace(/b$/i, ''));
+    return num * 1000000000;
+  }
+
+  // Handle thousands shorthand: "500k" or "500K"
+  if (str.match(/^[\d.]+k$/i)) {
+    const num = parseFloat(str.replace(/k$/i, ''));
+    return num * 1000;
+  }
+
+  // Handle "million" word: "100 million"
+  if (str.includes('million')) {
+    const num = parseFloat(str.replace(/million/i, ''));
+    return num * 1000000;
+  }
+
+  // Handle "billion" word
+  if (str.includes('billion')) {
+    const num = parseFloat(str.replace(/billion/i, ''));
+    return num * 1000000000;
+  }
+
+  // Try parsing as regular number
+  const parsed = parseFloat(str);
+
+  // Validation: if result is 0 but original wasn't meant to be 0
+  if (parsed === 0 && !str.match(/^0+$/)) {
+    console.warn(`parseMonetaryValue: Suspicious 0 result from "${value}"`);
+  }
+
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
  * Execute a tool call from the AI
  * @param {string} toolName - Name of the tool to execute
  * @param {object} params - Parameters for the tool
@@ -197,13 +257,7 @@ function runStressTest(params, onRunStressTest, modelData, currency) {
 Shocks Applied:
 ${shockDescriptions.length > 0 ? shockDescriptions.map(s => `• ${s}`).join('\n') : '• No shocks specified'}
 
-The stress test is now running. Check the Custom Stress tab to see the full impact on:
-• DSCR and ICR ratios
-• Covenant compliance
-• Cash flow projections
-• Breach risk analysis
-
-I've navigated you to the stress testing results.`,
+The stress test is now running. Now analyze the results: review the impact on DSCR, ICR, covenant compliance, and cash flow. Provide your assessment of the stress scenario and any risks identified.`,
     data: {
       growthDelta: normalizedRevenueShock,
       cogsDelta: normalizedCostShock,
@@ -220,7 +274,7 @@ function updateModelParameter(params, onParamUpdate) {
 
   // Normalize parameter names (handle both formats)
   const normalizedParamName = paramName || param_name;
-  const normalizedValue = newValue !== undefined ? newValue : new_value;
+  const rawValue = newValue !== undefined ? newValue : new_value;
 
   if (!onParamUpdate) {
     return {
@@ -246,15 +300,56 @@ function updateModelParameter(params, onParamUpdate) {
     };
   }
 
+  // Define parameter types for proper parsing
+  const percentageParams = ['interestRate', 'revenueGrowth', 'growth', 'ebitdaMargin', 'taxRate', 'wacc', 'terminalGrowth', 'cogsPct', 'opexPct', 'capexPct'];
+  const monetaryParams = ['requestedLoanAmount', 'openingDebt', 'existingDebtAmount', 'openingCash', 'baseRevenue'];
+
+  // Parse the value based on parameter type
+  let parsedValue;
+
+  if (monetaryParams.includes(normalizedParamName)) {
+    // Use monetary value parser for debt, revenue, cash fields
+    parsedValue = parseMonetaryValue(rawValue);
+
+    // DEBUG LOGGING
+    console.log('=== UPDATE PARAM DEBUG (Monetary) ===');
+    console.log('paramName:', normalizedParamName);
+    console.log('rawValue:', rawValue, typeof rawValue);
+    console.log('parsedValue:', parsedValue);
+
+    // Validation: Check for suspicious zero
+    if (parsedValue === 0 && rawValue !== 0 && rawValue !== '0') {
+      console.error('WARNING: Monetary value parsed to 0 but input was:', rawValue);
+      return {
+        success: false,
+        message: `Could not parse value "${rawValue}". Please provide a number like "100000000" or "100M".`,
+        data: null
+      };
+    }
+  } else if (percentageParams.includes(normalizedParamName)) {
+    // For percentages, check if value needs conversion
+    parsedValue = typeof rawValue === 'number' ? rawValue : parseFloat(rawValue);
+
+    // If value > 1, assume it's a percentage (e.g., 12 means 12%)
+    if (parsedValue > 1) {
+      parsedValue = parsedValue / 100;
+      console.log(`Converting ${rawValue} to decimal: ${parsedValue}`);
+    }
+  } else {
+    // For other numeric fields (tenor, etc.), just parse as number
+    parsedValue = typeof rawValue === 'number' ? rawValue : parseFloat(rawValue);
+  }
+
   // Execute the update
-  onParamUpdate(normalizedParamName, normalizedValue);
+  onParamUpdate(normalizedParamName, parsedValue);
 
   // Format the value for display
-  let displayValue = normalizedValue;
-  if (['interestRate', 'revenueGrowth', 'growth', 'ebitdaMargin', 'taxRate', 'wacc', 'terminalGrowth', 'cogsPct', 'opexPct', 'capexPct'].includes(normalizedParamName)) {
-    displayValue = `${(normalizedValue * 100).toFixed(2)}%`;
-  } else if (['requestedLoanAmount', 'openingDebt', 'existingDebtAmount', 'openingCash', 'baseRevenue'].includes(normalizedParamName)) {
-    displayValue = `${(normalizedValue / 1000000).toFixed(1)}M`;
+  let displayValue = parsedValue;
+  if (percentageParams.includes(normalizedParamName)) {
+    displayValue = `${(parsedValue * 100).toFixed(2)}%`;
+  } else if (monetaryParams.includes(normalizedParamName)) {
+    const prefix = 'J$'; // Could get from context
+    displayValue = `${prefix}${(parsedValue / 1000000).toFixed(1)}M`;
   }
 
   return {
@@ -265,11 +360,11 @@ Changed: ${normalizedParamName}
 New Value: ${displayValue}
 ${reason ? `Reason: ${reason}` : ''}
 
-The financial model has been recalculated with the new value. All projections, ratios, and analyses now reflect this change.`,
+The financial model has been recalculated with the new value. Now analyze the impact on key metrics (DSCR, leverage, cash flow) and provide your assessment.`,
     data: {
       paramName: normalizedParamName,
       oldValue: null, // We don't have access to old value here
-      newValue: normalizedValue
+      newValue: parsedValue
     }
   };
 }

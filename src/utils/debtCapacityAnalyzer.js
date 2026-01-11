@@ -72,22 +72,29 @@ export function calculateDebtCapacity(params, projection) {
   const aggressiveDebt = ebitda / (annualPaymentFactor * 1.10); // Minimum 1.10x DSCR (aggressive)
   
   // Current debt position - with breakdown
-  // Fixed: Check all debt sources including projection data
-  const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
+  // CRITICAL FIX: Handle multi-tranche debt properly
+
+  // Step 1: Get EXISTING debt (all tranches) from projection OR params
+  // Projection has the full picture of all existing tranches
+  const existingDebtFromProjection = projection?.multiTrancheInfo?.totalDebt ||
+                                      projection?.rows?.[0]?.grossDebt || 0;
+  const existingDebtFromParams = params.openingDebt || params.existingDebtAmount || 0;
+
+  // Use projection for existing debt if available (handles multi-tranche), else use params
+  const existingDebt = existingDebtFromProjection > 0 ? existingDebtFromProjection : existingDebtFromParams;
+
+  // Step 2: Get NEW facility from params (user input)
   const newFacility = params.requestedLoanAmount || 0;
 
-  // Calculate total debt from params
-  const paramsDebt = existingDebt + newFacility;
+  // Step 3: Check if projection's debt already includes the new facility
+  // If projection.finalDebt exists and is GREATER than multiTrancheInfo, it likely includes new facility
+  const projectionFinalDebt = projection?.finalDebt || 0;
+  const newFacilityAlreadyInProjection = (projectionFinalDebt > existingDebt) && (newFacility > 0);
 
-  // Also check projection for actual debt (only use if multi-tranche or explicit finalDebt)
-  const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
-                        projection?.finalDebt || 0;
-
-  // CRITICAL FIX: Prioritize params when user has entered requestedLoanAmount
-  // Only use projection debt if it's a multi-tranche scenario AND params don't have new facility
-  const currentDebtRequest = (newFacility > 0)
-    ? paramsDebt  // User entered new facility - use params
-    : (projectionDebt > 0 ? projectionDebt : paramsDebt);  // Otherwise check projection
+  // Step 4: Calculate current debt request
+  const currentDebtRequest = newFacilityAlreadyInProjection
+    ? projectionFinalDebt  // Projection already has existing + new
+    : existingDebt + newFacility;  // Add new facility to existing
   
   // Calculate available capacity or excess debt
   // Positive = over capacity (excess debt), Negative = under capacity (available room)
@@ -187,15 +194,16 @@ export function calculateDebtCapacity(params, projection) {
 
     // Debt breakdown (existing vs new)
     debtBreakdown: {
-      existingDebt,
-      newFacility,
+      existingDebt,  // All existing tranches
+      newFacility,   // New facility request
       totalDebt: currentDebtRequest,
       existingDebtPct: currentDebtRequest > 0 ? (existingDebt / currentDebtRequest) * 100 : 0,
       newFacilityPct: currentDebtRequest > 0 ? (newFacility / currentDebtRequest) * 100 : 0,
-      // Track debt source for transparency - prioritize params when new facility is set
-      debtSource: (newFacility > 0) ? 'params' : (projectionDebt > 0 ? 'projection' : 'params'),
-      projectionDebt: projectionDebt,
-      paramsDebt: paramsDebt
+      // Track debt source for transparency
+      debtSource: newFacilityAlreadyInProjection ? 'projection' : 'calculated',
+      existingDebtSource: existingDebtFromProjection > 0 ? 'projection' : 'params',
+      projectionFinalDebt: projectionFinalDebt,
+      multiTrancheTotal: projection?.multiTrancheInfo?.totalDebt || 0
     }
   };
 }
@@ -205,16 +213,25 @@ export function calculateDebtCapacity(params, projection) {
  * Industry-standard approach considering DSCR, leverage, and LTV constraints
  */
 export function generateAlternativeStructures(params, projection, debtCapacity) {
-  // Fixed: Check all debt sources for consistency with calculateDebtCapacity
-  const existingDebt = params.openingDebt || params.existingDebtAmount || 0;
+  // CRITICAL FIX: Same multi-tranche logic as calculateDebtCapacity
+
+  // Get EXISTING debt (all tranches) from projection OR params
+  const existingDebtFromProjection = projection?.multiTrancheInfo?.totalDebt ||
+                                      projection?.rows?.[0]?.grossDebt || 0;
+  const existingDebtFromParams = params.openingDebt || params.existingDebtAmount || 0;
+  const existingDebt = existingDebtFromProjection > 0 ? existingDebtFromProjection : existingDebtFromParams;
+
+  // Get NEW facility from params
   const newFacility = params.requestedLoanAmount || 0;
-  const paramsDebt = existingDebt + newFacility;
-  const projectionDebt = projection?.multiTrancheInfo?.totalDebt ||
-                        projection?.finalDebt || 0;
-  // CRITICAL FIX: Same logic as calculateDebtCapacity - prioritize params when new facility is set
-  const currentDebt = (newFacility > 0)
-    ? paramsDebt
-    : (projectionDebt > 0 ? projectionDebt : paramsDebt);
+
+  // Check if projection already includes new facility
+  const projectionFinalDebt = projection?.finalDebt || 0;
+  const newFacilityAlreadyInProjection = (projectionFinalDebt > existingDebt) && (newFacility > 0);
+
+  // Calculate current debt
+  const currentDebt = newFacilityAlreadyInProjection
+    ? projectionFinalDebt
+    : existingDebt + newFacility;
   const currentEquity = params.equityContribution || 0;
   const totalCapital = currentDebt + currentEquity;
   const ebitda = projection?.rows?.[0]?.ebitda || params.baseRevenue * 0.20;

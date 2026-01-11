@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
 import {
   LayoutDashboard,
   Users,
@@ -18,46 +17,21 @@ import {
 } from 'lucide-react';
 
 export default function AdminLayout() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin, adminRole, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminRole, setAdminRole] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    checkAdminAccess();
-  }, [user]);
-
-  const checkAdminAccess = async () => {
-    if (!user) {
-      navigate('/auth');
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('admin_users')
-        .select('role, permissions')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .single();
-
-      if (error || !data) {
+    // Redirect non-admins once auth loading is complete
+    if (!isLoading) {
+      if (!user) {
+        navigate('/auth');
+      } else if (!isAdmin) {
         navigate('/');
-        return;
       }
-
-      setIsAdmin(true);
-      setAdminRole(data.role);
-    } catch (err) {
-      console.error('Admin check error:', err);
-      navigate('/');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [user, isAdmin, isLoading, navigate]);
 
   const navigation = [
     { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
@@ -81,7 +55,7 @@ export default function AdminLayout() {
     return location.pathname.startsWith(href);
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

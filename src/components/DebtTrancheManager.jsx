@@ -4,6 +4,7 @@ import { Plus, Trash2, Info } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Label } from './Label';
+import { safeDivide, decimalToPercent, percentToDecimal } from '../utils/mathUtils';
 
 // Account for interest-only periods in Year 1 preview
 const calculateYear1DebtService = (tranche) => {
@@ -26,9 +27,9 @@ const calculateYear1DebtService = (tranche) => {
     // In interest-only period - no principal
     year1Principal = 0;
   } else if (amortizationType === 'amortizing') {
-    // Amortizing with no IO period
+    // Amortizing with no IO period - use safe division
     const amortizingYears = tenorYears - interestOnlyYears;
-    year1Principal = amortizingYears > 0 ? amount / amortizingYears : 0;
+    year1Principal = safeDivide(amount, amortizingYears, 0);
   }
 
   return {
@@ -145,8 +146,8 @@ export function DebtTrancheManager({ tranches, onChange, ccy }) {
                 <Input
                   type="number"
                   step="0.01"
-                  value={(tranche.rate * 100).toFixed(2)}
-                  onChange={(e) => updateTranche(tranche.id, 'rate', Number(e.target.value) / 100)}
+                  value={decimalToPercent(tranche.rate).toFixed(2)}
+                  onChange={(e) => updateTranche(tranche.id, 'rate', percentToDecimal(Number(e.target.value)))}
                   className="h-9 text-sm"
                 />
               </div>

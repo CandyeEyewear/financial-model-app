@@ -7,6 +7,7 @@ import { Input } from './Input';
 import { Label } from './Label';
 import { DollarSign, Percent, Hash, Calendar } from 'lucide-react';
 import { formatNumber, formatPercent, parseCurrency, parsePercent } from '../utils/formatters';
+import { clamp, isValidNumber, decimalToPercent, percentToDecimal } from '../utils/mathUtils';
 
 /**
  * NumberField - Basic number input with validation
@@ -34,15 +35,14 @@ export const NumberField = forwardRef(({
       onChange(0);
       return;
     }
-    
-    let numValue = parseFloat(rawValue);
-    if (isNaN(numValue)) return;
-    
-    // Clamp to range
-    if (min !== undefined) numValue = Math.max(min, numValue);
-    if (max !== undefined) numValue = Math.min(max, numValue);
-    
-    onChange(numValue);
+
+    const numValue = parseFloat(rawValue);
+    if (!isValidNumber(numValue)) return;
+
+    // Clamp to range using centralized utility
+    const minBound = min !== undefined ? min : -Infinity;
+    const maxBound = max !== undefined ? max : Infinity;
+    onChange(clamp(numValue, minBound, maxBound));
   };
   
   return (
@@ -184,38 +184,38 @@ export const PctField = forwardRef(({
   // Convert decimal to percentage for display
   useEffect(() => {
     if (!isFocused && typeof value === 'number') {
-      setDisplayValue((value * 100).toFixed(decimals));
+      setDisplayValue(decimalToPercent(value).toFixed(decimals));
     }
   }, [value, isFocused, decimals]);
-  
+
   const handleChange = (e) => {
     const rawValue = e.target.value;
     setDisplayValue(rawValue);
-    
-    // Convert percentage to decimal
+
+    // Convert percentage to decimal using centralized utilities
     const numValue = parseFloat(rawValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
-      onChange(clamped / 100); // Store as decimal
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
+      onChange(percentToDecimal(clamped)); // Store as decimal
     }
   };
-  
+
   const handleFocus = (e) => {
     setIsFocused(true);
     e.target.select();
   };
-  
+
   const handleBlur = () => {
     setIsFocused(false);
     // Validate and format on blur
     const numValue = parseFloat(displayValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
       setDisplayValue(clamped.toFixed(decimals));
-      onChange(clamped / 100);
+      onChange(percentToDecimal(clamped));
     } else {
       // Reset to current value
-      setDisplayValue((value * 100).toFixed(decimals));
+      setDisplayValue(decimalToPercent(value).toFixed(decimals));
     }
   };
   
@@ -271,8 +271,8 @@ export const YearField = forwardRef(({
   
   const handleChange = (e) => {
     const numValue = parseInt(e.target.value, 10);
-    if (!isNaN(numValue)) {
-      onChange(Math.min(maxYear, Math.max(minYear, numValue)));
+    if (isValidNumber(numValue)) {
+      onChange(clamp(numValue, minYear, maxYear));
     }
   };
   
@@ -325,8 +325,8 @@ export const RatioField = forwardRef(({
   
   const handleChange = (e) => {
     const numValue = parseFloat(e.target.value);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      onChange(Math.min(max, Math.max(min, numValue)));
+    if (isValidNumber(numValue)) {
+      onChange(clamp(numValue, min, max));
     }
   };
   

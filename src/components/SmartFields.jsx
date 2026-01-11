@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { AlertTriangle, Info, BarChart3, Pencil, RefreshCw } from "lucide-react";
 import { Label } from "./Label";
 import { Input } from "./Input";
+import { clamp, isValidNumber, decimalToPercent, percentToDecimal, safeDivide } from "../utils/mathUtils";
 
 // ============================================================================
 // AUTO-POPULATION BADGE
@@ -41,40 +42,39 @@ export function SmartPctField({
   
   useEffect(() => {
     if (!isFocused) {
-      const pctValue = (value * 100).toFixed(2);
-      setDisplayValue(pctValue);
+      setDisplayValue(decimalToPercent(value).toFixed(2));
     }
   }, [value, isFocused]);
-  
+
   useEffect(() => {
-    setDisplayValue((value * 100).toFixed(2));
+    setDisplayValue(decimalToPercent(value).toFixed(2));
   }, []);
-  
+
   const handleChange = (e) => {
     const inputValue = e.target.value;
     setDisplayValue(inputValue);
     setIsEdited(true);
-    
+
     const numValue = parseFloat(inputValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
-      onChange(clamped / 100);
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
+      onChange(percentToDecimal(clamped));
     }
   };
-  
+
   const handleBlur = () => {
     setIsFocused(false);
     const numValue = parseFloat(displayValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
       setDisplayValue(clamped.toFixed(2));
-      onChange(clamped / 100);
+      onChange(percentToDecimal(clamped));
     } else {
-      setDisplayValue((value * 100).toFixed(2));
+      setDisplayValue(decimalToPercent(value).toFixed(2));
     }
   };
-  
-  const variance = historicalValue ? ((value - historicalValue) / historicalValue * 100) : null;
+
+  const variance = historicalValue ? safeDivide(value - historicalValue, historicalValue, 0) * 100 : null;
   const isSignificantVariance = variance && Math.abs(variance) > 10;
   
   return (
@@ -113,7 +113,7 @@ export function SmartPctField({
         <div className="flex items-start gap-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
           <AlertTriangle className="w-3 h-3 text-amber-600 mt-0.5 flex-shrink-0" />
           <span className="text-amber-800">
-            {variance > 0 ? '+' : ''}{variance.toFixed(1)}% vs historical ({(historicalValue * 100).toFixed(2)}%)
+            {variance > 0 ? '+' : ''}{variance.toFixed(1)}% vs historical ({decimalToPercent(historicalValue).toFixed(2)}%)
           </span>
         </div>
       )}
@@ -143,9 +143,9 @@ export function SmartNumberField({
   const [isFocused, setIsFocused] = useState(false);
   const [isEdited, setIsEdited] = useState(false);
 
-  // Calculate variance from benchmark
-  const variance = benchmarkValue && value !== benchmarkValue 
-    ? ((value - benchmarkValue) / benchmarkValue) * 100 
+  // Calculate variance from benchmark using safe division
+  const variance = benchmarkValue && value !== benchmarkValue
+    ? safeDivide(value - benchmarkValue, benchmarkValue, 0) * 100
     : 0;
   
   const hasSignificantVariance = Math.abs(variance) > 10;
@@ -160,19 +160,18 @@ export function SmartNumberField({
     const inputValue = e.target.value;
     setDisplayValue(inputValue);
     setIsEdited(true);
-    
+
     const numValue = parseFloat(inputValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
-      onChange(clamped);
+    if (isValidNumber(numValue)) {
+      onChange(clamp(numValue, min, max));
     }
   };
 
   const handleBlur = () => {
     setIsFocused(false);
     const numValue = parseFloat(displayValue);
-    if (!isNaN(numValue) && isFinite(numValue)) {
-      const clamped = Math.min(max, Math.max(min, numValue));
+    if (isValidNumber(numValue)) {
+      const clamped = clamp(numValue, min, max);
       setDisplayValue(clamped);
       onChange(clamped);
     } else {

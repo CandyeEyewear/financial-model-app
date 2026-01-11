@@ -5,6 +5,8 @@ import { Button } from "./Button";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import { CapitalStructurePanel } from './CapitalStructurePanel';
 import { generateAICapitalStructureRecommendations } from '../utils/aiCapitalStructureAdvisor';
+// Import centralized math utilities
+import { safeNumber, clamp, safeDivide } from '../utils/mathUtils';
 // Import centralized debt calculation service
 import {
   calculateAllDebtMetrics,
@@ -67,9 +69,10 @@ const COLORS = {
   info: { chart: "#6366f1" },
 };
 
-const safe = (v, d = 0) => (Number.isFinite(v) ? v : d);
-const clampPct = (v) => Math.max(0, Math.min(100, v));
-const asM = (v) => (Number.isFinite(v) ? (v / 1_000_000) : 0);
+// Use centralized math utilities - legacy aliases for backward compatibility
+const safe = (v, d = 0) => safeNumber(v, d);
+const clampPct = (v) => clamp(v, 0, 100);
+const asM = (v) => safeDivide(safeNumber(v, 0), 1_000_000, 0);
 
 // ============================================================================
 // HELPER FUNCTIONS - CRITICAL FIX: Proper debt detection (RESPECTS TOGGLE)

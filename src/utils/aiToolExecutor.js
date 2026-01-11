@@ -599,17 +599,34 @@ function generateRestructuringOptions(config) {
     prefix
   } = config;
 
-  const options = [];
-  const firstYearEBITDA = projections[0]?.ebitda || 0;
+  console.log('=== RESTRUCTURE DEAL DEBUG ===');
+  console.log('Input params:', { currentPrincipal, currentRate, currentTenor, targetMinDSCR, dscrMin });
+
+  // Log EBITDA values per year
+  projections.forEach((year, i) => {
+    console.log(`Year ${i+1} EBITDA: ${year.ebitda}, DSCR: ${year.dscr}`);
+  });
+
+  // CRITICAL FIX: Use MINIMUM EBITDA across ALL years, not worst DSCR year's EBITDA
+  const minEBITDA = Math.min(...projections.map(p => p.ebitda || 0));
   const worstYearDSCR = Math.min(...projections.map(p => p.dscr || 999));
-  const worstYear = projections.find(p => p.dscr === worstYearDSCR);
+
+  console.log('Min EBITDA across all years:', minEBITDA);
+  console.log('Worst DSCR:', worstYearDSCR);
+
+  // Log current debt service
+  const currentDS = calculateAnnualDebtService(currentPrincipal, currentRate, currentTenor);
+  console.log('Current annual debt service:', currentDS);
+  console.log('Payment factor (test 12%, 5yr):', calculatePaymentFactor(0.12, 5));
+
+  const options = [];
 
   // Option A: Principal Reduction
   const principalReductionOption = generatePrincipalReductionOption({
     currentPrincipal,
     currentRate,
     currentTenor,
-    worstYear,
+    minEBITDA,
     targetMinDSCR,
     projections,
     dscrMin,
@@ -623,7 +640,7 @@ function generateRestructuringOptions(config) {
     currentRate,
     currentTenor,
     maxTenorYears,
-    worstYear,
+    minEBITDA,
     targetMinDSCR,
     projections,
     dscrMin,
@@ -637,7 +654,7 @@ function generateRestructuringOptions(config) {
     currentRate,
     currentTenor,
     minAcceptableRate,
-    worstYear,
+    minEBITDA,
     targetMinDSCR,
     projections,
     dscrMin,
@@ -651,7 +668,7 @@ function generateRestructuringOptions(config) {
       currentPrincipal,
       currentRate,
       currentTenor,
-      worstYear,
+      minEBITDA,
       targetMinDSCR,
       projections,
       dscrMin,
@@ -665,7 +682,7 @@ function generateRestructuringOptions(config) {
     currentPrincipal,
     currentRate,
     currentTenor,
-    worstYear,
+    minEBITDA,
     targetMinDSCR,
     projections,
     dscrMin,
@@ -680,20 +697,53 @@ function generateRestructuringOptions(config) {
  * Option A: Principal Reduction
  */
 function generatePrincipalReductionOption(config) {
-  const { currentPrincipal, currentRate, currentTenor, worstYear, targetMinDSCR, projections, dscrMin, prefix } = config;
+  const { currentPrincipal, currentRate, currentTenor, minEBITDA, targetMinDSCR, projections, dscrMin, prefix } = config;
 
-  const worstYearEBITDA = worstYear?.ebitda || projections[0]?.ebitda || 0;
-  const targetDebtService = worstYearEBITDA / targetMinDSCR;
+  console.log('--- OPTION A: Principal Reduction ---');
+  console.log('  Min EBITDA:', minEBITDA);
+  console.log('  Target DSCR:', targetMinDSCR);
+
+  // Calculate max debt service that maintains target DSCR at minimum EBITDA
+  const maxDebtService = minEBITDA / targetMinDSCR;
+  console.log('  Max Debt Service for target DSCR:', maxDebtService);
+
+  // Calculate principal that produces this debt service
   const paymentFactor = calculatePaymentFactor(currentRate, currentTenor);
-  const targetPrincipal = targetDebtService / paymentFactor;
-  const principalReduction = Math.min(currentPrincipal - targetPrincipal, currentPrincipal * 0.35); // Cap at 35%
-  const newPrincipal = currentPrincipal - principalReduction;
+  console.log('  Payment Factor:', paymentFactor);
+
+  const targetPrincipal = maxDebtService / paymentFactor;
+  console.log('  Target Principal:', targetPrincipal);
+  console.log('  Current Principal:', currentPrincipal);
+
+  // CRITICAL FIX: Calculate reduction as currentPrincipal - targetPrincipal (should be POSITIVE)
+  // Reduction should DECREASE principal, not increase it!
+  const principalReduction = Math.max(0, currentPrincipal - targetPrincipal);
+  const cappedReduction = Math.min(principalReduction, currentPrincipal * 0.35); // Cap at 35%
+  const newPrincipal = currentPrincipal - cappedReduction;
+
+  console.log('  Reduction needed:', principalReduction);
+  console.log('  Capped Reduction (max 35%):', cappedReduction);
+  console.log('  New Principal:', newPrincipal);
+
+  // VERIFY: New principal should be LESS than current
+  if (newPrincipal > currentPrincipal) {
+    console.error('  ERROR: New principal is HIGHER than current! This is wrong!');
+  }
 
   const currentDS = calculateAnnualDebtService(currentPrincipal, currentRate, currentTenor);
   const newDS = calculateAnnualDebtService(newPrincipal, currentRate, currentTenor);
 
+  console.log('  Current Debt Service:', currentDS);
+  console.log('  New Debt Service:', newDS);
+
   const results = recalculateMetrics(projections, newPrincipal, currentRate, currentTenor, dscrMin);
-  const haircutPct = (principalReduction / currentPrincipal) * 100;
+  const haircutPct = (cappedReduction / currentPrincipal) * 100;
+
+  console.log('  Min DSCR after restructure:', results.minDSCR);
+  console.log('  Breach years after restructure:', results.breachYears);
+
+  const currentBreachYears = countBreachYears(projections, dscrMin);
+  const breachResolution = results.breachYears === 0 ? 'Resolved' : (results.breachYears < currentBreachYears ? 'Partial' : 'Not Resolved');
 
   return {
     name: 'Option A: Principal Reduction',
@@ -712,10 +762,10 @@ function generatePrincipalReductionOption(config) {
       { metric: 'Annual Debt Service', before: currentDS, after: newDS, change: ((newDS - currentDS) / currentDS) * 100 },
       { metric: 'Year 3 DSCR', before: projections[2]?.dscr || 0, after: results.year3DSCR, change: results.year3DSCR - (projections[2]?.dscr || 0) },
       { metric: 'Year 5 DSCR', before: projections[4]?.dscr || 0, after: results.year5DSCR, change: results.year5DSCR - (projections[4]?.dscr || 0) },
-      { metric: 'Breach Years', before: countBreachYears(projections, dscrMin), after: results.breachYears, change: 'Resolved' }
+      { metric: 'Breach Years', before: currentBreachYears, after: results.breachYears, change: breachResolution }
     ],
     pros: 'Immediately resolves all breaches',
-    cons: `Significant lender loss (${prefix}${(principalReduction / 1e6).toFixed(0)}M), unlikely to be accepted`
+    cons: `Significant lender loss (${prefix}${(cappedReduction / 1e6).toFixed(0)}M), unlikely to be accepted`
   };
 }
 
@@ -723,7 +773,9 @@ function generatePrincipalReductionOption(config) {
  * Option B: Tenor Extension
  */
 function generateTenorExtensionOption(config) {
-  const { currentPrincipal, currentRate, currentTenor, maxTenorYears, worstYear, targetMinDSCR, projections, dscrMin, prefix } = config;
+  const { currentPrincipal, currentRate, currentTenor, maxTenorYears, minEBITDA, targetMinDSCR, projections, dscrMin, prefix } = config;
+
+  console.log('--- OPTION B: Tenor Extension ---');
 
   // Find minimum tenor extension needed
   let newTenor = currentTenor + 1;
@@ -731,6 +783,10 @@ function generateTenorExtensionOption(config) {
 
   while (newTenor <= maxTenorYears) {
     results = recalculateMetrics(projections, currentPrincipal, currentRate, newTenor, dscrMin);
+    const newDS = calculateAnnualDebtService(currentPrincipal, currentRate, newTenor);
+    const newDSCR = minEBITDA / newDS;
+    console.log(`  Tenor ${newTenor}yr: DS=${newDS}, DSCR=${newDSCR.toFixed(2)}x, Breach Years=${results.breachYears}`);
+
     if (results.minDSCR >= targetMinDSCR && results.breachYears === 0) break;
     newTenor++;
   }
@@ -742,6 +798,13 @@ function generateTenorExtensionOption(config) {
   const newDS = calculateAnnualDebtService(currentPrincipal, currentRate, newTenor);
   const currentTotalInterest = calculateTotalInterest(currentPrincipal, currentRate, currentTenor);
   const newTotalInterest = calculateTotalInterest(currentPrincipal, currentRate, newTenor);
+
+  console.log('  Selected Tenor:', newTenor);
+  console.log('  New Debt Service:', newDS, '(should be LESS than current', currentDS, ')');
+  console.log('  New Min DSCR:', results.minDSCR, '(should be HIGHER than before)');
+
+  const currentBreachYears = countBreachYears(projections, dscrMin);
+  const breachResolution = results.breachYears === 0 ? 'Resolved' : (results.breachYears < currentBreachYears ? 'Partial' : 'Not Resolved');
 
   return {
     name: 'Option B: Tenor Extension',
@@ -761,7 +824,7 @@ function generateTenorExtensionOption(config) {
       { metric: 'Year 3 DSCR', before: projections[2]?.dscr || 0, after: results.year3DSCR, change: results.year3DSCR - (projections[2]?.dscr || 0) },
       { metric: 'Year 5 DSCR', before: projections[4]?.dscr || 0, after: results.year5DSCR, change: results.year5DSCR - (projections[4]?.dscr || 0) },
       { metric: 'Total Interest Paid', before: currentTotalInterest, after: newTotalInterest, change: ((newTotalInterest - currentTotalInterest) / currentTotalInterest) * 100 },
-      { metric: 'Breach Years', before: countBreachYears(projections, dscrMin), after: results.breachYears, change: 'Resolved' }
+      { metric: 'Breach Years', before: currentBreachYears, after: results.breachYears, change: breachResolution }
     ],
     pros: 'No principal loss for lender, resolves breaches',
     cons: `Borrower pays ${prefix}${((newTotalInterest - currentTotalInterest) / 1e6).toFixed(1)}M additional interest over life`
@@ -772,7 +835,9 @@ function generateTenorExtensionOption(config) {
  * Option C: Rate Reduction
  */
 function generateRateReductionOption(config) {
-  const { currentPrincipal, currentRate, currentTenor, minAcceptableRate, worstYear, targetMinDSCR, projections, dscrMin, prefix } = config;
+  const { currentPrincipal, currentRate, currentTenor, minAcceptableRate, minEBITDA, targetMinDSCR, projections, dscrMin, prefix } = config;
+
+  console.log('--- OPTION C: Rate Reduction ---');
 
   // Find minimum rate reduction needed (test in 50bps increments)
   let newRate = currentRate - 0.005;
@@ -780,6 +845,10 @@ function generateRateReductionOption(config) {
 
   while (newRate >= minAcceptableRate) {
     results = recalculateMetrics(projections, currentPrincipal, newRate, currentTenor, dscrMin);
+    const newDS = calculateAnnualDebtService(currentPrincipal, newRate, currentTenor);
+    const newDSCR = minEBITDA / newDS;
+    console.log(`  Rate ${(newRate*100).toFixed(1)}%: DS=${newDS}, DSCR=${newDSCR.toFixed(2)}x, Breach Years=${results.breachYears}`);
+
     if (results.minDSCR >= targetMinDSCR && results.breachYears === 0) break;
     newRate -= 0.005;
   }
@@ -790,6 +859,20 @@ function generateRateReductionOption(config) {
   const currentDS = calculateAnnualDebtService(currentPrincipal, currentRate, currentTenor);
   const newDS = calculateAnnualDebtService(currentPrincipal, newRate, currentTenor);
   const bpsReduction = (currentRate - newRate) * 10000;
+
+  console.log('  Selected Rate:', (newRate * 100).toFixed(1) + '%');
+  console.log('  Current Debt Service:', currentDS);
+  console.log('  New Debt Service:', newDS, '(should be LESS)');
+  console.log('  Current Min DSCR:', Math.min(...projections.map(p => p.dscr || 999)));
+  console.log('  New Min DSCR:', results.minDSCR, '(should be HIGHER)');
+
+  // VERIFY: Lower rate should produce lower debt service and higher DSCR
+  if (newDS > currentDS) {
+    console.error('  ERROR: New debt service is HIGHER with lower rate! This is wrong!');
+  }
+
+  const currentBreachYears = countBreachYears(projections, dscrMin);
+  const breachResolution = results.breachYears === 0 ? 'Resolved' : (results.breachYears < currentBreachYears ? 'Partial' : 'Not Resolved');
 
   return {
     name: 'Option C: Rate Reduction',
@@ -808,7 +891,7 @@ function generateRateReductionOption(config) {
       { metric: 'Annual Debt Service', before: currentDS, after: newDS, change: ((newDS - currentDS) / currentDS) * 100 },
       { metric: 'Year 3 DSCR', before: projections[2]?.dscr || 0, after: results.year3DSCR, change: results.year3DSCR - (projections[2]?.dscr || 0) },
       { metric: 'Year 5 DSCR', before: projections[4]?.dscr || 0, after: results.year5DSCR, change: results.year5DSCR - (projections[4]?.dscr || 0) },
-      { metric: 'Breach Years', before: countBreachYears(projections, dscrMin), after: results.breachYears, change: results.breachYears === 0 ? 'Resolved' : 'Partial' }
+      { metric: 'Breach Years', before: currentBreachYears, after: results.breachYears, change: breachResolution }
     ],
     pros: 'Preserves principal, improves coverage',
     cons: `${results.breachYears > 0 ? 'Does NOT fully resolve breaches, ' : ''}${bpsReduction.toFixed(0)}bps yield sacrifice`
@@ -819,24 +902,57 @@ function generateRateReductionOption(config) {
  * Option D: Equity Injection
  */
 function generateEquityInjectionOption(config) {
-  const { currentPrincipal, currentRate, currentTenor, worstYear, targetMinDSCR, projections, dscrMin, prefix } = config;
+  const { currentPrincipal, currentRate, currentTenor, minEBITDA, targetMinDSCR, projections, dscrMin, prefix } = config;
+
+  console.log('--- OPTION D: Equity Injection ---');
+  console.log('  Current Principal:', currentPrincipal);
+  console.log('  Min EBITDA:', minEBITDA);
+  console.log('  Target DSCR:', targetMinDSCR);
 
   // Calculate equity needed for target DSCR
-  const worstYearEBITDA = worstYear?.ebitda || projections[0]?.ebitda || 0;
-  const targetDebtService = worstYearEBITDA / targetMinDSCR;
+  const maxDebtService = minEBITDA / targetMinDSCR;
+  console.log('  Max Debt Service:', maxDebtService);
+
   const paymentFactor = calculatePaymentFactor(currentRate, currentTenor);
-  const targetPrincipal = targetDebtService / paymentFactor;
-  const equityNeeded = Math.min(currentPrincipal - targetPrincipal, currentPrincipal * 0.25); // Cap at 25%
-  const newPrincipal = currentPrincipal - equityNeeded;
+  console.log('  Payment Factor:', paymentFactor);
+
+  const targetPrincipal = maxDebtService / paymentFactor;
+  console.log('  Target Principal:', targetPrincipal);
+
+  // CRITICAL FIX: Equity injection should be POSITIVE (amount to pay down debt)
+  // equityNeeded = how much sponsor needs to inject to reduce debt from current to target
+  const equityNeeded = Math.max(0, currentPrincipal - targetPrincipal);
+  const cappedEquity = Math.min(equityNeeded, currentPrincipal * 0.25); // Cap at 25%
+  const newPrincipal = currentPrincipal - cappedEquity;
+
+  console.log('  Equity Needed:', equityNeeded);
+  console.log('  Capped Equity (max 25%):', cappedEquity);
+  console.log('  New Principal:', newPrincipal);
+
+  // VERIFY: Equity injection must be POSITIVE
+  if (cappedEquity < 0) {
+    console.error('  ERROR: Equity injection is NEGATIVE! This is wrong!');
+  }
+  if (newPrincipal > currentPrincipal) {
+    console.error('  ERROR: Principal INCREASED after equity injection! This is wrong!');
+  }
 
   const currentDS = calculateAnnualDebtService(currentPrincipal, currentRate, currentTenor);
   const newDS = calculateAnnualDebtService(newPrincipal, currentRate, currentTenor);
   const results = recalculateMetrics(projections, newPrincipal, currentRate, currentTenor, dscrMin);
 
+  console.log('  Current Debt Service:', currentDS);
+  console.log('  New Debt Service:', newDS);
+  console.log('  Min DSCR after:', results.minDSCR);
+  console.log('  Breach years after:', results.breachYears);
+
+  const currentBreachYears = countBreachYears(projections, dscrMin);
+  const breachResolution = results.breachYears === 0 ? 'Resolved' : (results.breachYears <= 1 ? 'Mostly Resolved' : 'Partial');
+
   return {
     name: 'Option D: Equity Injection',
     id: 'D',
-    structure: `Sponsor injects ${prefix}${(equityNeeded / 1e6).toFixed(0)}M to pay down principal`,
+    structure: `Sponsor injects ${prefix}${(cappedEquity / 1e6).toFixed(1)}M to pay down principal`,
     principal: newPrincipal,
     rate: currentRate,
     tenor: currentTenor,
@@ -844,14 +960,14 @@ function generateEquityInjectionOption(config) {
     minDSCR: results.minDSCR,
     breachYears: results.breachYears,
     totalInterest: calculateTotalInterest(newPrincipal, currentRate, currentTenor),
-    lenderNPV: -((equityNeeded / currentPrincipal) * 5), // Small NPV impact from early prepayment
+    lenderNPV: -((cappedEquity / currentPrincipal) * 5), // Small NPV impact from early prepayment
     acceptance: 'HIGH (75-85%) if sponsor willing',
     impacts: [
-      { metric: 'Principal', before: currentPrincipal, after: newPrincipal, change: -((equityNeeded / currentPrincipal) * 100) },
+      { metric: 'Principal', before: currentPrincipal, after: newPrincipal, change: -((cappedEquity / currentPrincipal) * 100) },
       { metric: 'Annual Debt Service', before: currentDS, after: newDS, change: ((newDS - currentDS) / currentDS) * 100 },
       { metric: 'Year 3 DSCR', before: projections[2]?.dscr || 0, after: results.year3DSCR, change: results.year3DSCR - (projections[2]?.dscr || 0) },
       { metric: 'Year 5 DSCR', before: projections[4]?.dscr || 0, after: results.year5DSCR, change: results.year5DSCR - (projections[4]?.dscr || 0) },
-      { metric: 'Breach Years', before: countBreachYears(projections, dscrMin), after: results.breachYears, change: results.breachYears <= 1 ? 'Mostly Resolved' : 'Partial' }
+      { metric: 'Breach Years', before: currentBreachYears, after: results.breachYears, change: breachResolution }
     ],
     pros: 'Preserves lender economics, demonstrates sponsor commitment',
     cons: `Requires sponsor capital availability${results.breachYears > 0 ? ', some years still tight' : ''}`
@@ -862,13 +978,20 @@ function generateEquityInjectionOption(config) {
  * Option E: Combination (Recommended)
  */
 function generateCombinationOption(config) {
-  const { currentPrincipal, currentRate, currentTenor, worstYear, targetMinDSCR, projections, dscrMin, prefix } = config;
+  const { currentPrincipal, currentRate, currentTenor, minEBITDA, targetMinDSCR, projections, dscrMin, prefix } = config;
+
+  console.log('--- OPTION E: Combination ---');
 
   // Balanced approach: modest changes across multiple levers
   const newTenor = Math.min(currentTenor + 2, 8); // Add 2 years
   const newRate = Math.max(currentRate * 0.875, 0.09); // 12.5% rate reduction
   const equityInjection = currentPrincipal * 0.08; // 8% equity injection
   const newPrincipal = currentPrincipal - equityInjection;
+
+  console.log('  New Tenor:', newTenor, '(+', newTenor - currentTenor, 'years)');
+  console.log('  New Rate:', (newRate * 100).toFixed(1) + '%', '(-', ((currentRate - newRate) * 100).toFixed(1) + '%)');
+  console.log('  Equity Injection:', equityInjection);
+  console.log('  New Principal:', newPrincipal);
 
   const currentDS = calculateAnnualDebtService(currentPrincipal, currentRate, currentTenor);
   const newDS = calculateAnnualDebtService(newPrincipal, newRate, newTenor);
@@ -877,10 +1000,19 @@ function generateCombinationOption(config) {
   const currentTotalInterest = calculateTotalInterest(currentPrincipal, currentRate, currentTenor);
   const newTotalInterest = calculateTotalInterest(newPrincipal, newRate, newTenor);
 
+  console.log('  Current Debt Service:', currentDS);
+  console.log('  New Debt Service:', newDS);
+  console.log('  New Min DSCR:', results.minDSCR);
+  console.log('  Breach years after:', results.breachYears);
+
+  const currentBreachYears = countBreachYears(projections, dscrMin);
+  const currentMinDSCR = Math.min(...projections.map(p => p.dscr || 999));
+  const breachResolution = results.breachYears === 0 ? 'Resolved' : (results.breachYears < currentBreachYears ? 'Partial' : 'Not Resolved');
+
   return {
     name: 'Option E: Combination (RECOMMENDED) ⭐',
     id: 'E',
-    structure: `Extend tenor: ${currentTenor} years → ${newTenor} years\nReduce rate: ${(currentRate * 100).toFixed(1)}% → ${(newRate * 100).toFixed(1)}%\nEquity injection: ${prefix}${(equityInjection / 1e6).toFixed(0)}M prepayment`,
+    structure: `Extend tenor: ${currentTenor} years → ${newTenor} years\nReduce rate: ${(currentRate * 100).toFixed(1)}% → ${(newRate * 100).toFixed(1)}%\nEquity injection: ${prefix}${(equityInjection / 1e6).toFixed(1)}M prepayment`,
     principal: newPrincipal,
     rate: newRate,
     tenor: newTenor,
@@ -897,8 +1029,8 @@ function generateCombinationOption(config) {
       { metric: 'Annual Debt Service', before: currentDS, after: newDS, change: ((newDS - currentDS) / currentDS) * 100 },
       { metric: 'Year 3 DSCR', before: projections[2]?.dscr || 0, after: results.year3DSCR, change: results.year3DSCR - (projections[2]?.dscr || 0) },
       { metric: 'Year 5 DSCR', before: projections[4]?.dscr || 0, after: results.year5DSCR, change: results.year5DSCR - (projections[4]?.dscr || 0) },
-      { metric: 'Min DSCR (all years)', before: Math.min(...projections.map(p => p.dscr || 999)), after: results.minDSCR, change: results.minDSCR - Math.min(...projections.map(p => p.dscr || 999)) },
-      { metric: 'Breach Years', before: countBreachYears(projections, dscrMin), after: results.breachYears, change: 'Resolved' },
+      { metric: 'Min DSCR (all years)', before: currentMinDSCR, after: results.minDSCR, change: results.minDSCR - currentMinDSCR },
+      { metric: 'Breach Years', before: currentBreachYears, after: results.breachYears, change: breachResolution },
       { metric: 'Total Interest', before: currentTotalInterest, after: newTotalInterest, change: ((newTotalInterest - currentTotalInterest) / currentTotalInterest) * 100 }
     ],
     pros: 'Resolves all breaches with cushion, balanced concessions, NPV-neutral for lender',

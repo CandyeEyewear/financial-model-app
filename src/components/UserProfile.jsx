@@ -148,13 +148,16 @@ function UsageBar({ label, icon: Icon, used, limit, className = "" }) {
  */
 export function UserProfile() {
   const navigate = useNavigate();
-  const { 
-    user, 
-    userProfile, 
-    isLoading, 
-    signOut, 
-    getUsageInfo, 
-    PLAN_LIMITS 
+  const {
+    user,
+    userProfile,
+    isLoading,
+    signOut,
+    getUsageInfo,
+    PLAN_LIMITS,
+    isAdmin,
+    adminRole,
+    isSuperAdmin
   } = useAuth();
   
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -276,11 +279,28 @@ export function UserProfile() {
                     <TierIcon className="w-4 h-4" />
                     {tierConfig.name}
                   </span>
-                  
+
                   {userProfile?.subscription_status === "active" && (
                     <span className="px-3 py-1 rounded-full text-sm font-semibold bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300 flex items-center gap-1.5">
                       <CheckCircle className="w-4 h-4" />
                       Active
+                    </span>
+                  )}
+
+                  {/* Admin Badge - Only for admins */}
+                  {isAdmin && (
+                    <span className="px-3 py-1 rounded-full text-sm font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                      {isSuperAdmin ? (
+                        <>
+                          <Crown className="w-4 h-4" />
+                          Super Admin
+                        </>
+                      ) : (
+                        <>
+                          <Shield className="w-4 h-4" />
+                          {adminRole?.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                        </>
+                      )}
                     </span>
                   )}
                 </div>

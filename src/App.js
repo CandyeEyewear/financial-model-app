@@ -14,7 +14,7 @@ import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentCancelled from './pages/PaymentCancelled';
 import PricingPage from './components/PricingPage';
 import { Button } from './components/Button';
-import { MessageCircle, X, LogOut, User, Loader2, RefreshCw } from 'lucide-react';
+import { MessageCircle, X, LogOut, User, Loader2, RefreshCw, Shield } from 'lucide-react';
 
 /**
  * Main App Component - Handles routing and auth state
@@ -91,7 +91,7 @@ function App() {
  * Protected Route - Main application after authentication
  */
 function ProtectedRoute() {
-  const { user, userProfile, signOut, session } = useAuth();
+  const { user, userProfile, signOut, session, isAdmin, isSuperAdmin } = useAuth();
   const [showAssistant, setShowAssistant] = useState(false);
   const [projectionData, setProjectionData] = useState(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -273,6 +273,17 @@ Provide your analysis:
             
             {/* User Info and Actions */}
             <div className="flex items-center gap-2 sm:gap-4">
+              {/* Admin Panel Button - Only shows for admins */}
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span className="hidden sm:inline text-sm font-medium">Admin Panel</span>
+                </Link>
+              )}
+
               {/* User profile - clickable link to profile page */}
               <Link 
                 to="/profile" 

@@ -44,6 +44,9 @@ import { db } from "./lib/supabase";
 import { SmartPctField } from "./components/SmartFields";
 import { SmartSuggestion, OpeningDebtWarning } from "./components/SmartSuggestions";
 
+// Admin component import
+import AdminQuickStats from "./components/AdminQuickStats";
+
 /**
  * Check if a field has been manually edited
  * Works with both Set and Array (for backwards compatibility)
@@ -1860,11 +1863,14 @@ const FinancialModelAndStressTester = forwardRef(({ onDataUpdate, accessToken },
   return (
     <div className="p-2 sm:p-4 md:p-6 max-w-[1800px] mx-auto space-y-4 sm:space-y-6 bg-slate-50">
       {/* Success Toast */}
-      <SuccessToast 
+      <SuccessToast
         message={successMessage}
         show={showSuccessToast}
         onClose={() => setShowSuccessToast(false)}
       />
+
+      {/* Admin Quick Stats - Only visible to admins */}
+      <AdminQuickStats />
 
       {/* Sticky Header - Clean Design */}
       <div className="sticky top-0 z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-4 py-3 border-b border-slate-200">

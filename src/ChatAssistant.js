@@ -691,7 +691,7 @@ Remember: You're a trusted advisor who can both analyze AND take action. Keep it
               )}
             </div>
           </div>
-        )))}
+        ))}
 
             {/* Loading indicator */}
             {isLoading && (

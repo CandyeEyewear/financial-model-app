@@ -11,6 +11,16 @@ import {
   getTotalDebtFromParams,
   getDebtSummary
 } from './debtCalculationService';
+import {
+  buildEconomicQueries,
+  parseEconomicData,
+  formatEconomicContext,
+  analyzeRateSpread,
+  identifyMacroRisks,
+  generateEconomicSummaryForAI,
+  createEconomicContextResponse,
+  CENTRAL_BANKS
+} from './economicDataFetcher';
 
 /**
  * Parse monetary value from various formats
@@ -85,6 +95,7 @@ export async function executeToolCall(toolName, params, context) {
     onParamUpdate,
     onRunStressTest,
     onNavigateToTab,
+    onWebSearch,
     currency = 'JMD'
   } = context;
 
@@ -108,6 +119,9 @@ export async function executeToolCall(toolName, params, context) {
 
       case 'restructure_deal':
         return restructureDeal(params, modelData, currency);
+
+      case 'fetch_economic_context':
+        return fetchEconomicContext(params, modelData, onWebSearch);
 
       default:
         return {
@@ -1439,6 +1453,117 @@ ${recommendationSection}`;
 function getTotalDebt(params) {
   // Use the centralized toggle-aware helper
   return getTotalDebtFromParams(params);
+}
+
+/**
+ * Fetch economic context for credit analysis
+ * Retrieves real-time economic indicators via web search
+ */
+async function fetchEconomicContext(params, modelData, onWebSearch) {
+  const { country = 'Jamaica', industry } = params;
+  const modelParams = modelData?.params || {};
+
+  try {
+    // Build search queries
+    const queries = buildEconomicQueries(country, industry);
+    const searchResults = {};
+
+    // If we have a web search callback, use it
+    if (onWebSearch && typeof onWebSearch === 'function') {
+      for (const { type, query } of queries) {
+        try {
+          const result = await onWebSearch(query);
+          searchResults[type] = result?.text || result?.snippet || result?.content || '';
+        } catch (err) {
+          console.warn(`Failed to search for ${type}:`, err.message);
+          searchResults[type] = null;
+        }
+      }
+    } else {
+      // Fallback: Use static/default economic data if no web search available
+      console.log('No web search callback available, using fallback economic data');
+      searchResults.interestRate = country.toLowerCase() === 'jamaica'
+        ? 'Bank of Jamaica policy rate is 7.00%'
+        : 'Federal Reserve federal funds rate is 5.25%';
+      searchResults.inflation = country.toLowerCase() === 'jamaica'
+        ? 'Jamaica inflation rate is 5.2%'
+        : 'US inflation rate is 3.1%';
+      searchResults.gdpGrowth = country.toLowerCase() === 'jamaica'
+        ? 'Jamaica GDP growth forecast is 2.1%'
+        : 'US GDP growth forecast is 2.4%';
+      searchResults.economicOutlook = 'Economic outlook remains stable with moderate growth expected.';
+    }
+
+    // Parse results
+    const economicData = parseEconomicData(searchResults);
+
+    // Analyze rate spread if we have both data points
+    let rateAnalysis = null;
+    if (economicData.interestRate?.value && modelParams.interestRate) {
+      rateAnalysis = analyzeRateSpread(modelParams.interestRate, economicData.interestRate.value);
+    }
+
+    // Identify macro risks
+    const macroRisks = identifyMacroRisks(economicData, modelParams);
+
+    // Get central bank name
+    const centralBank = CENTRAL_BANKS[country.toLowerCase()] || 'Central Bank';
+
+    // Format the response message
+    const contextSummary = formatEconomicContext(economicData, country);
+    const aiContext = generateEconomicSummaryForAI(economicData, country, industry);
+
+    // Build the formatted message
+    let message = `📊 **Economic Context Retrieved for ${country}**\n\n`;
+    message += contextSummary;
+
+    if (rateAnalysis) {
+      message += `\n📈 **Rate Analysis**\n`;
+      message += `• Proposed Rate: ${rateAnalysis.proposedRate.toFixed(2)}%\n`;
+      message += `• ${centralBank} Rate: ${rateAnalysis.centralBankRate.toFixed(2)}%\n`;
+      message += `• Spread: +${rateAnalysis.spreadBps} bps\n`;
+      message += `• Assessment: ${rateAnalysis.riskLevel === 'good' ? '✅' : '⚠️'} ${rateAnalysis.assessment}\n`;
+    }
+
+    if (macroRisks.length > 0) {
+      message += `\n⚠️ **Macro Risk Factors**\n`;
+      macroRisks.forEach(risk => {
+        const severityIcon = risk.severity === 'critical' ? '🔴' :
+                           risk.severity === 'high' ? '🟠' :
+                           risk.severity === 'elevated' ? '🟡' : '🔵';
+        message += `${severityIcon} **${risk.type.charAt(0).toUpperCase() + risk.type.slice(1)}:** ${risk.description}\n`;
+        message += `   💡 ${risk.recommendation}\n`;
+      });
+    } else {
+      message += `\n✅ **Macro Environment:** No significant macro risks identified\n`;
+    }
+
+    message += `\n_Use this economic context to inform your credit analysis and recommendations._`;
+
+    return {
+      success: true,
+      message,
+      data: {
+        economicData,
+        rateAnalysis,
+        macroRisks,
+        country,
+        industry,
+        fetchedAt: economicData.fetchedAt,
+      },
+      // Include AI-formatted context for follow-up analysis
+      aiContext,
+      needsFollowThrough: false
+    };
+  } catch (error) {
+    console.error('Economic context fetch error:', error);
+    return {
+      success: false,
+      message: `⚠️ Could not fetch economic data: ${error.message}. Proceeding with analysis using general knowledge.`,
+      data: null,
+      needsFollowThrough: false
+    };
+  }
 }
 
 /**

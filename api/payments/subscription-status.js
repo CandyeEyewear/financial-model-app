@@ -47,8 +47,8 @@ async function ezeePaymentsRequest(endpoint, data) {
 /**
  * Verify user authentication
  */
-async function verifyAuth(request) {
-  const authHeader = request.headers.get('Authorization');
+async function verifyAuth(req) {
+  const authHeader = req.headers.authorization || req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('Missing or invalid authorization header');
@@ -68,32 +68,27 @@ async function verifyAuth(request) {
 /**
  * Main handler
  */
-export default async function handler(request) {
-  // CORS headers
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  };
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
   // Handle OPTIONS request for CORS
-  if (request.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  if (request.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     // Verify authentication
-    const user = await verifyAuth(request);
+    const user = await verifyAuth(req);
 
-    // Parse request body
-    const { subscriptionId } = await request.json();
+    // Parse request body (already parsed by Next.js/Vercel)
+    const { subscriptionId } = req.body;
 
     if (!subscriptionId) {
       throw new Error('Subscription ID is required');
@@ -113,17 +108,11 @@ export default async function handler(request) {
 
     // Check if we have a transaction number
     if (!subscription.ezee_transaction_number) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          status: subscription.status,
-          message: 'Subscription pending initial payment',
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return res.status(200).json({
+        success: true,
+        status: subscription.status,
+        message: 'Subscription pending initial payment',
+      });
     }
 
     // Query eZeePayments for subscription status
@@ -155,38 +144,26 @@ export default async function handler(request) {
         .eq('id', subscriptionId);
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        status: localStatus,
-        ezeeStatus,
-        subscription: {
-          id: subscription.id,
-          tier: subscription.tier_id,
-          amount: subscription.amount,
-          currency: subscription.currency,
-          frequency: subscription.frequency,
-          created_at: subscription.created_at,
-          last_payment_at: subscription.last_payment_at,
-        },
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return res.status(200).json({
+      success: true,
+      status: localStatus,
+      ezeeStatus,
+      subscription: {
+        id: subscription.id,
+        tier: subscription.tier_id,
+        amount: subscription.amount,
+        currency: subscription.currency,
+        frequency: subscription.frequency,
+        created_at: subscription.created_at,
+        last_payment_at: subscription.last_payment_at,
+      },
+    });
   } catch (error) {
     console.error('Subscription status error:', error);
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || 'Failed to check subscription status',
-      }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to check subscription status',
+    });
   }
 }

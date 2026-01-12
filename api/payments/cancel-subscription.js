@@ -47,8 +47,8 @@ async function ezeePaymentsRequest(endpoint, data) {
 /**
  * Verify user authentication
  */
-async function verifyAuth(request) {
-  const authHeader = request.headers.get('Authorization');
+async function verifyAuth(req) {
+  const authHeader = req.headers.authorization || req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('Missing or invalid authorization header');
@@ -68,32 +68,27 @@ async function verifyAuth(request) {
 /**
  * Main handler
  */
-export default async function handler(request) {
-  // CORS headers
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  };
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
   // Handle OPTIONS request for CORS
-  if (request.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  if (request.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     // Verify authentication
-    const user = await verifyAuth(request);
+    const user = await verifyAuth(req);
 
-    // Parse request body
-    const { subscriptionId } = await request.json();
+    // Parse request body (already parsed by Next.js/Vercel)
+    const { subscriptionId } = req.body;
 
     if (!subscriptionId) {
       throw new Error('Subscription ID is required');
@@ -113,17 +108,11 @@ export default async function handler(request) {
 
     // Check if subscription can be cancelled
     if (subscription.status === 'canceled' || subscription.status === 'ended') {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Subscription is already cancelled or ended',
-          status: subscription.status,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return res.status(200).json({
+        success: true,
+        message: 'Subscription is already cancelled or ended',
+        status: subscription.status,
+      });
     }
 
     // Check if we have a transaction number
@@ -142,16 +131,10 @@ export default async function handler(request) {
         })
         .eq('id', user.id);
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Subscription cancelled successfully',
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return res.status(200).json({
+        success: true,
+        message: 'Subscription cancelled successfully',
+      });
     }
 
     // Cancel with eZeePayments
@@ -178,28 +161,16 @@ export default async function handler(request) {
       })
       .eq('id', user.id);
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Subscription cancelled successfully',
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return res.status(200).json({
+      success: true,
+      message: 'Subscription cancelled successfully',
+    });
   } catch (error) {
     console.error('Cancel subscription error:', error);
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || 'Failed to cancel subscription',
-      }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to cancel subscription',
+    });
   }
 }

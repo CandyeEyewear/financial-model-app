@@ -67,8 +67,8 @@ async function ezeePaymentsRequest(endpoint, data) {
 /**
  * Verify user authentication
  */
-async function verifyAuth(request) {
-  const authHeader = request.headers.get('Authorization');
+async function verifyAuth(req) {
+  const authHeader = req.headers.authorization || req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('Missing or invalid authorization header');
@@ -88,32 +88,27 @@ async function verifyAuth(request) {
 /**
  * Main handler
  */
-export default async function handler(request) {
-  // CORS headers
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  };
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
   // Handle OPTIONS request for CORS
-  if (request.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  if (request.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     // Verify authentication
-    const user = await verifyAuth(request);
+    const user = await verifyAuth(req);
 
-    // Parse request body
-    const { planKey, billingCycle } = await request.json();
+    // Parse request body (already parsed by Next.js/Vercel)
+    const { planKey, billingCycle } = req.body;
 
     // Validate plan
     if (!PLAN_CONFIG[planKey]) {
@@ -218,34 +213,22 @@ export default async function handler(request) {
     console.log('Payment token generated');
 
     // Return checkout session data
-    return new Response(
-      JSON.stringify({
-        success: true,
-        paymentUrl: EZEE_SECURE_URL,
-        token,
-        amount,
-        currency,
-        orderId,
-        subscriptionId: ezeeSubscriptionId,
-        recurring: true,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return res.status(200).json({
+      success: true,
+      paymentUrl: EZEE_SECURE_URL,
+      token,
+      amount,
+      currency,
+      orderId,
+      subscriptionId: ezeeSubscriptionId,
+      recurring: true,
+    });
   } catch (error) {
     console.error('Checkout error:', error);
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || 'Failed to create checkout session',
-      }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to create checkout session',
+    });
   }
 }

@@ -12,54 +12,43 @@ const supabase = createClient(
 );
 
 /**
- * Parse form data from request
+ * Parse request body - handles both form data and JSON
  */
-async function parseFormData(request) {
-  const contentType = request.headers.get('content-type') || '';
+function parseBody(req) {
+  const contentType = req.headers['content-type'] || '';
 
-  if (contentType.includes('application/x-www-form-urlencoded')) {
-    const text = await request.text();
-    const params = new URLSearchParams(text);
+  // If body is already parsed (by Vercel), return it
+  if (req.body && typeof req.body === 'object') {
+    return req.body;
+  }
+
+  // For form data that wasn't auto-parsed
+  if (contentType.includes('application/x-www-form-urlencoded') && typeof req.body === 'string') {
+    const params = new URLSearchParams(req.body);
     const data = {};
-
     for (const [key, value] of params.entries()) {
       data[key] = value;
     }
-
-    return data;
-  } else if (contentType.includes('multipart/form-data')) {
-    const formData = await request.formData();
-    const data = {};
-
-    for (const [key, value] of formData.entries()) {
-      data[key] = value;
-    }
-
     return data;
   }
 
-  // Try to parse as JSON if no form data
-  try {
-    return await request.json();
-  } catch {
-    throw new Error('Unable to parse request body');
-  }
+  return req.body || {};
 }
 
 /**
  * Main webhook handler
  */
-export default async function handler(request) {
+export default async function handler(req, res) {
   // Only accept POST requests
-  if (request.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method not allowed');
   }
 
   try {
     console.log('=== Webhook received ===');
 
     // Parse the webhook data
-    const webhookData = await parseFormData(request);
+    const webhookData = parseBody(req);
 
     console.log('Webhook data:', {
       ResponseCode: webhookData.ResponseCode,
@@ -78,7 +67,7 @@ export default async function handler(request) {
     // Validate required fields
     if (!ResponseCode || !TransactionNumber) {
       console.error('Missing required webhook fields');
-      return new Response('Missing required fields', { status: 400 });
+      return res.status(400).send('Missing required fields');
     }
 
     // Determine payment success
@@ -110,13 +99,13 @@ export default async function handler(request) {
     if (!payment) {
       console.error('Payment record not found for order_id:', order_id);
       // Still return 200 to acknowledge receipt
-      return new Response('Payment record not found', { status: 200 });
+      return res.status(200).send('Payment record not found');
     }
 
     // Check for idempotency - if already processed, return success
     if (payment.status === 'completed' && payment.transaction_number === TransactionNumber) {
       console.log('Payment already processed, returning success');
-      return new Response('OK', { status: 200 });
+      return res.status(200).send('OK');
     }
 
     // Update payment record
@@ -161,16 +150,18 @@ export default async function handler(request) {
     console.log('=== Webhook processed successfully ===');
 
     // Always return 200 to acknowledge receipt
-    return new Response('OK', { status: 200 });
+    return res.status(200).send('OK');
   } catch (error) {
     console.error('Webhook error:', error);
 
     // Still return 200 to prevent retries for errors we can't handle
-    return new Response('Error processed', { status: 200 });
+    return res.status(200).send('Error processed');
   }
 }
 
-// Configure for Vercel edge runtime (optional, for better performance)
+// Disable body parsing to handle raw form data if needed
 export const config = {
-  runtime: 'edge',
+  api: {
+    bodyParser: true,
+  },
 };

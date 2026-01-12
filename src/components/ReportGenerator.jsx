@@ -3,15 +3,16 @@ import { Card, CardHeader, CardTitle, CardContent } from "./Card";
 import { Button } from "./Button";
 import { Label } from "./Label";
 import { Input } from "./Input";
-import { 
+import {
   FileText, Download, FileSpreadsheet, CheckSquare, Bot, Sparkles,
-  AlertCircle, Check, Loader, Eye, RefreshCw, Copy, Upload, Palette, X, ChevronDown, ChevronUp
+  AlertCircle, Check, Loader, Eye, RefreshCw, Copy, Upload, Palette, X, ChevronDown, ChevronUp, Lock
 } from "lucide-react";
 import { currencyFmtMM, numFmt, pctFmt } from "../utils/formatters";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import * as XLSX from "xlsx";
 import ReactMarkdown from 'react-markdown';
+import { useAuth } from '../contexts/AuthContext';
 
 
 // Helper to calculate CAGR
@@ -131,7 +132,12 @@ const hexToRgb = (hex) => {
 };
 
 export function ReportGenerator({ projections, params, ccy, historicalData, accessToken }) {
-  
+  // Get auth context for subscription limits
+  const { canGenerateReport, canExportPDF, getReportUsageInfo, isAdmin } = useAuth();
+
+  // Report limit state
+  const [reportLimitError, setReportLimitError] = useState(null);
+
 const [sectionStates, setSectionStates] = useState({
     branding: false,        // true = OPEN, false = CLOSED
     aiAnalysis: true,
@@ -1110,13 +1116,76 @@ ${recommendation.summary} ${recommendation.rationale}
 `;
   };
 
-  // Generate comprehensive PDF Report with professional styling
-  const generatePDF = () => {
-    if (!validateReportData()) return;
-    
-    setIsExporting(true);
-    
+  // Helper function to increment report usage via API
+  const incrementReportUsage = async (reportType = 'pdf') => {
+    if (!accessToken) return { success: false, error: 'Not authenticated' };
+
     try {
+      const response = await fetch('/api/reports/usage', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ reportType })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.message || data.error, code: data.code };
+      }
+
+      return { success: true, ...data };
+    } catch (error) {
+      console.error('Failed to increment report usage:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Generate comprehensive PDF Report with professional styling
+  const generatePDF = async () => {
+    if (!validateReportData()) return;
+
+    // Clear any previous limit errors
+    setReportLimitError(null);
+
+    // Check subscription limits (skip for admins)
+    if (!isAdmin) {
+      // Check if user can export PDFs
+      if (!canExportPDF()) {
+        setReportLimitError({
+          type: 'feature',
+          message: 'PDF export is not available on your plan. Upgrade to Professional or higher to export PDFs.'
+        });
+        return;
+      }
+
+      // Check if user has report quota remaining
+      if (!canGenerateReport()) {
+        const usageInfo = getReportUsageInfo();
+        setReportLimitError({
+          type: 'limit',
+          message: `You've used ${usageInfo?.used || 0} of ${usageInfo?.limit || 0} reports this month. Upgrade to generate more reports.`
+        });
+        return;
+      }
+    }
+
+    setIsExporting(true);
+
+    try {
+      // Increment report usage before generating (validates server-side too)
+      const usageResult = await incrementReportUsage('pdf');
+      if (!usageResult.success && usageResult.code) {
+        // Server-side limit check failed
+        setReportLimitError({
+          type: usageResult.code === 'E005' ? 'feature' : 'limit',
+          message: usageResult.error
+        });
+        setIsExporting(false);
+        return;
+      }
       const doc = new jsPDF();
       let yPos = 20;
 
@@ -1541,12 +1610,47 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
   };
 
   // Generate Term Sheet PDF
-  const generateTermSheet = () => {
+  const generateTermSheet = async () => {
     if (!validateReportData()) return;
-    
+
+    // Clear any previous limit errors
+    setReportLimitError(null);
+
+    // Check subscription limits (skip for admins)
+    if (!isAdmin) {
+      // Check if user can export PDFs
+      if (!canExportPDF()) {
+        setReportLimitError({
+          type: 'feature',
+          message: 'PDF export is not available on your plan. Upgrade to Professional or higher to export PDFs.'
+        });
+        return;
+      }
+
+      // Check if user has report quota remaining
+      if (!canGenerateReport()) {
+        const usageInfo = getReportUsageInfo();
+        setReportLimitError({
+          type: 'limit',
+          message: `You've used ${usageInfo?.used || 0} of ${usageInfo?.limit || 0} reports this month. Upgrade to generate more reports.`
+        });
+        return;
+      }
+    }
+
     setIsExporting(true);
-    
+
     try {
+      // Increment report usage before generating (validates server-side too)
+      const usageResult = await incrementReportUsage('pdf');
+      if (!usageResult.success && usageResult.code) {
+        setReportLimitError({
+          type: usageResult.code === 'E005' ? 'feature' : 'limit',
+          message: usageResult.error
+        });
+        setIsExporting(false);
+        return;
+      }
       const doc = new jsPDF();
       let yPos = 20;
 
@@ -2621,17 +2725,72 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
             </div>
           </div>
 
+          {/* Report Limit Error Message */}
+          {reportLimitError && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Lock className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-amber-800 font-medium">
+                    {reportLimitError.type === 'feature' ? 'Feature Unavailable' : 'Report Limit Reached'}
+                  </p>
+                  <p className="text-amber-700 text-sm mt-1">{reportLimitError.message}</p>
+                  <a
+                    href="/pricing"
+                    className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    View upgrade options →
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Report Usage Info */}
+          {getReportUsageInfo() && !isAdmin && (
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">
+                  Reports this month: {getReportUsageInfo().used} / {getReportUsageInfo().limit}
+                </span>
+                <span className={`font-medium ${getReportUsageInfo().percentage >= 80 ? 'text-amber-600' : 'text-slate-700'}`}>
+                  {Math.round(getReportUsageInfo().percentage)}% used
+                </span>
+              </div>
+              <div className="mt-2 h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    getReportUsageInfo().percentage >= 90 ? 'bg-red-500' :
+                    getReportUsageInfo().percentage >= 80 ? 'bg-amber-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${Math.min(getReportUsageInfo().percentage, 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Export Buttons */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button
-              onClick={generatePDF}
-              disabled={isExporting}
-              loading={isExporting}
-              leftIcon={isExporting ? undefined : FileText}
-              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold shadow-md hover:shadow-lg"
-            >
-              Generate PDF Report
-            </Button>
+            <div className="relative">
+              <Button
+                onClick={generatePDF}
+                disabled={isExporting || (!isAdmin && (!canExportPDF() || !canGenerateReport()))}
+                loading={isExporting}
+                leftIcon={isExporting ? undefined : (!isAdmin && !canExportPDF()) ? Lock : FileText}
+                className={`w-full font-semibold shadow-md hover:shadow-lg ${
+                  !isAdmin && !canExportPDF()
+                    ? 'bg-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
+                }`}
+              >
+                {!isAdmin && !canExportPDF() ? 'PDF Export (Pro+)' : 'Generate PDF Report'}
+              </Button>
+              {!isAdmin && !canExportPDF() && (
+                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                  Upgrade
+                </span>
+              )}
+            </div>
             <Button
               onClick={generateExcel}
               disabled={isExporting}
@@ -2641,15 +2800,26 @@ ${params.keyCustomers || "No customer concentration analysis provided."}`;
             >
               Generate Excel Report
             </Button>
-            <Button
-              onClick={generateTermSheet}
-              disabled={isExporting}
-              loading={isExporting}
-              leftIcon={isExporting ? undefined : FileText}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold shadow-md hover:shadow-lg"
-            >
-              Generate Term Sheet
-            </Button>
+            <div className="relative">
+              <Button
+                onClick={generateTermSheet}
+                disabled={isExporting || (!isAdmin && (!canExportPDF() || !canGenerateReport()))}
+                loading={isExporting}
+                leftIcon={isExporting ? undefined : (!isAdmin && !canExportPDF()) ? Lock : FileText}
+                className={`w-full font-semibold shadow-md hover:shadow-lg ${
+                  !isAdmin && !canExportPDF()
+                    ? 'bg-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white'
+                }`}
+              >
+                {!isAdmin && !canExportPDF() ? 'Term Sheet (Pro+)' : 'Generate Term Sheet'}
+              </Button>
+              {!isAdmin && !canExportPDF() && (
+                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                  Upgrade
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Features Summary */}

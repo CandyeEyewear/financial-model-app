@@ -4,6 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { handleCors } from '../_cors.js';
+import { AI_QUERY_LIMITS, getAIQueryLimit } from '../config/subscriptionLimits.js';
 
 // Validate required environment variables at startup
 const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'DEEPSEEK_API_KEY'];
@@ -18,13 +19,8 @@ if (!missingVars.includes('SUPABASE_URL') && !missingVars.includes('SUPABASE_SER
   );
 }
 
-// Plan limits
-const PLAN_LIMITS = {
-  free: 10,
-  professional: 100,
-  business: 500,
-  enterprise: 999999
-};
+// Plan limits (use centralized config)
+const PLAN_LIMITS = AI_QUERY_LIMITS;
 
 // Error codes for debugging
 const ERROR_CODES = {

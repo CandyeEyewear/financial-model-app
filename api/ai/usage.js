@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { handleCors } from '../_cors.js';
+import { AI_QUERY_LIMITS, getAIQueryLimit } from '../config/subscriptionLimits.js';
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -10,13 +11,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Plan limits
-const PLAN_LIMITS = {
-  free: 10,
-  professional: 100,
-  business: 500,
-  enterprise: 999999
-};
+// Plan limits (use centralized config)
+const PLAN_LIMITS = AI_QUERY_LIMITS;
 
 export default async function handler(req, res) {
   // Handle CORS preflight

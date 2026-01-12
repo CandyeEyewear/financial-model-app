@@ -5,6 +5,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../lib/supabase';
 import { createLogger } from '../utils/logger';
+import {
+  AI_QUERY_LIMITS,
+  REPORT_LIMITS,
+  getAIQueryLimit,
+  getReportLimit,
+  getTeamLimit as getTeamLimitFromConfig,
+  getTeamMemberLimit,
+  canExportPDF,
+  canManageTeams as canManageTeamsFromConfig,
+  hasFeature
+} from '../config/subscriptionLimits';
 
 const log = createLogger('AuthContext');
 const AuthContext = createContext({});
@@ -39,13 +50,8 @@ export const AuthProvider = ({ children }) => {
   const [pendingInvites, setPendingInvites] = useState([]);
   const [currentTeam, setCurrentTeam] = useState(null);
 
-  // Plan limits for AI queries
-  const PLAN_LIMITS = {
-    free: 10,
-    professional: 100,
-    business: 500,
-    enterprise: Infinity
-  };
+  // Plan limits for AI queries (use centralized config)
+  const PLAN_LIMITS = AI_QUERY_LIMITS;
 
   /**
    * Fetch or create user profile in database
@@ -108,22 +114,61 @@ export const AuthProvider = ({ children }) => {
    */
   const canMakeAIQuery = () => {
     if (!userProfile) return false;
-    const limit = PLAN_LIMITS[userProfile.tier] || PLAN_LIMITS.free;
+    const limit = getAIQueryLimit(userProfile.tier);
     return userProfile.ai_queries_this_month < limit;
   };
 
   /**
-   * Get current usage info
+   * Get current AI usage info
    */
   const getUsageInfo = () => {
     if (!userProfile) return null;
-    const limit = PLAN_LIMITS[userProfile.tier] || PLAN_LIMITS.free;
+    const limit = getAIQueryLimit(userProfile.tier);
     return {
       used: userProfile.ai_queries_this_month || 0,
       limit,
       tier: userProfile.tier || 'free',
       percentage: ((userProfile.ai_queries_this_month || 0) / limit) * 100
     };
+  };
+
+  /**
+   * Check if user can generate a report based on plan limits
+   */
+  const canGenerateReport = () => {
+    if (!userProfile) return false;
+    const limit = getReportLimit(userProfile.tier);
+    return (userProfile.reports_this_month || 0) < limit;
+  };
+
+  /**
+   * Get current report usage info
+   */
+  const getReportUsageInfo = () => {
+    if (!userProfile) return null;
+    const limit = getReportLimit(userProfile.tier);
+    return {
+      used: userProfile.reports_this_month || 0,
+      limit,
+      tier: userProfile.tier || 'free',
+      percentage: ((userProfile.reports_this_month || 0) / limit) * 100
+    };
+  };
+
+  /**
+   * Check if user can export PDFs based on their tier
+   */
+  const canExportPDFCheck = () => {
+    if (!userProfile) return false;
+    return canExportPDF(userProfile.tier);
+  };
+
+  /**
+   * Check if user has a specific feature
+   */
+  const hasFeatureCheck = (feature) => {
+    if (!userProfile) return false;
+    return hasFeature(userProfile.tier, feature);
   };
 
   /**
@@ -280,28 +325,24 @@ export const AuthProvider = ({ children }) => {
    * Check if user can manage teams (business or enterprise tier)
    */
   const canManageTeams = () => {
-    const tier = userProfile?.tier;
-    return tier === 'business' || tier === 'enterprise';
+    const tier = userProfile?.tier || 'free';
+    return canManageTeamsFromConfig(tier);
   };
 
   /**
    * Get the number of teams the user can create
    */
   const getTeamLimit = () => {
-    const tier = userProfile?.tier;
-    if (tier === 'enterprise') return Infinity;
-    if (tier === 'business') return 1;
-    return 0;
+    const tier = userProfile?.tier || 'free';
+    return getTeamLimitFromConfig(tier);
   };
 
   /**
    * Get max team members based on tier
    */
   const getMaxTeamMembers = () => {
-    const tier = userProfile?.tier;
-    if (tier === 'enterprise') return Infinity;
-    if (tier === 'business') return 5;
-    return 0;
+    const tier = userProfile?.tier || 'free';
+    return getTeamMemberLimit(tier);
   };
 
   /**
@@ -478,9 +519,16 @@ export const AuthProvider = ({ children }) => {
     signInWithProvider,
     signOut,
     resetPassword,
+    // AI usage
     canMakeAIQuery,
     getUsageInfo,
     PLAN_LIMITS,
+    // Report usage
+    canGenerateReport,
+    getReportUsageInfo,
+    canExportPDF: canExportPDFCheck,
+    // Feature checks
+    hasFeature: hasFeatureCheck,
     // Admin properties
     isAdmin,
     adminRole,

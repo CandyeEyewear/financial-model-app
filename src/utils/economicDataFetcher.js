@@ -68,7 +68,7 @@ const INDUSTRY_QUERIES = {
 };
 
 // Central bank names by country for display
-const CENTRAL_BANKS = {
+export const CENTRAL_BANKS = {
   jamaica: 'Bank of Jamaica (BOJ)',
   usa: 'Federal Reserve (Fed)',
   uk: 'Bank of England (BoE)',

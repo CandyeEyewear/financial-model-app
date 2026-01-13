@@ -26,6 +26,7 @@ import AdminRevenue from './pages/admin/Revenue';
 import AdminCosts from './pages/admin/Costs';
 import AdminSettings from './pages/admin/Settings';
 import AdminAuditLogs from './pages/admin/AuditLogs';
+import LearnerProfile from './pages/admin/LearnerProfile';
 
 /**
  * Main App Component - Handles routing and auth state
@@ -103,6 +104,7 @@ function App() {
           <Route path="costs" element={<AdminCosts />} />
           <Route path="settings" element={<AdminSettings />} />
           <Route path="audit-logs" element={<AdminAuditLogs />} />
+          <Route path="team/:id" element={<LearnerProfile />} />
         </Route>
 
         <Route path="/" element={

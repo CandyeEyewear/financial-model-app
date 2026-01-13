@@ -7,6 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/supabase";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "./Card";
 import { Button } from "./Button";
+import { LearnerLink } from "./LearnerLink";
 import {
   Users,
   UserPlus,
@@ -288,9 +289,20 @@ function TeamMemberRow({ member, canManage, onRemove, onRoleChange }) {
         {/* Info */}
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-medium text-neutral-900 dark:text-neutral-100">
-              {displayName}
-            </span>
+            {member.users?.id && member.status === "active" ? (
+              <LearnerLink
+                learnerId={member.users.id}
+                name={displayName}
+                email={displayEmail}
+                avatarUrl={member.users.avatar_url}
+                showAvatar={false}
+                size="sm"
+              />
+            ) : (
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                {displayName}
+              </span>
+            )}
             {member.status === "pending" && (
               <span className="text-xs px-2 py-0.5 bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-300 rounded-full">
                 Pending

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOutletContext } from 'react-router-dom';
+import { LearnerLink } from '../../components/LearnerLink';
 import {
   Search,
   Plus,
@@ -253,7 +254,14 @@ export default function AdminUsers() {
                             )}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900 dark:text-white">{user.name || 'No name'}</p>
+                            <LearnerLink
+                              learnerId={user.id}
+                              name={user.name || user.email}
+                              email={user.email}
+                              avatarUrl={user.avatar_url}
+                              showAvatar={false}
+                              size="md"
+                            />
                             <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
                           </div>
                         </div>
